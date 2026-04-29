@@ -11,41 +11,33 @@ export default function Page() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'lyra',
-      text: 'Merhaba kankam, ben Lyra. Sesli ya da yazılı konuşabiliriz. Bugün yanında pratik, sıcak ve akıllı bir asistan gibi duruyorum.',
+      text: 'Merhaba kankam, ben Lyra. Artık gerçek AI cevabı verebilen daha akıllı sürümüm. Yaz, seslen, birlikte toparlayalım.',
     },
   ]);
 
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [voice, setVoice] = useState('nova');
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  function makeReply(text: string) {
-    const t = text.toLowerCase();
+  async function askAI(nextMessages: Message[]) {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: nextMessages }),
+    });
 
-    if (t.includes('moral')) {
-      return 'Kankam derin bir nefes al. Her şeyi aynı anda çözmek zorunda değilsin. Bugün sadece bir küçük adım bile yeter. Ben yanındayım.';
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.log('Chat API hata:', errorText);
+      throw new Error('Chat API çalışmadı');
     }
 
-    if (t.includes('içerik') || t.includes('video')) {
-      return 'Bugün için güçlü içerik fikri: “Bu kozmetik ürünün etiketinde yazan şeyi çoğu kişi yanlış anlıyor.” diye gir. Sonra bir aktif maddeyi kimyager gözüyle sade anlat.';
-    }
-
-    if (t.includes('kombin') || t.includes('makyaj')) {
-      return 'Bence bugün soft ama cool bir hava iyi gider. Temiz ten makyajı, hafif parlak dudak, doğal kaş ve tek vurucu aksesuar. Çok şık durur.';
-    }
-
-    if (t.includes('kozmetik') || t.includes('formül')) {
-      return 'Kozmetik için güzel fikir: bariyer onarıcı tonik. Panthenol, gliserin, niacinamide ve yatıştırıcı bir hidrosol ile sade ama etkili bir konsept çıkarabiliriz.';
-    }
-
-    if (t.includes('bugün') || t.includes('plan')) {
-      return 'Bugün ana hedef: önce seni en çok rahatlatacak küçük işi yap. Sonra görünür bir iş seç: paylaşım, kısa ders ya da not alma. Parça parça ilerliyoruz.';
-    }
-
-    return `Seni duydum kankam: "${text}". Bence bunu büyütmeden küçük parçalara bölelim. Önce en kolay adımı seçelim, sonra devamını toparlarız.`;
+    const data = await res.json();
+    return data.text || 'Kankam cevap üretirken takıldım, bir daha dener misin?';
   }
 
   async function speak(text: string) {
@@ -96,20 +88,31 @@ export default function Page() {
     }
   }
 
-  function sendMessage(custom?: string) {
+  async function sendMessage(custom?: string) {
     const text = (custom || input).trim();
-    if (!text) return;
+    if (!text || thinking) return;
 
-    const reply = makeReply(text);
+    const userMessage: Message = { role: 'user', text };
+    const nextMessages = [...messages, userMessage];
 
-    setMessages((prev) => [
-      ...prev,
-      { role: 'user', text },
-      { role: 'lyra', text: reply },
-    ]);
-
+    setMessages(nextMessages);
     setInput('');
-    speak(reply);
+    setThinking(true);
+
+    try {
+      const reply = await askAI(nextMessages);
+      const lyraMessage: Message = { role: 'lyra', text: reply };
+
+      setMessages((prev) => [...prev, lyraMessage]);
+      await speak(reply);
+    } catch {
+      const fallback =
+        'Kankam sunucudan cevap alamadım. Büyük ihtimalle API key eksik, yanlış ya da Vercel environment değişkeni güncellenmedi.';
+      setMessages((prev) => [...prev, { role: 'lyra', text: fallback }]);
+      await speak(fallback);
+    } finally {
+      setThinking(false);
+    }
   }
 
   function listen() {
@@ -181,15 +184,17 @@ export default function Page() {
 
           <div>
             <h2>
-              {speaking
+              {thinking
+                ? 'Düşünüyorum...'
+                : speaking
                 ? 'Lyra konuşuyor...'
                 : listening
                 ? 'Dinliyorum...'
                 : 'Hazırım kankam'}
             </h2>
             <p>
-              Ses, içerik, kozmetik, plan, kombin ve günlük destek için
-              buradayım.
+              Gerçek AI cevapları, sesli yanıt, içerik, kozmetik, plan, kombin
+              ve günlük destek için buradayım.
             </p>
           </div>
         </div>
@@ -216,6 +221,13 @@ export default function Page() {
               <span>{m.text}</span>
             </div>
           ))}
+
+          {thinking && (
+            <div className="msg lyra">
+              <b>Lyra</b>
+              <span>Bir saniye kankam, düşünüyorum...</span>
+            </div>
+          )}
         </div>
 
         <div className="bar">
@@ -227,13 +239,14 @@ export default function Page() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Lyra’ya yaz..."
+            disabled={thinking}
             onKeyDown={(e) => {
               if (e.key === 'Enter') sendMessage();
             }}
           />
 
-          <button className="send" onClick={() => sendMessage()}>
-            Gönder
+          <button className="send" onClick={() => sendMessage()} disabled={thinking}>
+            {thinking ? '...' : 'Gönder'}
           </button>
         </div>
       </section>
@@ -463,6 +476,11 @@ export default function Page() {
           padding: 0 15px;
           background: #2d2822;
           color: white;
+        }
+
+        .send:disabled,
+        input:disabled {
+          opacity: .6;
         }
 
         @keyframes float {
