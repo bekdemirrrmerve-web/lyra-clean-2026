@@ -40,7 +40,7 @@ export default function Page() {
     {
       role: 'lyra',
       text:
-        'Kankam hoş geldin. Buradan direkt benimle sohbet edebilirsin. İstersen içerik, ders, plan, analiz ya da günlük bir şey konuşalım.',
+        'Hoş geldin. Buradan normal sohbet edebilirsin; istersen içerik, ders, plan, formül, analiz ya da çekim fikri hazırlayalım.',
       createdAt: Date.now(),
     },
   ]);
@@ -263,7 +263,7 @@ export default function Page() {
     }
     const remix = `${reply}
 
-Bu arada bunu biraz daha insansı toparlarsam: burada önemli olan ne istediğini netleştirip onu daha uygulanabilir bir şeye çevirmek.`;
+Bunu daha farklı açıdan da şöyle toparlarım: önce ana ihtiyacı netleştirip sonra onu uygulanabilir bir çıktıya çevirmek en mantıklısı.`;
     lastRepliesRef.current = [remix, ...recent].slice(0, 8);
     return remix;
   }
@@ -440,8 +440,8 @@ Bu arada bunu biraz daha insansı toparlarsam: burada önemli olan ne istediğin
     const raw = userText.trim();
     const t = normalize(raw);
 
-    if (includesAny(t, ['retinol', 'cilt', 'serum', 'gunes kremi', 'güneş kremi', 'kozmetik'])) {
-      return 'kozmetik / cilt bakımı';
+    if (includesAny(t, ['retinol', 'cilt', 'serum', 'gunes kremi', 'güneş kremi', 'kozmetik', 'formul', 'formül'])) {
+      return 'kozmetik / formül / cilt bakımı';
     }
     if (includesAny(t, ['dgs', 'matematik', 'ders', 'konu', 'test', 'paragraf'])) {
       return 'ders / çalışma';
@@ -461,7 +461,6 @@ Bu arada bunu biraz daha insansı toparlarsam: burada önemli olan ne istediğin
   function saveMemoryFromUserText(userText: string) {
     const topic = extractTopicFromUserText(userText);
     const detail = userText.trim();
-
     if (!detail) return;
 
     const item: MemoryItem = {
@@ -486,7 +485,7 @@ Bu arada bunu biraz daha insansı toparlarsam: burada önemli olan ne istediğin
   function buildMemoryReply() {
     if (!memory.length) {
       return avoidRepeat(
-        'Şu an kayda alınmış belirgin bir hafıza yok kankam. Birkaç şey konuştukça burada önceki konuları sana toparlayabilirim.'
+        'Şu an belirgin bir hafıza kaydım yok. Birkaç konuştuktan sonra “daha önce ne konuşmuştuk?” dediğinde toparlayabilirim.'
       );
     }
 
@@ -495,7 +494,7 @@ Bu arada bunu biraz daha insansı toparlarsam: burada önemli olan ne istediğin
       .map((item, index) => `${index + 1}. ${item.topic} — ${item.detail}`)
       .join('\n');
 
-    return avoidRepeat(`Hatırlıyorum kankam. Son konuştuğumuz şeylerden bazıları şunlar:
+    return avoidRepeat(`Hatırlıyorum. Son konuştuğumuz şeylerden bazıları şunlar:
 
 ${text}
 
@@ -520,66 +519,26 @@ ${text}
     }
   }
 
-  function createSmartContentIdea(topicRaw?: string) {
-    const topic = (topicRaw || socialTopic || 'güncel bir konu').trim();
+  async function generateSocialWithAi() {
+    const topic = socialTopic.trim();
 
-    const hooks = [
-      `Bu ${topic} konusunda çoğu kişinin atladığı küçük ama kritik bir detay var.`,
-      `${topic} anlatacaksan bence videoya buradan başlamak daha etkili olur.`,
-      `${topic} için izleyiciyi içeride tutan şey konu değil, giriş şekli.`,
-      `${topic} konusunda herkes aynı şeyi söylüyor ama ben başka yerden bakardım.`,
-      `Eğer ${topic} içeriği çekeceksen ilk 3 saniye şunu söyle.`,
-      `${topic} için kaydedilecek mini rehber yapalım.`,
-    ];
+    if (!topic) {
+      setSocialResult('Önce konu yaz. Mesela: “retinolün faydaları”, “ev tipi C vitamini serumu”, “10 leke karşıtı içerik fikri” gibi.');
+      return;
+    }
 
-    const flow = pick([
-      ['Problemi net söyle', 'İzleyici kendini görsün', '3 maddelik çözüm ver', 'Kısa örnek koy', 'CTA ile bitir'],
-      ['Yanlış bilinen şeyi söyle', 'Nedenini açıkla', 'Doğru yaklaşımı ver', 'Kısa örnek', 'Kaydet CTA'],
-      ['Merak uyandıran cümle', 'Sorunu görünür yap', 'Mini çözüm', 'Sonuç', 'Yorum CTA'],
-    ]);
+    setSocialResult('Lyra düşünüyor...');
 
-    const cta = pick([
-      'Bunu kaydet, sonra işine yarar.',
-      'İstersen devamını seri yaparım.',
-      'Yorumlara devam yaz, ikinci kısmı hazırlayayım.',
-      'Bunu arkadaşına gönder; onun da işine yarayabilir.',
-    ]);
+    const prompt = `
+Sen Lyra'sın. Kullanıcıya hazır şablon gibi değil, akıcı, yaratıcı, araştırmacı ve uygulanabilir cevap ver.
 
-    return avoidRepeat(`Başlık:
-${topic} için özgün ${socialPlatform} içerik fikri
-
-Hook:
-${pick(hooks)}
-
-Video Akışı:
-1. ${flow[0]}
-2. ${flow[1]}
-3. ${flow[2]}
-4. ${flow[3]}
-5. ${flow[4]}
-
-Konuşma Metni:
-“${topic} konusunda bence insanların en çok zorlandığı şey doğru bilgiden çok doğru anlatım biçimi. O yüzden önce problemi sade söylemek, sonra kısa bir çözüm vermek daha etkili oluyor. İzleyici kendini videoda görürse daha çok kalıyor, daha çok kaydediyor.”
-
-Caption:
-${topic} anlatırken bazen farkı bilgi değil, anlatım sırası yaratıyor.
-
-CTA:
-${cta}`);
-  }
-
-  function createSocialAssistantReply() {
-    const topic = socialTopic.trim() || 'içerik üretimi';
-
-    return avoidRepeat(`İçerik Asistanı
-
-Konu:
+Kullanıcının istediği konu:
 ${topic}
 
 Platform:
 ${socialPlatform}
 
-Hedef Kitle:
+Hedef kitle:
 ${socialAudience}
 
 Ton:
@@ -591,33 +550,206 @@ ${socialDuration}
 Amaç:
 ${socialGoal}
 
-3 Hook:
-1. ${pick([
-      `${topic} hakkında çoğu kişi aynı şeyi anlatıyor ama asıl kritik nokta başka.`,
-      `${topic} içeriğinde ilk 3 saniyeyi doğru kurarsan izlenme fark ediyor.`,
-      `${topic} konusunu daha ilgi çekici anlatmanın yolu bence buradan geçiyor.`,
-    ])}
-2. ${pick([
-      `Bunu duyanların yarısı fikrini değiştiriyor.`,
-      `${topic} konusunda en çok atlanan detay şu.`,
-      `Ben olsam ${topic} anlatırken böyle girerdim.`,
-    ])}
-3. ${pick([
-      `Kaydedilecek kısa rehber: ${topic}`,
-      `${topic} için hızlı ama etkili anlatım şekli`,
-      `${topic} konusunda daha akıllı bir yaklaşım`,
-    ])}
+Bu konu için gerçekten kaliteli sosyal medya içeriği hazırla.
+
+Kurallar:
+- Kullanıcının cümlesini tekrar etme.
+- Başlığı aynen kopyalama; konuyu yorumla.
+- "Bu konuda çoğu kişi..." kalıbını sürekli kullanma.
+- Konuyu gerçekten anla.
+- Eğer konu kozmetik/kimya/formül ise kimyager gibi ama sade anlat.
+- Eğer kullanıcı “ev tipi formül” diyorsa evde güvenli hazırlanabilecek, oranları mantıklı, risk uyarılı formül öner.
+- Eğer kullanıcı “10 içerik fikri” diyorsa gerçekten 10 farklı fikir ver.
+- Eğer kullanıcı “video metni” diyorsa teleprompter gibi okunabilir metin yaz.
+- Boş genel cümle verme.
+- Fikirler özgün olsun.
+- Türkçe yaz.
+
+Çıktı formatı:
+1. Kısa strateji
+2. 5 farklı hook
+3. Ana video metni
+4. Sahne sahne akış
+5. Ekran yazıları
+6. Caption
+7. CTA
+8. Ekstra içerik fikirleri
+9. Çekim önerisi
+10. Dikkat edilmesi gerekenler
+`;
+
+    try {
+      const aiAnswer = await askResearchApi(prompt);
+
+      if (
+        aiAnswer &&
+        !normalize(aiAnswer).includes('gercek ai henuz baglanmamis') &&
+        !normalize(aiAnswer).includes('gerçek ai henüz bağlanmamış') &&
+        !normalize(aiAnswer).includes('api key')
+      ) {
+        setSocialResult(aiAnswer);
+        return;
+      }
+
+      setSocialResult(createBetterLocalSocialReply(topic));
+    } catch {
+      setSocialResult(createBetterLocalSocialReply(topic));
+    }
+  }
+
+  function createBetterLocalSocialReply(topic: string) {
+    const cleanTopic = topic
+      .replace(/video metni hazırla/gi, '')
+      .replace(/anlatan/gi, '')
+      .replace(/tiktok/gi, '')
+      .replace(/reels/gi, '')
+      .replace(/için/gi, '')
+      .trim();
+
+    const low = cleanTopic.toLowerCase();
+
+    const isTenIdeas =
+      low.includes('10') ||
+      low.includes('on farklı') ||
+      low.includes('10 farklı') ||
+      low.includes('fikir');
+
+    const isFormula =
+      low.includes('formül') ||
+      low.includes('formul') ||
+      low.includes('ev tipi') ||
+      low.includes('serum') ||
+      low.includes('krem') ||
+      low.includes('tonik');
+
+    const isRetinol = low.includes('retinol') || low.includes('retinal');
+
+    if (isTenIdeas) {
+      return `Konu: ${cleanTopic || topic}
+
+10 Farklı İçerik Fikri:
+1. “Bu konuda herkesin yanlış bildiği 3 şey”
+2. “Yeni başlayanlar için basit rehber”
+3. “Ben olsam böyle başlardım”
+4. “En sık yapılan hata”
+5. “Ucuz/pahalı farkı gerçekten var mı?”
+6. “Kimler kullanmalı, kimler dikkat etmeli?”
+7. “1 dakikada sade anlatım”
+8. “Mit mi gerçek mi?”
+9. “Beklenti ve gerçek sonuç karşılaştırması”
+10. “Kaydetmelik kontrol listesi”
+
+En Güçlü Hook:
+“Bunu herkes konuşuyor ama çoğu kişi nereden başlayacağını bilmiyor.”
 
 Video Metni:
-“Bugün ${topic} hakkında herkesin aynı şekilde anlattığı ama bence farklı bir açıyla konuşulması gereken bir şeyden bahsedeceğim. Çünkü sorun çoğu zaman bilgi eksikliği değil, bilginin nasıl sunulduğu. İzleyici önce kendini görmeli, sonra sorunu net anlamalı, en sonda da küçük ama uygulanabilir bir çözüm almalı.”
+“Bugün bu konuyu karmaşık anlatmayacağım. Çünkü bazen en iyi içerik, her şeyi anlatan değil; izleyicinin kafasındaki ilk soruyu çözen içeriktir. Önce en sık yapılan hatayı göstereceğim, sonra doğru yaklaşımı vereceğim ve en sonda bunu nasıl uygulayabileceğini söyleyeceğim.”
+
+Caption:
+Bu listeyi kaydet; içerik üretirken fikir tıkandığında açıp bakarsın.
 
 CTA:
-${pick([
-      'Bunu kaydet.',
-      'Devamı gelsin mi?',
-      'İkinci kısmı ister misin?',
-      'Yorumlara hangi konuyu istediğini yaz.',
-    ])}`);
+Hangi fikrin metnini ayrıca yazayım?`;
+    }
+
+    if (isFormula) {
+      return `Konu: ${cleanTopic || topic}
+
+Kısa Strateji:
+Bu içeriği “evde yapılabilir ama bilinçsiz yapılmamalı” çizgisinde anlatmak daha güvenilir durur. Kozmetik formül konuşurken oran, hijyen, pH, saklama koşulu ve tahriş riskini mutlaka belirtmek gerekir.
+
+5 Hook:
+1. “Evde ürün yapmak kolay sanılıyor ama asıl mesele oran.”
+2. “Bu formülü yapmadan önce bilmen gereken 3 kimyager detayı var.”
+3. “Doğal diye cilde direkt sürmek her zaman masum değil.”
+4. “Ev tipi bakım ürünü yapacaksan önce bunu bil.”
+5. “Bir formülün işe yaraması için sadece içerik değil, denge önemli.”
+
+Video Metni:
+“Ev tipi kozmetik formül yaparken en büyük hata şu: insanlar sadece aktif maddeye odaklanıyor. Oysa bir ürünün ciltte iyi hissettirmesi için oran, çözünürlük, pH, koruyucu sistemi ve hijyen çok önemli. Mesela su içeren bir ürün yapıyorsan koruyucu olmadan uzun süre saklamak güvenli değildir. Yağ bazlı bir ürün daha kolay olabilir ama onda da komedojenite ve hassasiyet riski düşünülmeli. Yani evde formül yapılabilir ama ‘karıştır sürdüm’ mantığıyla değil; küçük oranlar, kısa kullanım ve dikkatli gözlemle yapılmalı.”
+
+Güvenli Ev Tipi Yaklaşım:
+- Su içeren ürünleri uzun süre saklama.
+- Küçük miktar hazırla.
+- Temiz kap kullan.
+- İlk kez kullanırken küçük bölgede dene.
+- Göz çevresi ve tahriş olmuş cilde uygulama.
+- Asit/retinoid gibi güçlü aktifleri ev formülünde rastgele kullanma.
+
+Caption:
+Ev tipi formül yaparken en önemli şey içerikten önce güvenlik ve oran. Kaydet, formül hazırlamadan önce dön bak.
+
+CTA:
+İstersen bir sonraki videoda güvenli yağ bazlı bakım formülü hazırlayayım.
+
+Çekim Önerisi:
+Beyaz masa, küçük beher/kase, spatül, yakın plan karıştırma sahnesi, ekranda “oran önemli” yazısı.`;
+    }
+
+    if (isRetinol) {
+      return `Konu: Retinol faydaları
+
+Kısa Strateji:
+Retinol içeriğini “gençleştirir” diye düz anlatmak yerine, cilt yenilenme döngüsü ve doğru kullanım üzerinden anlatırsan daha güvenilir durur.
+
+5 Hook:
+1. “Retinolü herkes duydu ama çoğu kişi yanlış kullanıyor.”
+2. “Retinol mucize değil; doğru kullanılırsa güçlü bir destek.”
+3. “Cildin daha pürüzsüz görünmesinin arkasında retinolün şu etkisi var.”
+4. “Retinol kullanacaksan önce bu 3 kuralı bil.”
+5. “Retinol fayda mı zarar mı? Cevap kullanım şeklinde.”
+
+Video Metni:
+“Retinol cilt bakımında en çok konuşulan içeriklerden biri. Bunun sebebi, cildin yenilenme sürecini desteklemesi ve zamanla daha pürüzsüz, daha dengeli bir görünüm sağlamaya yardımcı olması. Ama burada önemli bir nokta var: Retinol hızlı sonuç ürünü değildir. Yavaş başlanmalı, gece kullanılmalı ve gündüz mutlaka güneş kremiyle desteklenmeli. Eğer çok sık veya yüksek oranla başlanırsa kuruluk, kızarıklık ve hassasiyet yapabilir. Ben olsam retinole haftada 2 geceyle başlar, cildin tepkisine göre artırırdım.”
+
+Sahne Akışı:
+1. Ürünü veya retinol yazısını göster.
+2. “Herkes konuşuyor ama çoğu kişi yanlış başlıyor” de.
+3. 3 faydayı sırala: pürüz görünümü, ton eşitsizliği, ince çizgi görünümü.
+4. 3 kullanım kuralını ver.
+5. Güneş kremi vurgusuyla bitir.
+
+Ekran Yazıları:
+- Retinol hızlı değil, düzenli çalışır.
+- Gece kullan.
+- Az başla.
+- Gündüz SPF şart.
+
+Caption:
+Retinol kullanacaksan önce cildini dinle. Fazla sürmek daha iyi sonuç demek değil.
+
+CTA:
+Retinol başlangıç rutini ister misin?`;
+    }
+
+    return `Konu: ${cleanTopic || topic}
+
+Kısa Strateji:
+Bu konuyu düz bilgi gibi değil, izleyicinin aklındaki soruya cevap gibi anlatmak daha iyi çalışır. Önce merak uyandır, sonra sade açıklama ver, en sonunda uygulanabilir bir öneriyle kapat.
+
+5 Hook:
+1. “Bunu duyunca konuya bakışın değişebilir.”
+2. “Bu konunun en çok atlanan kısmı şu.”
+3. “Ben olsam bu konuya buradan başlardım.”
+4. “Bunu bilmeden karar verme.”
+5. “1 dakikada netleştirelim.”
+
+Video Metni:
+“Bugün ${cleanTopic || topic} konusunu sade bir şekilde anlatacağım. Çünkü bu konuda çok fazla bilgi var ama çoğu dağınık. Önce ne işe yaradığını, sonra kimler için uygun olduğunu, en son da nasıl daha doğru uygulanacağını bilmek gerekiyor. Ben olsam bu konuya tek bir yerden başlardım: beklentiyi doğru kurmak. Çünkü doğru beklenti yoksa en iyi yöntem bile hayal kırıklığı yaratabilir.”
+
+Caption:
+${cleanTopic || topic} hakkında sade, anlaşılır ve kaydetmelik mini rehber.
+
+CTA:
+Bu konunun detaylı listesini ister misin?`;
+  }
+
+  function createSmartContentIdea(topicRaw?: string) {
+    return createBetterLocalSocialReply(topicRaw || socialTopic || 'içerik fikri');
+  }
+
+  function createSocialAssistantReply() {
+    return createBetterLocalSocialReply(socialTopic || 'içerik üretimi');
   }
 
   function createDailyPlan() {
@@ -731,7 +863,7 @@ Konu öğrenmek = tanım + örnek + soru + tekrar`;
   function saveStudyNote() {
     const topic = studyTopic.trim();
     if (!topic || !studyResult.trim()) {
-      alert('Önce konu yazıp çıktı hazırla kankam.');
+      alert('Önce konu yazıp çıktı hazırla.');
       return;
     }
 
@@ -757,7 +889,7 @@ Konu öğrenmek = tanım + örnek + soru + tekrar`;
   function makeStudyPdf() {
     const content = studyResult.trim();
     if (!content) {
-      alert('Önce ders çıktısı hazırla kankam.');
+      alert('Önce ders çıktısı hazırla.');
       return;
     }
 
@@ -878,7 +1010,7 @@ ${imageRatio}`);
 
 Mod: ${pdfMode}
 
-Şu an seçme alanı hazır. İstersen sonra gerçek PDF okuma backend’i de bağlarız.`);
+Şu an seçme alanı hazır. Gerçek PDF okuma için ayrıca backend bağlanabilir.`);
   }
 
   function getEngagementComment() {
@@ -908,8 +1040,12 @@ Mod: ${pdfMode}
       return buildMemoryReply();
     }
 
-    if (includesAny(t, ['icerik', 'içerik', 'reels', 'tiktok', 'instagram', 'hook', 'caption'])) {
-      return createSmartContentIdea(userText);
+    if (includesAny(t, ['icerik', 'içerik', 'reels', 'tiktok', 'instagram', 'hook', 'caption', 'video metni'])) {
+      return createBetterLocalSocialReply(userText);
+    }
+
+    if (includesAny(t, ['formul', 'formül', 'ev tipi', 'serum', 'krem', 'tonik'])) {
+      return createBetterLocalSocialReply(userText);
     }
 
     if (includesAny(t, ['plan', 'bugun', 'bugün', 'gunluk', 'günlük'])) {
@@ -924,57 +1060,46 @@ Mod: ${pdfMode}
     if (includesAny(t, ['kamera', 'video', 'çekim', 'kayıt'])) {
       setActivePanel('video');
       return avoidRepeat(
-        'Video alanını açıyorum. Buradan oran seçebilir, kayıt yapabilir ve paylaşabilirsin. iPhone’da uygulama gibi görünmesi için bu sayfa mobilde app kartlarıyla açılıyor.'
+        'Video alanını açıyorum. Buradan oran seçebilir, kayıt yapabilir ve paylaşabilirsin. iPhone’da uygulama gibi görünmesi için mobil tasarım da aktif.'
       );
     }
 
     if (includesAny(t, ['uygulama', 'github', 'vercel', 'kod', 'page.tsx', 'route'])) {
       return avoidRepeat(
-        'Burada en mantıklı şey önce neyi değiştirmek istediğini tek cümlede netleştirmek. Sonra sana direkt “hangi dosyada neyi silip neyi yapıştıracağını” söylerim. Uygulama tarafında parça parça gitmek en güvenlisi.'
+        'Burada en mantıklı şey önce neyi değiştirmek istediğini tek cümlede netleştirmek. Sonra sana direkt hangi dosyada neyi silip neyi yapıştıracağını söylerim.'
       );
     }
 
-    if (includesAny(t, ['dizi', 'film', 'öner'])) {
-      return avoidRepeat(
-        'Kankam bu konuda sana düz liste değil, zevkine göre ayırarak öneri veririm. Mesela daha sürükleyici, daha duygusal, daha kült Türk dizileri diye ayırabiliriz. İstersen şimdi sana en iyi Türk dizilerini kategori kategori sayayım.'
-      );
-    }
+    return avoidRepeat(`Duydum: “${userText}”
 
-    if (includesAny(t, ['bunaldim', 'bunaldım', 'stres', 'yorgun', 'moral'])) {
-      return avoidRepeat(
-        'Önce şunu söyleyeyim: şu an her şeyi çözmek zorunda değilsin. Bir tık durmuş olman başarısızlık değil. İstersen birlikte bunu küçültelim; sana ya mini plan yapayım ya da sadece kafanı rahatlatacak tek bir adım seçelim.'
-      );
-    }
-
-    return avoidRepeat(`Duydum kankam: “${userText}”
-
-Bence burada en mantıklı şey önce ne istediğini tek net çıktıya çevirmek. İstersen bunu sana:
-- sohbet gibi konuşarak,
-- liste halinde,
-- içerik metni gibi,
-- ders notu gibi
-hazırlayabilirim.
-
-Ne taraftan gidelim?`);
+Bunu daha iyi cevaplamak için önce niyeti netleştiririm: bilgi mi istiyorsun, içerik mi, plan mı, yoksa uygulama adımı mı? Bana bir cümle daha verirsen bunu doğrudan işe yarar bir çıktıya çevireyim.`);
   }
 
   async function createLyraReply(userText: string) {
     const text = userText.trim();
+    const normalized = normalize(text);
 
     if (
-      normalize(text).includes('hatırlıyor musun') ||
-      normalize(text).includes('hatirliyor musun') ||
-      normalize(text).includes('daha önce') ||
-      normalize(text).includes('daha once') ||
-      normalize(text).includes('ne sormuştum') ||
-      normalize(text).includes('ne sormustum')
+      normalized.includes('hatırlıyor musun') ||
+      normalized.includes('hatirliyor musun') ||
+      normalized.includes('daha önce') ||
+      normalized.includes('daha once') ||
+      normalized.includes('ne sormuştum') ||
+      normalized.includes('ne sormustum')
     ) {
       return buildMemoryReply();
     }
 
     if (researchMode) {
       const researched = await askResearchApi(text);
-      if (researched) return avoidRepeat(researched);
+      if (
+        researched &&
+        !normalize(researched).includes('gercek ai henuz baglanmamis') &&
+        !normalize(researched).includes('gerçek ai henüz bağlanmamış') &&
+        !normalize(researched).includes('api key')
+      ) {
+        return avoidRepeat(researched);
+      }
     }
 
     return buildFriendlyFallbackReply(text);
@@ -1510,12 +1635,12 @@ Ne taraftan gidelim?`);
       return (
         <section className="panel-card glass">
           <h2>İçerik Asistanı</h2>
-          <p className="muted">Hook, video metni, caption ve CTA üretir.</p>
+          <p className="muted">Hook, video metni, caption ve CTA üretir. Artık konu metnini tekrarlamaz; yorumlar ve üretir.</p>
 
           <div className="form-grid">
             <label>
               Konu
-              <input value={socialTopic} onChange={(e) => setSocialTopic(e.target.value)} placeholder="Örn: retinol" />
+              <input value={socialTopic} onChange={(e) => setSocialTopic(e.target.value)} placeholder="Örn: retinol faydaları / ev tipi formül / 10 içerik fikri" />
             </label>
 
             <label>
@@ -1567,10 +1692,19 @@ Ne taraftan gidelim?`);
           </div>
 
           <div className="toolbar">
-            <button className="primary" onClick={() => setSocialResult(createSocialAssistantReply())}>
+            <button className="primary" onClick={generateSocialWithAi}>
               İçerik Üret
             </button>
-            <button onClick={() => setSocialResult(createSmartContentIdea(socialTopic))}>
+            <button
+              onClick={() => {
+                const topic = socialTopic.trim();
+                if (!topic) {
+                  setSocialResult('Önce konu yaz. Mesela: “10 retinol içerik fikri”, “ev tipi formül”, “leke karşıtı serum anlatımı” gibi.');
+                  return;
+                }
+                setSocialResult(createBetterLocalSocialReply(topic));
+              }}
+            >
               Alternatif Fikir
             </button>
           </div>
