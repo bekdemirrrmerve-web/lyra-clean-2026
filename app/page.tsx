@@ -1,11 +1,21 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type Message = {
   role: 'user' | 'lyra';
   text: string;
 };
+
+type ToolKey =
+  | 'Teleprompter'
+  | 'Video Çekim'
+  | 'İçerik Fikri'
+  | 'Etkileşim'
+  | 'DGS Planı'
+  | 'Kozmetik'
+  | 'Notlar'
+  | 'Görsel Prompt';
 
 declare global {
   interface Window {
@@ -18,21 +28,32 @@ export default function Page() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'lyra',
-      text: 'Buradayım kankam. İstersen sesli konuşabiliriz, içerik fikri üretebiliriz ya da kamerayı açıp teleprompter ile çekim yapabiliriz.',
+      text:
+        'Buradayım kankam. Sesli konuşabiliriz, DGS planı yapabiliriz, içerik fikri çıkarabiliriz ya da kamerayı açıp teleprompter ile çekime geçebiliriz.',
     },
   ]);
 
-  const [input, setInput] = useState('');
+  const [chatInput, setChatInput] = useState('');
   const [voiceReplyOn, setVoiceReplyOn] = useState(true);
+  const [voiceLoopOn, setVoiceLoopOn] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
+
+  const [selectedMood, setSelectedMood] = useState('Calm');
+  const [selectedTheme, setSelectedTheme] = useState('Rose');
+  const [selectedAvatar, setSelectedAvatar] = useState('Lyra');
 
   const [teleText, setTeleText] = useState(
-    'Merhaba kankalar, bugün size gerçekten işinize yarayacak kısa ama etkili bir öneriyle geldim...'
+    'Merhaba kankalar, bugün size kısa ama gerçekten işe yarayan bir bilgiden bahsedeceğim. Hazırsanız başlayalım...'
   );
 
   const [ideaTopic, setIdeaTopic] = useState('kozmetik');
   const [ideaPlatform, setIdeaPlatform] = useState('TikTok');
   const [ideaResult, setIdeaResult] = useState('');
+
+  const [noteText, setNoteText] = useState('');
+  const [visualPrompt, setVisualPrompt] = useState('');
+  const [visualResult, setVisualResult] = useState('');
 
   const [followers, setFollowers] = useState('11900');
   const [views, setViews] = useState('2100');
@@ -41,24 +62,21 @@ export default function Page() {
   const [saves, setSaves] = useState('32');
   const [shares, setShares] = useState('18');
 
-  const [noteText, setNoteText] = useState('');
-  const [visualPrompt, setVisualPrompt] = useState('');
-  const [visualResult, setVisualResult] = useState('');
-
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [recording, setRecording] = useState(false);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState('');
 
-  const [smoothness, setSmoothness] = useState(18);
-  const [glow, setGlow] = useState(12);
+  const [smoothness, setSmoothness] = useState(12);
+  const [glow, setGlow] = useState(16);
   const [whiten, setWhiten] = useState(10);
-  const [saturation, setSaturation] = useState(10);
+  const [saturation, setSaturation] = useState(12);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const voiceLoopRef = useRef(false);
 
   const totalEngagement =
     Number(likes || 0) +
@@ -71,12 +89,27 @@ export default function Page() {
     : '0.00';
 
   const beautyFilter = useMemo(() => {
-    const blur = smoothness / 40;
+    const blur = smoothness / 50;
     const brightness = 1 + (glow + whiten) / 100;
-    const contrast = 1 + whiten / 140;
+    const contrast = 1 + whiten / 120;
     const saturate = 1 + saturation / 100;
     return `brightness(${brightness}) contrast(${contrast}) saturate(${saturate}) blur(${blur}px)`;
   }, [smoothness, glow, whiten, saturation]);
+
+  const tools: { title: ToolKey; icon: string; desc: string }[] = [
+    { title: 'Teleprompter', icon: '📝', desc: 'Metin yaz, okut, çekime hazırla' },
+    { title: 'Video Çekim', icon: '🎥', desc: 'Kamera, efekt, kayıt ve overlay' },
+    { title: 'İçerik Fikri', icon: '💡', desc: 'Hook, akış, CTA, caption' },
+    { title: 'Etkileşim', icon: '📈', desc: 'Oran ve performans yorumu' },
+    { title: 'DGS Planı', icon: '📚', desc: 'Ders planı ve konu özeti' },
+    { title: 'Kozmetik', icon: '🧪', desc: 'Kimyager gözüyle içerik fikri' },
+    { title: 'Notlar', icon: '🗒️', desc: 'Not toparla ve listeye çevir' },
+    { title: 'Görsel Prompt', icon: '✨', desc: 'Kapak ve görsel fikri üret' },
+  ];
+
+  useEffect(() => {
+    voiceLoopRef.current = voiceLoopOn;
+  }, [voiceLoopOn]);
 
   useEffect(() => {
     return () => {
@@ -88,6 +121,298 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function normalize(text: string) {
+    return text
+      .toLocaleLowerCase('tr-TR')
+      .replaceAll('ı', 'i')
+      .replaceAll('ğ', 'g')
+      .replaceAll('ü', 'u')
+      .replaceAll('ş', 's')
+      .replaceAll('ö', 'o')
+      .replaceAll('ç', 'c');
+  }
+
+  function includesAny(text: string, words: string[]) {
+    return words.some((word) => text.includes(word));
+  }
+
+  function createDgsTemelKavramlar() {
+    return `Tamam kankam, DGS temel kavramlar için hızlı ama işe yarar özet geliyor:
+
+1. Sayı kümeleri
+Doğal sayılar: 0, 1, 2, 3...
+Tam sayılar: negatifler, 0 ve pozitifler.
+Rasyonel sayılar: kesirli yazılabilen sayılar.
+İrrasyonel sayılar: kök 2, pi gibi kesirli yazılamayanlar.
+Gerçek sayılar: rasyonel + irrasyonel tüm sayılar.
+
+2. Tek - çift sayılar
+Çift sayı: 2 ile tam bölünür.
+Tek sayı: 2 ile tam bölünmez.
+Kural:
+Çift + çift = çift
+Tek + tek = çift
+Tek + çift = tek
+Tek x tek = tek
+İçinde bir tane çift çarpan varsa sonuç çifttir.
+
+3. Pozitif - negatif
+Aynı işaretli çarpım/bölüm pozitif.
+Zıt işaretli çarpım/bölüm negatif.
+Toplamada büyük olanın işareti baskın çıkar.
+
+4. Ardışık sayılar
+Ardışık tam sayılar: n, n+1, n+2
+Ardışık çift sayılar: n, n+2, n+4
+Ardışık tek sayılar: n, n+2, n+4
+
+5. Basamak kavramı
+abc üç basamaklı sayısı:
+100a + 10b + c şeklinde yazılır.
+DGS’de basamak sorularında bu açılım çok iş görür.
+
+6. Bölme mantığı
+Bölünen = Bölen x Bölüm + Kalan
+Kalan her zaman bölenden küçüktür.
+
+Mini çalışma:
+Şimdi 20 dakika bu özeti oku, sonra 15 temel kavram sorusu çöz. Yanlışlarının yanına “neden kaçırdım?” diye not düş. Niko gibi söyleyeyim: panik yok, bu iş gözümüzde büyüdüğü kadar ejderha değil kankam.`;
+  }
+
+  function createDgsPlan() {
+    return `Kankam sana net 1 saatlik DGS planı yazıyorum:
+
+00:00 - 05:00
+Telefonu uzaklaştır, suyu koy, sadece bugünün konusunu seç.
+
+05:00 - 25:00
+Matematik temel kavramlar konu tekrarı:
+- sayı kümeleri
+- tek/çift
+- pozitif/negatif
+- ardışık sayılar
+- basamak kavramı
+
+25:00 - 45:00
+15 soru çöz. Hız yapma, doğru düşün.
+
+45:00 - 55:00
+5 paragraf sorusu çöz. Ana fikir bulmaya odaklan.
+
+55:00 - 60:00
+Yanlış analizi yap:
+Konu eksiği mi?
+Dikkat hatası mı?
+İşlem hatası mı?
+
+Bugünün hedefi: “mükemmel çalışma” değil, “çalışma düzenini tekrar başlatma”. Bence çok iyi başlangıç olur.`;
+  }
+
+  function createContentIdea(text: string) {
+    const topic = ideaTopic || text || 'kozmetik';
+    return `${ideaPlatform} için içerik fikri:
+
+Hook:
+“Bunu herkes kullanıyor ama çoğu kişi neden işe yaradığını bilmiyor.”
+
+Akış:
+1. İlk 3 saniye: Ürünü/konuyu göster.
+2. Problem: “Yanlış kullanınca etkisi azalabilir.”
+3. Kimyager yorumu: İçerikteki mantığı sade anlat.
+4. Mini çözüm: “Şöyle kullanırsan daha mantıklı olur.”
+5. CTA: “Devamı gelsin mi?”
+
+Caption:
+${topic} konusunda çoğu kişinin kaçırdığı nokta bu olabilir. Kaydet, sonra lazım olur.
+
+Ben olsam bu videoyu 35-45 saniye tutardım. Çok uzatma; vur, anlat, çık.`;
+  }
+
+  function createTeleprompter() {
+    return `Teleprompter metni:
+
+“Bugün size çoğu kişinin fark etmeden yaptığı küçük ama önemli bir hatadan bahsedeceğim.
+
+Bir ürünü sadece popüler diye kullanmak yetmez. İçeriğine, kullanım sıklığına ve hangi ürünlerle birlikte kullanıldığına bakmak gerekir.
+
+Ben kimyager gözüyle baktığımda şunu görüyorum: Bazen ürün kötü değildir, kullanım şekli yanlıştır.
+
+O yüzden cilt bakımında en pahalı ürün değil, en doğru rutin fark yaratır.
+
+Devamında bu ürünlerin içeriklerini tek tek analiz etmemi ister misiniz?”`;
+  }
+
+  function createVideoPlan() {
+    return `Video çekim planı:
+
+1. İlk 3 saniye:
+“Bunu çoğu kişi yanlış yapıyor olabilir.”
+
+2. Kadraj:
+Telefon dikey 9:16, yüzün aydınlık, arka plan sade.
+
+3. Akış:
+- Yakın plan giriş
+- Ürün/konu gösterimi
+- 2 cümle bilimsel açıklama
+- 1 cümle kişisel yorum
+- CTA
+
+4. CTA:
+“Bunu sen de böyle mi kullanıyordun?”
+
+5. Kapak yazısı:
+“Kimyager gözüyle: doğru mu yanlış mı?”
+
+Bence bunu tek çekimde değil, 3 kısa parça halinde çek. Daha dinamik olur.`;
+  }
+
+  function createKozmetikReply(text: string) {
+    return `Kozmetik tarafında ben bunu şöyle ele alırdım:
+
+Önce ürünün vaadine bak:
+- Nem mi?
+- Leke görünümü mü?
+- Bariyer desteği mi?
+- Akneye eğilimli cilt mi?
+- Aydınlık görünüm mü?
+
+Sonra içerik tarafı:
+- Niacinamide: ton eşitleme ve bariyer desteği
+- Panthenol: yatıştırma
+- Hyaluronic acid: nem
+- Seramid: bariyer
+- Retinol/retinal: yaşlanma karşıtı görünüm
+- AHA/BHA: pürüz ve gözenek görünümü
+
+İçerik fikri:
+“Bu aktif maddeyi herkes duydu ama ne zaman kullanılacağını bilen az.”
+
+Sen bana ürün adını veya INCI listesini yazarsan onu daha net parçalarım kankam.`;
+  }
+
+  function createMoralReply() {
+    return `Kankam önce bir nefes. Şu an her şeyin üst üste gelmiş gibi hissettirmesi çok normal.
+
+Bugün kendinden dev performans bekleme. Sadece sistemi yeniden aç:
+1. Küçük bir işi seç.
+2. 10 dakika yap.
+3. Bitince “tamam, geri döndüm” de.
+
+Ben olsam bugün kendime kızmak yerine “küçük adımla toparlanıyorum” derdim. Niko usulü söyleyeyim: dramayı azaltıyoruz, aksiyonu başlatıyoruz.`;
+  }
+
+  function createKombinReply() {
+    return `Bence üç seçenek var:
+
+Soft fresh:
+Krem pantolon, beyaz üst, pudra/bej hırka, nude makyaj.
+
+Cool:
+Siyah pantolon, oversize gömlek, toplu saç, ince eyeliner.
+
+Feminen:
+V yaka bluz, açık ton pantolon, zarif kolye, parlak dudak.
+
+Kamera karşısında ben soft fresh seçerdim. Hem temiz hem güven veren hem de çok yormayan bir hava verir.`;
+  }
+
+  function localLyraReply(userText: string) {
+    const t = normalize(userText);
+
+    if (!t) return 'Buradayım kankam, bir şey yaz ya da sesli söyle.';
+
+    if (includesAny(t, ['nap', 'napiyorsun', 'napiyosun', 'ne yapiyorsun'])) {
+      return 'Seni bekliyorum kankam. Bir elimde plan, bir elimde içerik fikri, gözüm de kamerada. Bugün neyi birlikte çözüyoruz?';
+    }
+
+    if (
+      includesAny(t, [
+        'dgs',
+        'temel kavram',
+        'matematik',
+        'ders',
+        'sinav',
+        'calisma',
+        'not',
+        'ozet',
+      ])
+    ) {
+      if (includesAny(t, ['temel kavram', 'not', 'ozet'])) {
+        return createDgsTemelKavramlar();
+      }
+      return createDgsPlan();
+    }
+
+    if (
+      includesAny(t, [
+        'icerik',
+        'reels',
+        'tiktok',
+        'instagram',
+        'hook',
+        'kanca',
+        'caption',
+        'video fikri',
+      ])
+    ) {
+      return createContentIdea(userText);
+    }
+
+    if (includesAny(t, ['teleprompter', 'metin', 'script', 'konusma metni'])) {
+      return createTeleprompter();
+    }
+
+    if (includesAny(t, ['video', 'cek', 'kamera', 'kayit', 'çekim'])) {
+      return createVideoPlan();
+    }
+
+    if (
+      includesAny(t, [
+        'kozmetik',
+        'cilt',
+        'krem',
+        'serum',
+        'inci',
+        'formul',
+        'retinol',
+        'niacinamide',
+      ])
+    ) {
+      return createKozmetikReply(userText);
+    }
+
+    if (includesAny(t, ['moral', 'motivasyon', 'bunaldim', 'yorgun', 'kotu', 'stres'])) {
+      return createMoralReply();
+    }
+
+    if (includesAny(t, ['kombin', 'kiyafet', 'makyaj', 'sac', 'stil'])) {
+      return createKombinReply();
+    }
+
+    if (includesAny(t, ['plan', 'bugun ne yap', 'gunluk'])) {
+      return `Bugün için mini plan:
+
+1. Önce tek ana hedef seç.
+2. 25 dakika odak çalışma yap.
+3. 10 dakika içerik fikri çıkar.
+4. 1 kısa video ya da not hazırla.
+5. Akşam 5 dakika “bugün ne yaptım?” kontrolü yap.
+
+Kankam bugün hedef her şeyi bitirmek değil; kontrol hissini geri almak.`;
+    }
+
+    return `Duydum kankam: “${userText}”
+
+Bunu sana dört şekilde çevirebilirim:
+1. kısa cevap
+2. plan
+3. içerik fikri
+4. teleprompter metni
+
+Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
+  }
+
   function speak(text: string) {
     if (!voiceReplyOn || typeof window === 'undefined' || !window.speechSynthesis) return;
 
@@ -96,66 +421,39 @@ export default function Page() {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'tr-TR';
     utterance.rate = 1;
-    utterance.pitch = 1.05;
+    utterance.pitch = 1.04;
 
     const voices = window.speechSynthesis.getVoices();
     const trVoice =
-      voices.find((v) => v.lang?.toLowerCase().includes('tr')) || voices[0];
+      voices.find((voice) => voice.lang?.toLowerCase().includes('tr')) ||
+      voices.find((voice) => voice.name?.toLowerCase().includes('female')) ||
+      voices[0];
+
     if (trVoice) utterance.voice = trVoice;
+
+    utterance.onend = () => {
+      if (voiceLoopRef.current) {
+        setTimeout(() => startListening(), 650);
+      }
+    };
 
     window.speechSynthesis.speak(utterance);
   }
 
-  function localLyraReply(text: string) {
-    const t = text.toLowerCase().trim();
-
-    if (
-      t.includes('merhaba') ||
-      t.includes('selam') ||
-      t.includes('naber') ||
-      t === 'hi'
-    ) {
-      return 'Merhaba kankam, ben iyiyim. Bugün ne yapıyoruz? İçerik mi, sohbet mi, yoksa çekim mi?';
-    }
-
-    if (t.includes('içerik') || t.includes('fikir')) {
-      return 'Bence bugün en iyi içerik açısı: merak uyandıran kısa bir giriş, ardından mini bir bilgi ve en sonda kaydetmeye yönlendiren bir CTA. İstersen sana direkt konuya göre hazır metin de çıkarırım.';
-    }
-
-    if (t.includes('moral') || t.includes('kötü') || t.includes('üzgün')) {
-      return 'Kankam biraz yorulmuş gibisin. Kendine bu kadar yüklenme. Bugün her şeyi mükemmel yapmak zorunda değilsin. Bir şeyi bile bitirmen yeterli.';
-    }
-
-    if (t.includes('teleprompter')) {
-      return 'Teleprompter için kısa, akıcı ve doğal cümleler en iyi çalışır. Ben olsam ilk 3 saniyeye direkt dikkat çeken tek cümle koyardım.';
-    }
-
-    if (t.includes('video') || t.includes('çekim')) {
-      return 'Video çekerken en iyi kombin: net ışık, kısa hook, orta bölümde değerli bilgi ve sonda çağrı. İstersen sana saniye saniye akış da veririm.';
-    }
-
-    if (t.includes('kozmetik') || t.includes('cilt') || t.includes('kimya')) {
-      return 'Bu konuda kimyager bakış açısı seni zaten farklılaştırıyor. “Herkes bunu böyle sanıyor ama işin kimyası farklı” gibi bir giriş çok güçlü olur.';
-    }
-
-    if (t.includes('plan')) {
-      return 'Bugün için mini plan: 1) bir içerik fikri seç, 2) teleprompter metnini yaz, 3) bir kısa video çek, 4) paylaşmadan önce kapağı düşün. Küçük ama net gidelim.';
-    }
-
-    return 'Kankam bunu birlikte toparlayabiliriz. İstersen bunu içerik fikrine, yapılacak plana, teleprompter metnine ya da kısa bir cevaba çevireyim.';
-  }
-
   function sendMessage(customText?: string) {
-    const raw = customText ?? input;
+    const raw = customText ?? chatInput;
     const text = raw.trim();
     if (!text) return;
 
-    const userMsg: Message = { role: 'user', text };
     const reply = localLyraReply(text);
-    const lyraMsg: Message = { role: 'lyra', text: reply };
 
-    setMessages((prev) => [...prev, userMsg, lyraMsg]);
-    setInput('');
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', text },
+      { role: 'lyra', text: reply },
+    ]);
+
+    setChatInput('');
     speak(reply);
   }
 
@@ -164,43 +462,34 @@ export default function Page() {
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognitionCtor) {
-      alert('Bu tarayıcıda ücretsiz konuşma algılama desteklenmiyor kankam. Chrome veya Safari dene.');
+      alert('Bu tarayıcı ses algılamayı desteklemiyor kankam. Chrome veya Safari ile dene.');
       return;
     }
 
     try {
+      window.speechSynthesis?.cancel();
+
       const recognition = new SpeechRecognitionCtor();
       recognition.lang = 'tr-TR';
       recognition.continuous = false;
       recognition.interimResults = false;
 
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
+      recognition.onstart = () => setIsListening(true);
 
       recognition.onresult = (event: any) => {
         const transcript = event?.results?.[0]?.[0]?.transcript || '';
-        setInput(transcript);
         setIsListening(false);
-
-        if (transcript) {
-          setTimeout(() => sendMessage(transcript), 250);
-        }
+        if (transcript) sendMessage(transcript);
       };
 
-      recognition.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
+      recognition.onerror = () => setIsListening(false);
+      recognition.onend = () => setIsListening(false);
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch {
       setIsListening(false);
-      alert('Ses başlatılırken küçük bir sorun oldu kankam.');
+      alert('Sesli mod başlatılamadı kankam. Tarayıcı iznini kontrol et.');
     }
   }
 
@@ -232,16 +521,14 @@ export default function Page() {
       setCameraActive(true);
     } catch {
       setCameraError(
-        'Kamera açılamadı kankam. Tarayıcı izinlerini kontrol et ve uygulamayı HTTPS/Vercel linkinden aç.'
+        'Kamera açılamadı kankam. Tarayıcı izinlerini kontrol et ve uygulamayı Vercel HTTPS linkinden aç.'
       );
     }
   }
 
   function stopCamera() {
     try {
-      if (recording) {
-        mediaRecorderRef.current?.stop();
-      }
+      if (recording) mediaRecorderRef.current?.stop();
 
       const video = videoRef.current;
       if (video?.srcObject) {
@@ -276,7 +563,6 @@ export default function Page() {
       }
 
       recordedChunksRef.current = [];
-
       const stream = video.srcObject as MediaStream;
 
       let mimeType = '';
@@ -294,7 +580,7 @@ export default function Page() {
       );
 
       recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
+        if (event.data?.size > 0) {
           recordedChunksRef.current.push(event.data);
         }
       };
@@ -310,120 +596,306 @@ export default function Page() {
       mediaRecorderRef.current = recorder;
       recorder.start();
       setRecording(true);
+      setCameraError('');
     } catch {
       setCameraError(
-        'Bu tarayıcıda kayıt özelliği tam desteklenmiyor olabilir kankam. Önizleme çalışır ama kayıt bazı telefonlarda naz yapabilir.'
+        'Bu tarayıcı video kaydını tam desteklemiyor olabilir. Kamera çalışır ama kayıt bazı telefonlarda naz yapabilir.'
       );
     }
   }
 
   function generateIdea() {
-    const topic = ideaTopic.trim() || 'kozmetik';
-    const platform = ideaPlatform;
-
-    const result = `${platform} için içerik fikri
-
-Hook:
-“${topic} konusunda çoğu kişinin bilmediği şeyi şimdi anlatıyorum...”
-
-Akış:
-1. İlk 3 saniyede dikkat çeken cümle
-2. Problemi söyle
-3. Kısa ama net bilgi ver
-4. Kendi yorumunu kat
-5. Sonunda kaydet / yorum CTA'sı
-
-CTA:
-“Bunu kaydet kankam, sonra lazım olur.”
-“İstersen bunun devamını da yaparım.”
-
-Caption:
-“${topic} konusunda en çok karıştırılan noktalardan biri bu olabilir. Ben olsam bunu özellikle not alırdım.”`;
-
+    const result = createContentIdea(ideaTopic);
     setIdeaResult(result);
   }
 
-  function generateTeleprompter() {
-    const text = `Kankam bugün sana kısa ama çok işe yarayan bir bilgi vereceğim. 
-Çoğu kişi bu kısmı atlıyor ama aslında işin püf noktası burada. 
-Eğer bunu doğru yaparsan sonuç çok daha iyi olur. 
-İstersen bunun devamını da yaparım, kaydetmeyi unutma.`;
-
+  function generateTeleText() {
+    const text = createTeleprompter();
     setTeleText(text);
   }
 
-  function summarizeNote() {
-    if (!noteText.trim()) return;
-
-    const summary = `Not özeti:
-- Ana konu: ${noteText.slice(0, 80)}...
-- Yapılacak ilk iş: öncelikli kısmı seç
-- Sonraki iş: bunu kısa eylem listesine çevir
-- Benim fikrim: çok dağıtmadan önce tek bir hedefe odaklan`;
-
-    alert(summary);
+  function createVisualPrompt() {
+    const base = visualPrompt.trim() || 'Sirius AI premium sosyal medya kapağı';
+    setVisualResult(
+      `Premium, mistik, sıcak ışıklı, modern bir ${base}. Soft pembe, altın, kahve tonları. Şık UI kartları, yıldız sembolü, zarif tipografi, yüksek kaliteli sosyal medya kapağı.`
+    );
   }
 
-  function generateVisualPrompt() {
-    const base = visualPrompt.trim() || 'kozmetik içerik kapağı';
-    const result = `Görsel prompt:
-“Premium, estetik, modern bir ${base} tasarımı. Yumuşak ışık, şık tipografi, temiz kompozisyon, sosyal medya kapağı görünümü, dikkat çekici ama zarif.”`;
+  function summarizeNote() {
+    if (!noteText.trim()) {
+      alert('Önce not yaz kankam.');
+      return;
+    }
 
-    setVisualResult(result);
+    alert(
+      `Not özeti:\n\n${noteText.slice(
+        0,
+        140
+      )}...\n\nİlk yapılacak: bunu 3 küçük adıma böl.\nBenim fikrim: önce en kolay kısmı yap, sonra devamı gelir.`
+    );
+  }
+
+  function openTool(tool: ToolKey) {
+    setActiveTool(tool);
+    if (tool !== 'Video Çekim') stopCamera();
   }
 
   return (
     <main className="page">
-      <div className="container">
-        <header className="hero card">
-          <div>
-            <div className="eyebrow">Sirius AI ✦ Lyra</div>
-            <h1>Tek Dosyalık Final Sürüm</h1>
-            <p>
-              Sesli konuşma, kamera, teleprompter, güzelleştirici efekt,
-              kayıt, içerik araçları ve günlük kullanım ekranı.
-            </p>
+      <div className="shell">
+        <header className="topbar glass">
+          <div className="brand">
+            <div className="star">✦</div>
+            <div>
+              <h1>Sirius AI</h1>
+              <p>Seninle, her adımda.</p>
+            </div>
           </div>
 
-          <div className="hero-actions">
-            <button className="primary" onClick={startListening}>
-              {isListening ? 'Dinliyor...' : '🎙️ Sesli Başlat'}
-            </button>
+          <div className="top-actions">
             <button
-              className="secondary"
+              className={isListening ? 'pill active' : 'pill'}
+              onClick={isListening ? stopListening : startListening}
+            >
+              {isListening ? '🎙️ Dinliyorum' : '🎙️ Sesli Konuş'}
+            </button>
+
+            <button
+              className={voiceLoopOn ? 'pill active' : 'pill'}
+              onClick={() => setVoiceLoopOn((prev) => !prev)}
+            >
+              {voiceLoopOn ? '🔁 Karşılıklı Açık' : '🔁 Karşılıklı Konuş'}
+            </button>
+
+            <button
+              className={voiceReplyOn ? 'pill active' : 'pill'}
               onClick={() => {
                 setVoiceReplyOn((prev) => !prev);
                 window.speechSynthesis?.cancel();
               }}
             >
-              {voiceReplyOn ? '🔊 Sesli Cevap Açık' : '🔇 Sesli Cevap Kapalı'}
+              {voiceReplyOn ? '🔊 Ses Açık' : '🔇 Ses Kapalı'}
             </button>
+
+            <div className="profile">M</div>
           </div>
         </header>
 
-        <section className="grid top-grid">
-          <div className="card chat-card">
-            <div className="section-head">
-              <h2>Lyra Sohbet</h2>
-              <span>{isListening ? 'Canlı dinleme' : 'Hazır'}</span>
+        <section className="hero-grid">
+          <aside className="left-stack">
+            <div className="side-card glass">
+              <h3>Canlı Sesli Sohbet</h3>
+              <div className="wave">
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+              <p>{isListening ? 'Seni dinliyorum...' : 'Hazırım kankam.'}</p>
+              <button className="round" onClick={isListening ? stopListening : startListening}>
+                🎙️
+              </button>
             </div>
 
+            <div className="side-card glass">
+              <h3>Canlı Görüntülü Ara</h3>
+              <p>Kamera + teleprompter moduna geç.</p>
+              <button className="round" onClick={() => openTool('Video Çekim')}>
+                📹
+              </button>
+            </div>
+
+            <div className="side-card glass">
+              <h3>Hadi kahve? ☕</h3>
+              <p>Yumuşak mod, sakin sohbet, küçük plan.</p>
+              <button
+                className="soft-button"
+                onClick={() => {
+                  const reply =
+                    'Kahve modu açıldı kankam. Bugün dramatik dağılma yok; küçük küçük toparlıyoruz. Ne yapıyoruz?';
+                  setMessages((prev) => [...prev, { role: 'lyra', text: reply }]);
+                  speak(reply);
+                }}
+              >
+                Kahve Modu
+              </button>
+            </div>
+
+            <div className="side-card glass">
+              <h3>Karakter</h3>
+              <div className="chips">
+                {['Lyra', 'Niko Vibe', 'Soft', 'Enerjik'].map((item) => (
+                  <button
+                    key={item}
+                    className={selectedAvatar === item ? 'chip selected' : 'chip'}
+                    onClick={() => setSelectedAvatar(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+
+          <section className="avatar-stage glass">
+            <div className="stage-top">
+              <span className="live-dot">● CANLI MOD</span>
+              <div>
+                <button>⛶</button>
+                <button>⋮</button>
+              </div>
+            </div>
+
+            <div className="avatar-body">
+              <div className="avatar-orb">
+                <div className="face">😊</div>
+              </div>
+
+              <div className="avatar-text">
+                <h2>{selectedAvatar}</h2>
+                <p>
+                  Sesli konuşma, içerik fikri, DGS planı, teleprompter,
+                  kamera çekimi ve günlük destek için buradayım.
+                </p>
+              </div>
+            </div>
+
+            <div className="stage-controls">
+              <button onClick={startListening}>🎙️ Konuş</button>
+              <button onClick={() => openTool('Video Çekim')}>📷 Kamera</button>
+              <button onClick={() => sendMessage('Bugün ne yapmalıyım?')}>
+                ✨ Plan Yap
+              </button>
+              <button onClick={() => sendMessage('DGS temel kavramlar özet')}>
+                📚 DGS Özet
+              </button>
+            </div>
+          </section>
+
+          <aside className="right-stack">
+            <div className="side-card glass">
+              <div className="theme-row">
+                <span>Tema</span>
+                <div className="chips">
+                  {['Rose', 'Dark', 'Gold'].map((theme) => (
+                    <button
+                      key={theme}
+                      className={selectedTheme === theme ? 'chip selected' : 'chip'}
+                      onClick={() => setSelectedTheme(theme)}
+                    >
+                      {theme}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="side-card glass">
+              <h3>Görünüm Özelleştirme</h3>
+
+              <div className="custom-line">
+                <span>Saç Rengi</span>
+                <div className="dots">
+                  <i className="d1" />
+                  <i className="d2" />
+                  <i className="d3" />
+                  <i className="d4" />
+                  <i className="d5" />
+                </div>
+              </div>
+
+              <div className="custom-line">
+                <span>Göz Rengi</span>
+                <div className="dots">
+                  <i className="e1" />
+                  <i className="e2" />
+                  <i className="e3" />
+                  <i className="e4" />
+                  <i className="e5" />
+                </div>
+              </div>
+
+              <div className="mini-grid">
+                <div>Dağınık Topuz</div>
+                <div>Günlük Şık</div>
+                <div>Soft Glow</div>
+                <div>Kamera Modu</div>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section className="section glass">
+          <div className="section-head">
+            <div>
+              <h2>Ruh Hali & Tema Seçimi</h2>
+              <p>Lyra’nın ekran havasını seç.</p>
+            </div>
+          </div>
+
+          <div className="mood-grid">
+            {[
+              ['Calm', 'Sakin'],
+              ['Energetic', 'Enerjik'],
+              ['Elegant', 'Zarif'],
+              ['Casual', 'Rahat'],
+            ].map(([mood, label]) => (
+              <button
+                key={mood}
+                className={selectedMood === mood ? 'mood selected' : 'mood'}
+                onClick={() => setSelectedMood(mood)}
+              >
+                <strong>{mood}</strong>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="section glass">
+          <div className="section-head">
+            <div>
+              <h2>Stüdyo Araçları</h2>
+              <p>Video, içerik, DGS, not, görsel ve analiz araçları.</p>
+            </div>
+          </div>
+
+          <div className="tools-grid">
+            {tools.map((tool) => (
+              <button
+                key={tool.title}
+                className="tool-card"
+                onClick={() => openTool(tool.title)}
+              >
+                <span>{tool.icon}</span>
+                <strong>{tool.title}</strong>
+                <small>{tool.desc}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="content-grid">
+          <div className="section glass">
+            <h2>Lyra Sohbet</h2>
             <div className="chat-list">
-              {messages.map((m, i) => (
-                <div key={i} className={`bubble ${m.role}`}>
-                  <strong>{m.role === 'user' ? 'Sen' : 'Lyra'}</strong>
-                  <p>{m.text}</p>
+              {messages.map((message, index) => (
+                <div key={index} className={`bubble ${message.role}`}>
+                  <strong>{message.role === 'user' ? 'Sen' : 'Lyra'}</strong>
+                  <p>{message.text}</p>
                 </div>
               ))}
             </div>
 
             <div className="chat-input">
               <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Lyra'ya yaz..."
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') sendMessage();
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                placeholder="Lyra’ya yaz..."
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') sendMessage();
                 }}
               />
               <button onClick={() => sendMessage()}>Gönder</button>
@@ -433,154 +905,12 @@ Eğer bunu doğru yaparsan sonuç çok daha iyi olur.
             </div>
           </div>
 
-          <div className="card camera-card">
-            <div className="section-head">
-              <h2>Video Çekim + Güzelleştirme</h2>
-              <span>{cameraActive ? 'Kamera açık' : 'Kapalı'}</span>
-            </div>
-
-            <div className="camera-frame">
-              <video
-                ref={videoRef}
-                className="camera-video"
-                playsInline
-                muted
-                style={{ filter: beautyFilter }}
-              />
-
-              {!cameraActive && (
-                <div className="camera-placeholder">
-                  <strong>Canlı kamera alanı</strong>
-                  <p>Kamerayı açınca burada önizleme göreceksin.</p>
-                </div>
-              )}
-
-              {cameraActive && (
-                <>
-                  <div className="beauty-glow" style={{ opacity: glow / 100 }} />
-                  <div className="teleprompter-overlay">
-                    <p>{teleText}</p>
-                  </div>
-                </>
-              )}
-
-              {recording && <div className="rec-badge">● REC</div>}
-            </div>
-
-            <div className="toolbar">
-              <button onClick={startCamera}>Kamerayı Aç</button>
-              <button onClick={stopCamera}>Kapat</button>
-              <button onClick={toggleRecording}>
-                {recording ? 'Kaydı Durdur' : 'Kayıt Başlat'}
-              </button>
-            </div>
-
-            {cameraError && <div className="info danger">{cameraError}</div>}
-
-            <div className="sliders">
-              <label>
-                Pürüzsüzleştirme
-                <input
-                  type="range"
-                  min="0"
-                  max="30"
-                  value={smoothness}
-                  onChange={(e) => setSmoothness(Number(e.target.value))}
-                />
-              </label>
-
-              <label>
-                Aydınlatma
-                <input
-                  type="range"
-                  min="0"
-                  max="35"
-                  value={glow}
-                  onChange={(e) => setGlow(Number(e.target.value))}
-                />
-              </label>
-
-              <label>
-                Beyazlatıcı Görünüm
-                <input
-                  type="range"
-                  min="0"
-                  max="30"
-                  value={whiten}
-                  onChange={(e) => setWhiten(Number(e.target.value))}
-                />
-              </label>
-
-              <label>
-                Canlılık
-                <input
-                  type="range"
-                  min="0"
-                  max="30"
-                  value={saturation}
-                  onChange={(e) => setSaturation(Number(e.target.value))}
-                />
-              </label>
-            </div>
-
-            <div className="mini-note">
-              Not: Bu sürümde efektler ücretsiz tarayıcı filtresi mantığıyla
-              çalışır. Yani pratik ve hafif bir güzelleştirme verir.
-            </div>
-
-            {recordedVideoUrl && (
-              <div className="recorded-box">
-                <h3>Kaydedilen Video</h3>
-                <video
-                  src={recordedVideoUrl}
-                  controls
-                  className="recorded-video"
-                  playsInline
-                />
-                <a
-                  href={recordedVideoUrl}
-                  download="sirius-lyra-video.webm"
-                  className="download-btn"
-                >
-                  Videoyu İndir
-                </a>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="grid mid-grid">
-          <div className="card">
-            <div className="section-head">
-              <h2>Teleprompter</h2>
-              <span>Hazır metin</span>
-            </div>
-
-            <textarea
-              value={teleText}
-              onChange={(e) => setTeleText(e.target.value)}
-              className="big-textarea"
-              placeholder="Teleprompter metnini yaz..."
-            />
-
-            <div className="toolbar">
-              <button onClick={generateTeleprompter}>Hazır Metin Üret</button>
-              <button onClick={() => navigator.clipboard.writeText(teleText)}>
-                Metni Kopyala
-              </button>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="section-head">
-              <h2>İçerik Fikri</h2>
-              <span>Hızlı üretim</span>
-            </div>
-
+          <div className="section glass">
+            <h2>İçerik Fikri Alanı</h2>
             <div className="form-row">
               <select
                 value={ideaPlatform}
-                onChange={(e) => setIdeaPlatform(e.target.value)}
+                onChange={(event) => setIdeaPlatform(event.target.value)}
               >
                 <option>TikTok</option>
                 <option>Instagram Reels</option>
@@ -590,93 +920,338 @@ Eğer bunu doğru yaparsan sonuç çok daha iyi olur.
 
               <input
                 value={ideaTopic}
-                onChange={(e) => setIdeaTopic(e.target.value)}
+                onChange={(event) => setIdeaTopic(event.target.value)}
                 placeholder="Konu yaz..."
               />
             </div>
 
-            <div className="toolbar">
+            <div className="actions">
               <button onClick={generateIdea}>Fikir Üret</button>
-            </div>
-
-            <pre className="result">{ideaResult || 'Henüz fikir üretilmedi.'}</pre>
-          </div>
-        </section>
-
-        <section className="grid bottom-grid">
-          <div className="card">
-            <div className="section-head">
-              <h2>Etkileşim Hesaplama</h2>
-              <span>%{engagementRate}</span>
-            </div>
-
-            <div className="stats-grid">
-              <label>Takipçi<input value={followers} onChange={(e) => setFollowers(e.target.value)} /></label>
-              <label>Görüntülenme<input value={views} onChange={(e) => setViews(e.target.value)} /></label>
-              <label>Beğeni<input value={likes} onChange={(e) => setLikes(e.target.value)} /></label>
-              <label>Yorum<input value={comments} onChange={(e) => setComments(e.target.value)} /></label>
-              <label>Kaydetme<input value={saves} onChange={(e) => setSaves(e.target.value)} /></label>
-              <label>Paylaşım<input value={shares} onChange={(e) => setShares(e.target.value)} /></label>
-            </div>
-
-            <div className="info">
-              <strong>Toplam etkileşim:</strong> {totalEngagement}
-              <br />
-              <strong>Etkileşim oranı:</strong> %{engagementRate}
-              <br />
-              Bence burada kaydetme + paylaşım artarsa içerik daha güçlü görünür.
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="section-head">
-              <h2>Notlar</h2>
-              <span>Hızlı toparla</span>
-            </div>
-
-            <textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              className="big-textarea"
-              placeholder="Notlarını yaz..."
-            />
-
-            <div className="toolbar">
-              <button onClick={summarizeNote}>Notu Toparla</button>
-              <button onClick={() => navigator.clipboard.writeText(noteText)}>
-                Notu Kopyala
+              <button onClick={() => setTeleText(createTeleprompter())}>
+                Teleprompter’a Aktar
               </button>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="section-head">
-              <h2>Görsel Fikir / Prompt</h2>
-              <span>Ücretsiz prompt alanı</span>
-            </div>
-
-            <textarea
-              value={visualPrompt}
-              onChange={(e) => setVisualPrompt(e.target.value)}
-              className="big-textarea"
-              placeholder="Nasıl bir görsel istediğini yaz..."
-            />
-
-            <div className="toolbar">
-              <button onClick={generateVisualPrompt}>Prompt Oluştur</button>
             </div>
 
             <pre className="result">
-              {visualResult || 'Burada görsel prompt sonucu görünecek.'}
+              {ideaResult || 'Henüz içerik fikri üretilmedi.'}
             </pre>
           </div>
         </section>
 
-        <footer className="footer">
-          <p>
-            Sirius AI ✦ Lyra — ücretsiz tarayıcı tabanlı final kullanım sürümü
-          </p>
-        </footer>
+        <section className="section glass recent">
+          <div className="section-head">
+            <div>
+              <h2>Son İçeriklerim</h2>
+              <p>Fotoğraf, PDF, teleprompter, notlar, favoriler ve yeni ekleme alanı.</p>
+            </div>
+          </div>
+
+          <div className="tabs">
+            <button>Tümü</button>
+            <button>Fotoğraflar</button>
+            <button>PDF&apos;ler</button>
+            <button>Notlar</button>
+            <button>Teleprompter</button>
+            <button>Videolar</button>
+          </div>
+
+          <div className="recent-grid">
+            {[
+              ['🏞️', 'Sabah Manzarası', 'PNG · 2.4 MB'],
+              ['📸', 'Ürün Çekimi', 'JPG · 1.8 MB'],
+              ['📄', 'Ruh Hali Günlüğü', 'PDF · 1.2 MB'],
+              ['🎤', 'Teleprompter Metni', 'TXT · 356 B'],
+              ['✅', 'Günün Planı', 'PDF · 428 KB'],
+              ['🎵', 'Lo-fi Çalma Listem', 'MP3 · 5.2 MB'],
+              ['🎥', 'Son Video Taslağı', 'WEBM'],
+              ['➕', 'Yeni Ekle', ''],
+            ].map(([icon, title, meta]) => (
+              <div className="recent-card" key={title}>
+                <span>{icon}</span>
+                <strong>{title}</strong>
+                <small>{meta}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <nav className="bottom-nav glass">
+          {['Ana Sayfa', 'Stüdyo', 'Sirius', 'Sohbetler', 'Profil'].map((item) => (
+            <button
+              key={item}
+              className={item === 'Sirius' ? 'nav-star' : ''}
+              onClick={() => {
+                if (item === 'Sirius') startListening();
+                if (item === 'Stüdyo') {
+                  document
+                    .querySelector('.tools-grid')
+                    ?.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+            >
+              {item === 'Ana Sayfa' && '🏠'}
+              {item === 'Stüdyo' && '🎬'}
+              {item === 'Sirius' && '✦'}
+              {item === 'Sohbetler' && '💬'}
+              {item === 'Profil' && '👤'}
+              <span>{item}</span>
+            </button>
+          ))}
+        </nav>
+
+        {activeTool && (
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              setActiveTool(null);
+              stopCamera();
+            }}
+          >
+            <section
+              className="modal glass"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="modal-head">
+                <div>
+                  <p>Stüdyo Modülü</p>
+                  <h2>{activeTool}</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTool(null);
+                    stopCamera();
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {activeTool === 'Video Çekim' && (
+                <div className="modal-content">
+                  <div className="camera-frame">
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      className="camera-video"
+                      style={{ filter: `brightness(${1 + (glow + whiten) / 100}) contrast(${1 + whiten / 120}) saturate(${1 + saturation / 100}) blur(${smoothness / 55}px)` }}
+                    />
+
+                    {!cameraActive && (
+                      <div className="camera-placeholder">
+                        <strong>Canlı kamera alanı</strong>
+                        <p>Kamerayı açınca burada önizleme görünecek.</p>
+                      </div>
+                    )}
+
+                    {cameraActive && (
+                      <>
+                        <div className="beauty-glow" style={{ opacity: glow / 100 }} />
+                        <div className="tele-overlay">
+                          <p>{teleText}</p>
+                        </div>
+                      </>
+                    )}
+
+                    {recording && <span className="rec">● REC</span>}
+                  </div>
+
+                  {cameraError && <div className="notice danger">{cameraError}</div>}
+
+                  <div className="actions">
+                    <button onClick={startCamera}>Kamerayı Aç</button>
+                    <button onClick={stopCamera}>Kapat</button>
+                    <button onClick={toggleRecording}>
+                      {recording ? 'Kaydı Durdur' : 'Kayıt Başlat'}
+                    </button>
+                    <button onClick={() => setTeleText(createTeleprompter())}>
+                      Metin Üret
+                    </button>
+                  </div>
+
+                  <div className="sliders">
+                    <label>
+                      Pürüzsüzleştirme
+                      <input
+                        type="range"
+                        min="0"
+                        max="30"
+                        value={smoothness}
+                        onChange={(event) => setSmoothness(Number(event.target.value))}
+                      />
+                    </label>
+
+                    <label>
+                      Aydınlatma
+                      <input
+                        type="range"
+                        min="0"
+                        max="35"
+                        value={glow}
+                        onChange={(event) => setGlow(Number(event.target.value))}
+                      />
+                    </label>
+
+                    <label>
+                      Beyazlatıcı Görünüm
+                      <input
+                        type="range"
+                        min="0"
+                        max="30"
+                        value={whiten}
+                        onChange={(event) => setWhiten(Number(event.target.value))}
+                      />
+                    </label>
+
+                    <label>
+                      Canlılık
+                      <input
+                        type="range"
+                        min="0"
+                        max="30"
+                        value={saturation}
+                        onChange={(event) => setSaturation(Number(event.target.value))}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="notice">
+                    Bu efektler ücretsiz tarayıcı filtresiyle çalışır. Yani hafif
+                    pürüzsüzleştirme, ışık ve canlılık verir.
+                  </div>
+
+                  {recordedVideoUrl && (
+                    <div className="notice">
+                      <strong>Kaydedilen Video</strong>
+                      <video
+                        src={recordedVideoUrl}
+                        controls
+                        playsInline
+                        className="recorded"
+                      />
+                      <a
+                        href={recordedVideoUrl}
+                        download="sirius-lyra-video.webm"
+                        className="download"
+                      >
+                        Videoyu İndir
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTool === 'Teleprompter' && (
+                <div className="modal-content">
+                  <textarea
+                    value={teleText}
+                    onChange={(event) => setTeleText(event.target.value)}
+                    className="textarea"
+                  />
+                  <div className="tele-box">{teleText}</div>
+                  <div className="actions">
+                    <button onClick={generateTeleText}>Metin Üret</button>
+                    <button onClick={() => navigator.clipboard.writeText(teleText)}>
+                      Kopyala
+                    </button>
+                    <button onClick={() => openTool('Video Çekim')}>
+                      Kameraya Geç
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'İçerik Fikri' && (
+                <div className="modal-content">
+                  <div className="form-row">
+                    <select
+                      value={ideaPlatform}
+                      onChange={(event) => setIdeaPlatform(event.target.value)}
+                    >
+                      <option>TikTok</option>
+                      <option>Instagram Reels</option>
+                      <option>YouTube Shorts</option>
+                      <option>Story</option>
+                    </select>
+                    <input
+                      value={ideaTopic}
+                      onChange={(event) => setIdeaTopic(event.target.value)}
+                    />
+                  </div>
+                  <div className="actions">
+                    <button onClick={generateIdea}>Fikir Üret</button>
+                  </div>
+                  <pre className="result">{ideaResult}</pre>
+                </div>
+              )}
+
+              {activeTool === 'Etkileşim' && (
+                <div className="modal-content">
+                  <div className="stats-grid">
+                    <label>Takipçi<input value={followers} onChange={(e) => setFollowers(e.target.value)} /></label>
+                    <label>Görüntülenme<input value={views} onChange={(e) => setViews(e.target.value)} /></label>
+                    <label>Beğeni<input value={likes} onChange={(e) => setLikes(e.target.value)} /></label>
+                    <label>Yorum<input value={comments} onChange={(e) => setComments(e.target.value)} /></label>
+                    <label>Kaydetme<input value={saves} onChange={(e) => setSaves(e.target.value)} /></label>
+                    <label>Paylaşım<input value={shares} onChange={(e) => setShares(e.target.value)} /></label>
+                  </div>
+                  <div className="notice">
+                    <strong>Etkileşim oranı: %{engagementRate}</strong>
+                    <p>
+                      Toplam etkileşim: {totalEngagement}. Kaydetme ve paylaşım
+                      artarsa içerik daha güçlü sinyal verir.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'DGS Planı' && (
+                <div className="modal-content">
+                  <div className="notice">{createDgsPlan()}</div>
+                  <div className="notice">{createDgsTemelKavramlar()}</div>
+                </div>
+              )}
+
+              {activeTool === 'Kozmetik' && (
+                <div className="modal-content">
+                  <div className="notice">{createKozmetikReply('kozmetik')}</div>
+                </div>
+              )}
+
+              {activeTool === 'Notlar' && (
+                <div className="modal-content">
+                  <textarea
+                    value={noteText}
+                    onChange={(event) => setNoteText(event.target.value)}
+                    className="textarea"
+                    placeholder="Notlarını yaz..."
+                  />
+                  <div className="actions">
+                    <button onClick={summarizeNote}>Notu Toparla</button>
+                    <button onClick={() => navigator.clipboard.writeText(noteText)}>
+                      Kopyala
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'Görsel Prompt' && (
+                <div className="modal-content">
+                  <textarea
+                    value={visualPrompt}
+                    onChange={(event) => setVisualPrompt(event.target.value)}
+                    className="textarea"
+                    placeholder="Nasıl bir görsel istiyorsun?"
+                  />
+                  <div className="actions">
+                    <button onClick={createVisualPrompt}>Prompt Üret</button>
+                  </div>
+                  <pre className="result">{visualResult}</pre>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
       </div>
 
       <style jsx global>{`
@@ -687,11 +1262,12 @@ Eğer bunu doğru yaparsan sonuç çok daha iyi olur.
         html,
         body {
           margin: 0;
-          padding: 0;
+          min-height: 100%;
           background:
-            radial-gradient(circle at top, rgba(255, 226, 202, 0.14), transparent 30%),
-            linear-gradient(180deg, #0f0b14 0%, #17111d 100%);
-          color: #fff7f1;
+            radial-gradient(circle at 15% 10%, rgba(255, 198, 170, 0.16), transparent 28%),
+            radial-gradient(circle at 80% 20%, rgba(160, 130, 255, 0.12), transparent 24%),
+            linear-gradient(180deg, #100b14 0%, #17111d 100%);
+          color: #fff8f0;
           font-family: Arial, Helvetica, sans-serif;
         }
 
@@ -702,39 +1278,49 @@ Eğer bunu doğru yaparsan sonuç çok daha iyi olur.
           font: inherit;
         }
 
-        .page {
-          min-height: 100vh;
-          padding: 20px;
+        button {
+          cursor: pointer;
         }
 
-        .container {
+        .page {
+          min-height: 100vh;
+          padding: 28px;
+        }
+
+        .shell {
           max-width: 1500px;
           margin: 0 auto;
           display: grid;
           gap: 18px;
         }
 
-        .card {
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid rgba(255, 228, 207, 0.12);
-          border-radius: 24px;
-          padding: 18px;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
-          backdrop-filter: blur(14px);
+        .glass {
+          background: rgba(255, 255, 255, 0.065);
+          border: 1px solid rgba(255, 220, 190, 0.16);
+          backdrop-filter: blur(18px);
+          box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
         }
 
-        .hero {
+        .topbar {
+          border-radius: 28px;
+          padding: 22px;
           display: flex;
-          justify-content: space-between;
-          gap: 20px;
           align-items: center;
+          justify-content: space-between;
+          gap: 18px;
           flex-wrap: wrap;
         }
 
-        .eyebrow {
-          font-size: 13px;
-          color: #f8d5be;
-          margin-bottom: 6px;
+        .brand {
+          display: flex;
+          gap: 14px;
+          align-items: center;
+        }
+
+        .star {
+          font-size: 42px;
+          color: #ffd2b0;
+          filter: drop-shadow(0 0 16px rgba(255, 195, 160, 0.75));
         }
 
         h1,
@@ -745,143 +1331,407 @@ Eğer bunu doğru yaparsan sonuç çok daha iyi olur.
         }
 
         h1 {
-          font-size: clamp(28px, 5vw, 46px);
-          margin-bottom: 10px;
+          margin-bottom: 4px;
+          font-size: 34px;
         }
 
-        .hero p {
-          max-width: 720px;
-          color: #f2dfd3;
-          margin-bottom: 0;
+        .brand p,
+        .section-head p {
+          margin: 0;
+          color: #ecd5c7;
         }
 
-        .hero-actions {
+        .top-actions,
+        .actions,
+        .stage-controls,
+        .chips {
           display: flex;
           gap: 10px;
           flex-wrap: wrap;
         }
 
-        button {
-          border: none;
-          border-radius: 16px;
-          padding: 12px 16px;
-          cursor: pointer;
-          color: #fffaf7;
-          background: rgba(255, 255, 255, 0.09);
-          border: 1px solid rgba(255, 228, 207, 0.12);
-        }
-
-        button.primary {
-          background: linear-gradient(135deg, rgba(255, 176, 182, 0.35), rgba(255, 210, 165, 0.22));
-        }
-
-        button.secondary {
+        .pill,
+        .chip,
+        .actions button,
+        .stage-controls button,
+        .chat-input button,
+        .soft-button,
+        .round,
+        .bottom-nav button,
+        .modal-head button {
+          border: 1px solid rgba(255, 220, 190, 0.18);
           background: rgba(255, 255, 255, 0.08);
+          color: #fff7ef;
+          border-radius: 999px;
+          padding: 11px 15px;
         }
 
-        .grid {
+        .pill.active,
+        .chip.selected,
+        .actions button:hover,
+        .stage-controls button:hover {
+          background: linear-gradient(135deg, rgba(255, 177, 188, 0.35), rgba(255, 214, 165, 0.2));
+        }
+
+        .profile {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
           display: grid;
+          place-items: center;
+          background: linear-gradient(135deg, #f0a6b6, #f5c8a2);
+          color: #2a1720;
+          font-weight: 800;
+        }
+
+        .hero-grid {
+          display: grid;
+          grid-template-columns: 260px 1fr 280px;
           gap: 18px;
         }
 
-        .top-grid {
-          grid-template-columns: 1fr 1.15fr;
+        .left-stack,
+        .right-stack {
+          display: grid;
+          gap: 14px;
+          align-content: start;
         }
 
-        .mid-grid {
-          grid-template-columns: 1fr 1fr;
+        .side-card,
+        .section,
+        .avatar-stage {
+          border-radius: 26px;
+          padding: 18px;
         }
 
-        .bottom-grid {
-          grid-template-columns: 1fr 1fr 1fr;
+        .side-card h3 {
+          margin-bottom: 8px;
+        }
+
+        .side-card p {
+          color: #ecd5c7;
+          line-height: 1.45;
+        }
+
+        .wave {
+          display: flex;
+          gap: 4px;
+          align-items: center;
+          height: 34px;
+          margin: 8px 0;
+        }
+
+        .wave span {
+          width: 4px;
+          border-radius: 99px;
+          background: #ffc38e;
+          animation: wave 1.1s infinite ease-in-out;
+        }
+
+        .wave span:nth-child(1) { height: 10px; }
+        .wave span:nth-child(2) { height: 18px; animation-delay: .1s; }
+        .wave span:nth-child(3) { height: 28px; animation-delay: .2s; }
+        .wave span:nth-child(4) { height: 16px; animation-delay: .3s; }
+        .wave span:nth-child(5) { height: 24px; animation-delay: .4s; }
+        .wave span:nth-child(6) { height: 12px; animation-delay: .5s; }
+
+        @keyframes wave {
+          0%, 100% { transform: scaleY(.7); opacity: .6; }
+          50% { transform: scaleY(1.15); opacity: 1; }
+        }
+
+        .round {
+          width: 70px;
+          height: 70px;
+          font-size: 26px;
+          display: grid;
+          place-items: center;
+          margin-top: 10px;
+          background: radial-gradient(circle, rgba(255, 178, 190, 0.45), rgba(255, 208, 170, 0.18));
+        }
+
+        .avatar-stage {
+          min-height: 620px;
+          display: grid;
+          grid-template-rows: auto 1fr auto;
+          background:
+            radial-gradient(circle at 50% 30%, rgba(255, 195, 160, .22), transparent 28%),
+            linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+        }
+
+        .stage-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .stage-top button {
+          background: rgba(0,0,0,.25);
+          color: #fff;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 50%;
+          width: 40px;
+          height: 40px;
+        }
+
+        .live-dot {
+          color: #ffcbc2;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .avatar-body {
+          display: grid;
+          place-items: center;
+          text-align: center;
+          padding: 30px;
+        }
+
+        .avatar-orb {
+          width: min(390px, 85vw);
+          height: min(390px, 85vw);
+          border-radius: 36px;
+          display: grid;
+          place-items: center;
+          background:
+            radial-gradient(circle at 50% 38%, rgba(255,255,255,.18), transparent 26%),
+            linear-gradient(160deg, rgba(255, 198, 174, .24), rgba(119, 92, 148, .18));
+          border: 1px solid rgba(255, 220, 190, .18);
+          box-shadow: inset 0 0 70px rgba(255,255,255,.06), 0 35px 80px rgba(0,0,0,.35);
+        }
+
+        .face {
+          width: 130px;
+          height: 130px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #ffc5b8, #f3d1aa);
+          font-size: 70px;
+        }
+
+        .avatar-text h2 {
+          margin: 18px 0 8px;
+          font-size: 36px;
+        }
+
+        .avatar-text p {
+          max-width: 560px;
+          color: #f1dacf;
+          line-height: 1.6;
         }
 
         .section-head {
           display: flex;
-          align-items: center;
           justify-content: space-between;
-          gap: 10px;
-          margin-bottom: 14px;
+          gap: 12px;
+          align-items: end;
+          margin-bottom: 16px;
         }
 
-        .section-head span {
-          font-size: 13px;
-          color: #f3cfbb;
+        .mood-grid,
+        .tools-grid,
+        .recent-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 14px;
         }
 
-        .chat-card {
-          min-height: 560px;
-          display: flex;
-          flex-direction: column;
+        .mood,
+        .tool-card,
+        .recent-card {
+          min-height: 120px;
+          text-align: left;
+          border-radius: 22px;
+          padding: 16px;
+          border: 1px solid rgba(255, 220, 190, .14);
+          background: rgba(255,255,255,.055);
+          color: #fff7ef;
+          display: grid;
+          align-content: end;
+          gap: 6px;
+        }
+
+        .mood.selected,
+        .tool-card:hover {
+          outline: 2px solid rgba(255, 195, 160, .35);
+          background: linear-gradient(135deg, rgba(255, 177, 188, 0.2), rgba(255, 214, 165, 0.12));
+        }
+
+        .tool-card span,
+        .recent-card span {
+          font-size: 30px;
+        }
+
+        .tool-card small,
+        .recent-card small,
+        .mood span {
+          color: #e8cfc2;
+        }
+
+        .content-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 18px;
         }
 
         .chat-list {
-          flex: 1;
+          height: 430px;
+          overflow: auto;
           display: grid;
           gap: 12px;
-          overflow: auto;
-          max-height: 430px;
-          padding-right: 4px;
+          padding-right: 6px;
+          margin-bottom: 12px;
         }
 
         .bubble {
-          padding: 12px 14px;
-          border-radius: 18px;
-          max-width: 88%;
-        }
-
-        .bubble strong {
-          display: block;
-          margin-bottom: 6px;
-          font-size: 13px;
-        }
-
-        .bubble p {
-          margin: 0;
-          line-height: 1.5;
-          white-space: pre-wrap;
+          max-width: 84%;
+          border-radius: 20px;
+          padding: 14px 16px;
+          border: 1px solid rgba(255, 220, 190, .15);
+          background: rgba(255,255,255,.06);
         }
 
         .bubble.user {
           margin-left: auto;
-          background: rgba(255, 190, 184, 0.14);
-          border: 1px solid rgba(255, 190, 184, 0.18);
+          background: rgba(255, 188, 190, .16);
         }
 
-        .bubble.lyra {
-          background: rgba(255, 255, 255, 0.07);
-          border: 1px solid rgba(255, 228, 207, 0.12);
+        .bubble p {
+          margin: 6px 0 0;
+          line-height: 1.55;
+          white-space: pre-wrap;
         }
 
         .chat-input {
           display: grid;
           grid-template-columns: 1fr auto auto;
           gap: 10px;
-          margin-top: 14px;
         }
 
-        .chat-input input,
-        .form-row input,
-        .form-row select,
-        .stats-grid input,
+        input,
         textarea,
         select {
           width: 100%;
-          background: rgba(255, 255, 255, 0.06);
-          color: #fff9f4;
-          border: 1px solid rgba(255, 228, 207, 0.14);
-          border-radius: 14px;
+          border: 1px solid rgba(255, 220, 190, .15);
+          background: rgba(255,255,255,.06);
+          color: #fff7ef;
+          border-radius: 16px;
           padding: 12px 14px;
           outline: none;
         }
 
+        select option {
+          color: #111;
+        }
+
+        .form-row {
+          display: grid;
+          grid-template-columns: 190px 1fr;
+          gap: 10px;
+        }
+
+        .result,
+        .notice,
+        .tele-box {
+          white-space: pre-wrap;
+          border: 1px solid rgba(255, 220, 190, .14);
+          background: rgba(255,255,255,.055);
+          border-radius: 18px;
+          padding: 14px;
+          color: #fff7ef;
+          line-height: 1.55;
+          margin-top: 14px;
+        }
+
+        .tabs {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-bottom: 14px;
+        }
+
+        .tabs button {
+          border: 1px solid rgba(255,220,190,.14);
+          background: rgba(255,255,255,.06);
+          color: #fff7ef;
+          border-radius: 999px;
+          padding: 10px 14px;
+        }
+
+        .bottom-nav {
+          position: sticky;
+          bottom: 18px;
+          z-index: 20;
+          border-radius: 999px;
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 6px;
+          padding: 10px;
+        }
+
+        .bottom-nav button {
+          display: grid;
+          place-items: center;
+          gap: 4px;
+          border-radius: 999px;
+          background: transparent;
+          border: none;
+        }
+
+        .nav-star {
+          background: radial-gradient(circle, rgba(255, 179, 204, .55), rgba(255, 209, 154, .22)) !important;
+          box-shadow: 0 0 28px rgba(255, 186, 214, .4);
+        }
+
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          padding: 22px;
+          display: grid;
+          place-items: center;
+          background: rgba(8, 5, 11, .72);
+          backdrop-filter: blur(12px);
+        }
+
+        .modal {
+          width: min(1080px, 96vw);
+          max-height: 92vh;
+          overflow: auto;
+          border-radius: 28px;
+          padding: 22px;
+        }
+
+        .modal-head {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .modal-head p {
+          margin: 0;
+          color: #eacfc0;
+        }
+
+        .modal-head h2 {
+          margin: 3px 0 0;
+        }
+
+        .modal-content {
+          display: grid;
+          gap: 14px;
+        }
+
         .camera-frame {
           position: relative;
-          min-height: 560px;
-          border-radius: 22px;
+          min-height: 570px;
+          border-radius: 24px;
           overflow: hidden;
-          background: #08060d;
-          border: 1px solid rgba(255, 228, 207, 0.1);
+          background: #07050b;
+          border: 1px solid rgba(255,220,190,.14);
         }
 
         .camera-video {
@@ -896,196 +1746,201 @@ Eğer bunu doğru yaparsan sonuç çok daha iyi olur.
         .camera-placeholder {
           position: relative;
           z-index: 2;
-          height: 560px;
+          min-height: 570px;
           display: grid;
           place-items: center;
           text-align: center;
           padding: 20px;
-          color: #f6e6da;
         }
 
         .beauty-glow {
           position: absolute;
           inset: 0;
           z-index: 2;
-          background:
-            radial-gradient(circle at 50% 30%, rgba(255,255,255,0.16), transparent 36%),
-            radial-gradient(circle at 50% 70%, rgba(255,230,210,0.10), transparent 42%);
           pointer-events: none;
+          background:
+            radial-gradient(circle at 50% 28%, rgba(255,255,255,.2), transparent 32%),
+            radial-gradient(circle at 50% 70%, rgba(255,210,190,.12), transparent 40%);
         }
 
-        .teleprompter-overlay {
+        .tele-overlay {
           position: absolute;
           left: 50%;
-          bottom: 20px;
+          bottom: 22px;
           transform: translateX(-50%);
           z-index: 3;
           width: min(90%, 760px);
-          max-height: 44%;
+          max-height: 42%;
           overflow: hidden;
-          padding: 18px 22px;
+          padding: 16px 20px;
           border-radius: 22px;
-          background: rgba(10, 7, 15, 0.55);
+          background: rgba(10, 7, 15, .58);
+          border: 1px solid rgba(255,220,190,.18);
           backdrop-filter: blur(10px);
-          border: 1px solid rgba(255, 228, 207, 0.18);
           text-align: center;
         }
 
-        .teleprompter-overlay p {
+        .tele-overlay p {
           margin: 0;
-          font-size: clamp(20px, 3vw, 34px);
-          line-height: 1.45;
-          color: #fffaf5;
-          text-shadow: 0 2px 10px rgba(0,0,0,0.55);
+          font-size: clamp(22px, 4vw, 40px);
+          line-height: 1.35;
+          color: #fff9f4;
+          text-shadow: 0 2px 12px rgba(0,0,0,.6);
         }
 
-        .rec-badge {
+        .rec {
           position: absolute;
           top: 16px;
           left: 16px;
-          z-index: 4;
+          z-index: 5;
+          color: #ffb5b5;
+          background: rgba(255,60,60,.22);
+          border: 1px solid rgba(255,80,80,.35);
           border-radius: 999px;
           padding: 8px 12px;
-          background: rgba(255, 61, 61, 0.22);
-          border: 1px solid rgba(255, 90, 90, 0.38);
-          color: #ffbcbc;
-          font-weight: 700;
+          font-weight: 800;
         }
 
-        .toolbar {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 14px;
-        }
-
-        .sliders {
+        .sliders,
+        .stats-grid {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(2, 1fr);
           gap: 12px;
-          margin-top: 16px;
         }
 
-        .sliders label,
-        .stats-grid label {
+        label {
           display: grid;
           gap: 8px;
-          font-size: 14px;
-          color: #f4dbcd;
+          color: #ead2c6;
         }
 
-        input[type='range'] {
-          padding: 0;
-        }
-
-        .mini-note,
-        .info {
-          margin-top: 14px;
-          padding: 14px;
-          border-radius: 16px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 228, 207, 0.12);
-          color: #f5e6dc;
-          line-height: 1.6;
-        }
-
-        .danger {
-          border-color: rgba(255, 121, 121, 0.3);
-        }
-
-        .recorded-box {
-          margin-top: 16px;
-          padding: 14px;
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 228, 207, 0.12);
-        }
-
-        .recorded-box h3 {
-          margin-bottom: 10px;
-        }
-
-        .recorded-video {
-          width: 100%;
-          border-radius: 18px;
-          background: #000;
-        }
-
-        .download-btn {
-          display: inline-flex;
-          margin-top: 14px;
-          text-decoration: none;
-          color: #fffaf6;
-          padding: 12px 16px;
-          border-radius: 16px;
-          background: linear-gradient(135deg, rgba(255, 176, 182, 0.35), rgba(255, 210, 165, 0.22));
-          border: 1px solid rgba(255, 228, 207, 0.15);
-        }
-
-        .big-textarea {
+        .textarea {
           min-height: 220px;
           resize: vertical;
         }
 
-        .form-row {
+        .danger {
+          border-color: rgba(255,90,90,.35);
+        }
+
+        .recorded {
+          width: 100%;
+          margin-top: 12px;
+          border-radius: 18px;
+          background: #000;
+        }
+
+        .download {
+          display: inline-flex;
+          margin-top: 12px;
+          color: #fff;
+          text-decoration: none;
+          border-radius: 999px;
+          padding: 12px 16px;
+          background: linear-gradient(135deg, rgba(255, 177, 188, 0.35), rgba(255, 214, 165, 0.2));
+        }
+
+        .custom-line {
           display: grid;
-          grid-template-columns: 200px 1fr;
-          gap: 10px;
+          gap: 8px;
+          margin: 14px 0;
         }
 
-        .result {
-          white-space: pre-wrap;
-          margin-top: 14px;
-          padding: 14px;
-          border-radius: 16px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 228, 207, 0.12);
-          color: #fff5ee;
-          min-height: 150px;
+        .dots {
+          display: flex;
+          gap: 8px;
         }
 
-        .stats-grid {
+        .dots i {
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          border: 1px solid rgba(255,255,255,.2);
+        }
+
+        .d1 { background: #5c3524; }
+        .d2 { background: #8e5535; }
+        .d3 { background: #c78250; }
+        .d4 { background: #d8c4a8; }
+        .d5 { background: #2d2728; }
+        .e1 { background: #83a8b8; }
+        .e2 { background: #9b6b43; }
+        .e3 { background: #879d7d; }
+        .e4 { background: #c7c1b9; }
+        .e5 { background: #39404e; }
+
+        .mini-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 12px;
+          gap: 8px;
+          margin-top: 14px;
         }
 
-        .footer {
-          text-align: center;
-          color: #e7cdbf;
-          font-size: 14px;
-          padding: 10px 0 30px;
+        .mini-grid div {
+          border-radius: 14px;
+          padding: 12px;
+          background: rgba(255,255,255,.055);
+          border: 1px solid rgba(255,220,190,.12);
+          color: #ead2c6;
         }
 
-        @media (max-width: 1100px) {
-          .top-grid,
-          .mid-grid,
-          .bottom-grid {
+        @media (max-width: 1180px) {
+          .hero-grid,
+          .content-grid {
             grid-template-columns: 1fr;
+          }
+
+          .right-stack,
+          .left-stack {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .mood-grid,
+          .tools-grid,
+          .recent-grid {
+            grid-template-columns: repeat(2, 1fr);
           }
         }
 
-        @media (max-width: 700px) {
+        @media (max-width: 720px) {
           .page {
             padding: 12px;
           }
 
-          .chat-input {
-            grid-template-columns: 1fr;
+          .topbar,
+          .section,
+          .side-card,
+          .avatar-stage {
+            border-radius: 22px;
           }
 
+          .right-stack,
+          .left-stack,
+          .mood-grid,
+          .tools-grid,
+          .recent-grid,
           .form-row,
+          .chat-input,
           .sliders,
           .stats-grid {
             grid-template-columns: 1fr;
           }
 
-          .camera-frame {
-            min-height: 420px;
+          .avatar-stage {
+            min-height: auto;
           }
 
+          .avatar-orb {
+            height: 280px;
+          }
+
+          .camera-frame,
           .camera-placeholder {
-            height: 420px;
+            min-height: 430px;
+          }
+
+          .bottom-nav span {
+            font-size: 11px;
           }
         }
       `}</style>
