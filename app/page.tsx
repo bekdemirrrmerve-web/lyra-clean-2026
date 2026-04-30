@@ -481,7 +481,51 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
         </nav>
 
         {activeTool && (
-          <div className="modal-backdrop" onClick={() => setActiveTool(null)}>
+          <div className="modal-backdrop" onClick={() => setActiveTool(null)}>{chatOpen && (
+  <div className="modal-backdrop" onClick={() => setChatOpen(false)}>
+    <section className="tool-modal glass lyra-chat-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-head">
+        <div>
+          <p>Sirius AI</p>
+          <h2>Lyra Sohbet</h2>
+        </div>
+        <button onClick={() => setChatOpen(false)}>✕</button>
+      </div>
+
+      <div className="lyra-chat-list">
+        {chatMessages.map((message, index) => (
+          <div key={index} className={`lyra-bubble ${message.role}`}>
+            <strong>{message.role === 'user' ? 'Sen' : 'Lyra'}</strong>
+            <span>{message.text}</span>
+          </div>
+        ))}
+
+        {chatLoading && (
+          <div className="lyra-bubble lyra">
+            <strong>Lyra</strong>
+            <span>Bir saniye kankam, düşünüyorum...</span>
+          </div>
+        )}
+      </div>
+
+      <div className="lyra-chat-input">
+        <input
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          placeholder="Lyra’ya yaz..."
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              sendLyraMessage();
+            }
+          }}
+        />
+        <button onClick={sendLyraMessage} disabled={chatLoading}>
+          {chatLoading ? '...' : 'Gönder'}
+        </button>
+      </div>
+    </section>
+  </div>
+)}
             <section className="tool-modal glass" onClick={(e) => e.stopPropagation()}>
               <div className="modal-head">
                 <div>
