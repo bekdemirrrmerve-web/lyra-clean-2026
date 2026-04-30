@@ -29,13 +29,20 @@ export default function Page() {
     {
       role: 'lyra',
       text:
-        'Buradayım kankam. Yazabilir, sesle yazdırabilir, içerik fikri çıkarabilir, DGS planı yapabilir ya da kamerayı açıp teleprompter ile çekime geçebiliriz.',
+        'Buradayım kankam. Yazabilir, sesle yazdırabilir ya da ana Sirius alanından canlı karşılıklı konuşabilirsin.',
     },
   ]);
 
   const [chatInput, setChatInput] = useState('');
+
   const [isDictating, setIsDictating] = useState(false);
   const [dictationStatus, setDictationStatus] = useState('Hazır');
+
+  const [liveListening, setLiveListening] = useState(false);
+  const [liveLoopOn, setLiveLoopOn] = useState(false);
+  const [assistantSpeaking, setAssistantSpeaking] = useState(false);
+  const [liveStatus, setLiveStatus] = useState('Canlı konuşma hazır');
+
   const [isTyping, setIsTyping] = useState(false);
   const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
 
@@ -72,8 +79,14 @@ export default function Page() {
   const [whiten, setWhiten] = useState(10);
   const [saturation, setSaturation] = useState(12);
 
-  const recognitionRef = useRef<any>(null);
+  const dictationRecognitionRef = useRef<any>(null);
+  const liveRecognitionRef = useRef<any>(null);
+
   const dictationOnRef = useRef(false);
+  const liveLoopRef = useRef(false);
+  const liveListeningLockRef = useRef(false);
+  const assistantSpeakingRef = useRef(false);
+
   const finalTranscriptRef = useRef('');
   const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -111,9 +124,25 @@ export default function Page() {
   ];
 
   useEffect(() => {
+    assistantSpeakingRef.current = assistantSpeaking;
+  }, [assistantSpeaking]);
+
+  useEffect(() => {
+    liveLoopRef.current = liveLoopOn;
+  }, [liveLoopOn]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+
     return () => {
       stopDictation();
+      stopLiveListening();
       stopCamera();
+      window.speechSynthesis?.cancel();
 
       if (typingTimerRef.current) {
         clearInterval(typingTimerRef.current);
@@ -210,7 +239,7 @@ Konu eksiği mi?
 Dikkat hatası mı?
 İşlem hatası mı?
 
-Bugünün hedefi: mükemmel çalışma değil, çalışma düzenini tekrar başlatma. Bence çok iyi başlangıç olur.`;
+Bugünün hedefi mükemmel çalışma değil, çalışma düzenini tekrar başlatma. Bence çok iyi başlangıç olur.`;
   }
 
   function createContentIdea(text: string) {
@@ -441,115 +470,106 @@ Bunu sana dört şekilde çevirebilirim:
 Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
   }
 
-  function stopDictation() {
-    try {
-      dictationOnRef.current = false;
-      recognitionRef.current?.stop?.();
-      recognitionRef.current = null;
-      setIsDictating(false);
-      setDictationStatus('Hazır');
-    } catch {
-      dictationOnRef.current = false;
-      setIsDictating(false);
-      setDictationStatus('Hazır');
-    }
+  function getBestTurkishVoice() {
+    const voices = window.speechSynthesis?.getVoices?.() || [];
+
+    return (
+      voices.find((voice) => voice.lang?.toLowerCase() === 'tr-tr') ||
+      voices.find((voice) => voice.lang?.toLowerCase().includes('tr')) ||
+      voices.find((voice) => voice.name?.toLowerCase().includes('google')) ||
+      voices.find((voice) => voice.name?.toLowerCase().includes('female')) ||
+      voices.find((voice) => voice.name?.toLowerCase().includes('siri')) ||
+      voices[0]
+    );
   }
 
-  function startDictation() {
-    const SpeechRecognitionCtor =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+  function cleanSpeechText(text: string) {
+    return text
+      .replaceAll('✨', '')
+      .replaceAll('🔥', '')
+      .replaceAll('😂', '')
+      .replaceAll('😭', '')
+      .replace(/\n+/g, '. ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
-    if (!SpeechRecognitionCtor) {
-      alert(
-        'Bu tarayıcı sesle yazmayı desteklemiyor kankam. Safari veya Chrome güncel sürüm dene.'
-      );
+  function speakLive(text: string) {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      if (liveLoopRef.current) {
+        setTimeout(() => startLiveListening(), 400);
+      }
       return;
     }
 
     try {
-      dictationOnRef.current = true;
-      finalTranscriptRef.current = chatInput.trim();
+      stopLiveListening();
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
 
-      const recognition = new SpeechRecognitionCtor();
+      setAssistantSpeaking(true);
+      assistantSpeakingRef.current = true;
+      setLiveStatus('Lyra konuşuyor');
 
-      recognition.lang = 'tr-TR';
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
+      const chunks = cleanSpeechText(text)
+        .split(/(?<=[.!?])\s+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 14);
 
-      recognition.onstart = () => {
-        setIsDictating(true);
-        setDictationStatus('Sesle yazıyor...');
-      };
+      let index = 0;
 
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let finalPart = '';
+      const speakNext = () => {
+        if (index >= chunks.length) {
+          setAssistantSpeaking(false);
+          assistantSpeakingRef.current = false;
 
-        for (let i = event.resultIndex; i < event.results.length; i += 1) {
-          const transcript = event.results[i]?.[0]?.transcript || '';
-
-          if (event.results[i].isFinal) {
-            finalPart += transcript + ' ';
+          if (liveLoopRef.current) {
+            setLiveStatus('Tekrar dinliyorum');
+            setTimeout(() => startLiveListening(), 420);
           } else {
-            interim += transcript;
+            setLiveStatus('Canlı konuşma hazır');
           }
+
+          return;
         }
 
-        if (finalPart.trim()) {
-          finalTranscriptRef.current =
-            `${finalTranscriptRef.current} ${finalPart}`.trim();
-        }
+        const utterance = new SpeechSynthesisUtterance(chunks[index]);
+        utterance.lang = 'tr-TR';
+        utterance.rate = 1.12;
+        utterance.pitch = 1.08;
+        utterance.volume = 1;
 
-        const combined = `${finalTranscriptRef.current} ${interim}`.trim();
-        setChatInput(combined);
-        setDictationStatus(interim ? `Algılıyor: ${interim}` : 'Sesle yazıyor...');
+        const voice = getBestTurkishVoice();
+
+        if (voice) utterance.voice = voice;
+
+        utterance.onend = () => {
+          index += 1;
+          setTimeout(speakNext, 60);
+        };
+
+        utterance.onerror = () => {
+          index += 1;
+          setTimeout(speakNext, 60);
+        };
+
+        window.speechSynthesis.speak(utterance);
       };
 
-      recognition.onerror = () => {
-        setIsDictating(false);
-
-        if (dictationOnRef.current) {
-          setDictationStatus('Tekrar dinlemeye çalışıyor...');
-          setTimeout(() => {
-            if (dictationOnRef.current) startDictation();
-          }, 350);
-        } else {
-          setDictationStatus('Hazır');
-        }
-      };
-
-      recognition.onend = () => {
-        setIsDictating(false);
-
-        if (dictationOnRef.current) {
-          setDictationStatus('Dinleme yenileniyor...');
-          setTimeout(() => {
-            if (dictationOnRef.current) startDictation();
-          }, 250);
-        } else {
-          setDictationStatus('Hazır');
-        }
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
+      speakNext();
     } catch {
-      dictationOnRef.current = false;
-      setIsDictating(false);
-      setDictationStatus('Sesle yazma başlatılamadı');
+      setAssistantSpeaking(false);
+      assistantSpeakingRef.current = false;
+      setLiveStatus('Sesli cevap takıldı');
+
+      if (liveLoopRef.current) {
+        setTimeout(() => startLiveListening(), 500);
+      }
     }
   }
 
-  function toggleDictation() {
-    if (dictationOnRef.current) {
-      stopDictation();
-    } else {
-      startDictation();
-    }
-  }
-
-  function typeLyraReply(reply: string) {
+  function typeLyraReply(reply: string, speakAfter = false) {
     if (typingTimerRef.current) {
       clearInterval(typingTimerRef.current);
     }
@@ -585,9 +605,13 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         setIsTyping(false);
       }
     }, 14);
+
+    if (speakAfter) {
+      setTimeout(() => speakLive(reply), 180);
+    }
   }
 
-  function sendMessage(customText?: string) {
+  function sendMessage(customText?: string, speakAfter = false) {
     const raw = customText ?? chatInput;
     const text = raw.trim();
 
@@ -599,7 +623,262 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
     setChatInput('');
     finalTranscriptRef.current = '';
 
-    typeLyraReply(reply);
+    typeLyraReply(reply, speakAfter);
+  }
+
+  function stopDictation() {
+    try {
+      dictationOnRef.current = false;
+      dictationRecognitionRef.current?.stop?.();
+      dictationRecognitionRef.current = null;
+      setIsDictating(false);
+      setDictationStatus('Hazır');
+    } catch {
+      dictationOnRef.current = false;
+      setIsDictating(false);
+      setDictationStatus('Hazır');
+    }
+  }
+
+  function startDictation() {
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      alert(
+        'Bu tarayıcı sesle yazmayı desteklemiyor kankam. Safari veya Chrome güncel sürüm dene.'
+      );
+      return;
+    }
+
+    try {
+      stopLiveListening();
+
+      dictationOnRef.current = true;
+      finalTranscriptRef.current = chatInput.trim();
+
+      const recognition = new SpeechRecognitionCtor();
+
+      recognition.lang = 'tr-TR';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsDictating(true);
+        setDictationStatus('Sesle yazıyor...');
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        let finalPart = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const transcript = event.results[i]?.[0]?.transcript || '';
+
+          if (event.results[i].isFinal) {
+            finalPart += transcript + ' ';
+          } else {
+            interim += transcript;
+          }
+        }
+
+        if (finalPart.trim()) {
+          finalTranscriptRef.current =
+            `${finalTranscriptRef.current} ${finalPart}`.trim();
+        }
+
+        const combined = `${finalTranscriptRef.current} ${interim}`.trim();
+
+        setChatInput(combined);
+        setDictationStatus(interim ? `Algılıyor: ${interim}` : 'Sesle yazıyor...');
+      };
+
+      recognition.onerror = () => {
+        setIsDictating(false);
+
+        if (dictationOnRef.current) {
+          setDictationStatus('Tekrar dinlemeye çalışıyor...');
+          setTimeout(() => {
+            if (dictationOnRef.current) startDictation();
+          }, 350);
+        } else {
+          setDictationStatus('Hazır');
+        }
+      };
+
+      recognition.onend = () => {
+        setIsDictating(false);
+
+        if (dictationOnRef.current) {
+          setDictationStatus('Dinleme yenileniyor...');
+          setTimeout(() => {
+            if (dictationOnRef.current) startDictation();
+          }, 250);
+        } else {
+          setDictationStatus('Hazır');
+        }
+      };
+
+      dictationRecognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      dictationOnRef.current = false;
+      setIsDictating(false);
+      setDictationStatus('Sesle yazma başlatılamadı');
+    }
+  }
+
+  function toggleDictation() {
+    if (dictationOnRef.current) {
+      stopDictation();
+    } else {
+      startDictation();
+    }
+  }
+
+  function stopLiveListening() {
+    try {
+      liveListeningLockRef.current = false;
+      liveRecognitionRef.current?.stop?.();
+      liveRecognitionRef.current = null;
+      setLiveListening(false);
+    } catch {
+      liveListeningLockRef.current = false;
+      setLiveListening(false);
+    }
+  }
+
+  function startLiveListening() {
+    if (liveListeningLockRef.current) return;
+    if (assistantSpeakingRef.current) return;
+
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      alert(
+        'Bu tarayıcı canlı konuşmayı desteklemiyor kankam. Safari veya Chrome güncel sürüm dene.'
+      );
+      return;
+    }
+
+    try {
+      stopDictation();
+      window.speechSynthesis?.cancel();
+
+      const recognition = new SpeechRecognitionCtor();
+
+      recognition.lang = 'tr-TR';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      let finalText = '';
+      let quickTimer: ReturnType<typeof setTimeout> | null = null;
+
+      recognition.onstart = () => {
+        liveListeningLockRef.current = true;
+        setLiveListening(true);
+        setLiveStatus('Seni dinliyorum');
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const transcript = event.results[i]?.[0]?.transcript || '';
+
+          if (event.results[i].isFinal) {
+            finalText += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+
+        const heard = (finalText || interim).trim();
+
+        if (heard) {
+          setLiveStatus(`Duydum: ${heard}`);
+
+          if (quickTimer) clearTimeout(quickTimer);
+
+          quickTimer = setTimeout(() => {
+            const textToSend = (finalText || interim).trim();
+
+            if (textToSend.length > 1) {
+              try {
+                recognition.stop();
+              } catch {}
+
+              liveListeningLockRef.current = false;
+              setLiveListening(false);
+
+              sendMessage(textToSend, true);
+            }
+          }, 520);
+        }
+      };
+
+      recognition.onerror = () => {
+        if (quickTimer) clearTimeout(quickTimer);
+
+        liveListeningLockRef.current = false;
+        setLiveListening(false);
+
+        if (liveLoopRef.current) {
+          setLiveStatus('Tekrar dinlemeyi deniyorum');
+          setTimeout(() => startLiveListening(), 500);
+        } else {
+          setLiveStatus('Canlı konuşma durdu');
+        }
+      };
+
+      recognition.onend = () => {
+        if (quickTimer) clearTimeout(quickTimer);
+
+        liveListeningLockRef.current = false;
+        setLiveListening(false);
+
+        if (liveLoopRef.current && !assistantSpeakingRef.current) {
+          setLiveStatus('Dinleme yenileniyor');
+          setTimeout(() => startLiveListening(), 500);
+        } else if (!assistantSpeakingRef.current) {
+          setLiveStatus('Canlı konuşma hazır');
+        }
+      };
+
+      liveRecognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      liveListeningLockRef.current = false;
+      setLiveListening(false);
+      setLiveStatus('Canlı konuşma başlatılamadı');
+    }
+  }
+
+  function startSingleLiveTalk() {
+    liveLoopRef.current = false;
+    setLiveLoopOn(false);
+    setTimeout(() => startLiveListening(), 150);
+  }
+
+  function toggleLiveLoop() {
+    const next = !liveLoopRef.current;
+
+    liveLoopRef.current = next;
+    setLiveLoopOn(next);
+
+    if (next) {
+      setLiveStatus('Karşılıklı konuşma açık');
+      setTimeout(() => startLiveListening(), 180);
+    } else {
+      stopLiveListening();
+      window.speechSynthesis?.cancel();
+      setAssistantSpeaking(false);
+      assistantSpeakingRef.current = false;
+      setLiveStatus('Karşılıklı konuşma kapalı');
+    }
   }
 
   async function startCamera() {
@@ -757,7 +1036,9 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
             <div className="star">✦</div>
             <div>
               <h1>Sirius AI</h1>
-              <p>Seninle, her adımda. · {dictationStatus}</p>
+              <p>
+                Yazışma: {dictationStatus} · Canlı: {liveStatus}
+              </p>
             </div>
           </div>
 
@@ -770,14 +1051,17 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
             </button>
 
             <button
-              className="pill"
-              onClick={() => {
-                setChatInput('');
-                finalTranscriptRef.current = '';
-                setDictationStatus('Yazı temizlendi');
-              }}
+              className={liveListening ? 'pill active' : 'pill'}
+              onClick={startSingleLiveTalk}
             >
-              🧹 Temizle
+              {liveListening ? '🎧 Dinliyorum' : '🎧 Canlı Konuş'}
+            </button>
+
+            <button
+              className={liveLoopOn ? 'pill active' : 'pill'}
+              onClick={toggleLiveLoop}
+            >
+              {liveLoopOn ? '🔁 Karşılıklı Açık' : '🔁 Karşılıklı Konuş'}
             </button>
 
             <div className="profile">M</div>
@@ -787,7 +1071,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         <section className="hero-grid">
           <aside className="left-stack">
             <div className="side-card glass">
-              <h3>Canlı Sessiz Sohbet</h3>
+              <h3>Yazışma İçin Sesle Yaz</h3>
               <div className="wave">
                 <span />
                 <span />
@@ -798,10 +1082,10 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
               </div>
               <p>
                 {isDictating
-                  ? 'Konuşuyorsun, ben yazıya çeviriyorum...'
+                  ? 'Konuşuyorsun, yazışma alanına yazıyorum...'
                   : isTyping
                     ? 'Lyra cevap yazıyor...'
-                    : 'Hazırım kankam.'}
+                    : 'Yazışma modu hazır.'}
               </p>
               <button className="round" onClick={toggleDictation}>
                 🎙️
@@ -825,7 +1109,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                   const reply =
                     'Kahve modu açıldı kankam. Bugün dramatik dağılma yok; küçük küçük toparlıyoruz. Ne yapıyoruz?';
 
-                  typeLyraReply(reply);
+                  typeLyraReply(reply, false);
                 }}
               >
                 Kahve Modu
@@ -850,7 +1134,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
           <section className="avatar-stage glass">
             <div className="stage-top">
-              <span className="live-dot">● CANLI MOD</span>
+              <span className="live-dot">● SIRIUS CANLI ALAN</span>
               <div>
                 <button>⛶</button>
                 <button>⋮</button>
@@ -859,28 +1143,41 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
             <div className="avatar-body">
               <div className="avatar-orb">
-                <div className="face">😊</div>
+                <div className="face">
+                  {assistantSpeaking ? '🗣️' : liveListening ? '👂' : '😊'}
+                </div>
               </div>
 
               <div className="avatar-text">
                 <h2>{selectedAvatar}</h2>
                 <p>
-                  Sesle yazdırma, sessiz sohbet, içerik fikri, DGS planı,
-                  teleprompter, kamera çekimi ve günlük destek için buradayım.
+                  Buradan canlı konuşma başlatabilirsin. Yazışma alanındaki
+                  mikrofon sadece yazıya çevirir; buradaki canlı konuşma ise
+                  Lyra’nın sesli cevap verdiği ayrı moddur.
                 </p>
+
+                <div className="live-status-box">
+                  {assistantSpeaking
+                    ? 'Lyra konuşuyor...'
+                    : liveListening
+                      ? 'Seni dinliyorum...'
+                      : liveLoopOn
+                        ? 'Karşılıklı konuşma açık.'
+                        : 'Canlı konuşma hazır.'}
+                </div>
               </div>
             </div>
 
             <div className="stage-controls">
-              <button onClick={toggleDictation}>
-                {isDictating ? '🎙️ Durdur' : '🎙️ Sesle Yaz'}
+              <button onClick={startSingleLiveTalk}>🎧 Canlı Konuş</button>
+              <button onClick={toggleLiveLoop}>
+                {liveLoopOn ? '🔁 Kapat' : '🔁 Karşılıklı'}
               </button>
-              <button onClick={() => sendMessage()}>💬 Gönder</button>
               <button onClick={() => openTool('Video Çekim')}>📷 Kamera</button>
-              <button onClick={() => sendMessage('Bugün ne yapmalıyım?')}>
+              <button onClick={() => sendMessage('Bugün ne yapmalıyım?', false)}>
                 ✨ Plan Yap
               </button>
-              <button onClick={() => sendMessage('DGS temel kavramlar özet')}>
+              <button onClick={() => sendMessage('DGS temel kavramlar özet', false)}>
                 📚 DGS Özet
               </button>
             </div>
@@ -991,13 +1288,21 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
         <section className="content-grid">
           <div className="section glass">
-            <h2>Lyra Sohbet</h2>
+            <h2>Lyra Yazışma Alanı</h2>
 
             <div className="chat-list">
               {messages.map((message, index) => (
                 <div key={index} className={`bubble ${message.role}`}>
                   <strong>{message.role === 'user' ? 'Sen' : 'Lyra'}</strong>
-                  <p className={message.role === 'lyra' && isTyping && index === messages.length - 1 ? 'typing-cursor' : ''}>
+                  <p
+                    className={
+                      message.role === 'lyra' &&
+                      isTyping &&
+                      index === messages.length - 1
+                        ? 'typing-cursor'
+                        : ''
+                    }
+                  >
                     {message.text}
                   </p>
                 </div>
@@ -1017,10 +1322,10 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                     : 'Lyra’ya yaz veya sesle yazdır...'
                 }
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') sendMessage();
+                  if (event.key === 'Enter') sendMessage(undefined, false);
                 }}
               />
-              <button onClick={() => sendMessage()}>Gönder</button>
+              <button onClick={() => sendMessage(undefined, false)}>Gönder</button>
               <button onClick={toggleDictation}>
                 {isDictating ? 'Durdur' : 'Sesle Yaz'}
               </button>
@@ -1104,7 +1409,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
               key={item}
               className={item === 'Sirius' ? 'nav-star' : ''}
               onClick={() => {
-                if (item === 'Sirius') toggleDictation();
+                if (item === 'Sirius') toggleLiveLoop();
 
                 if (item === 'Stüdyo') {
                   document
@@ -1736,6 +2041,16 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           max-width: 560px;
           color: #f1dacf;
           line-height: 1.6;
+        }
+
+        .live-status-box {
+          margin-top: 14px;
+          padding: 12px 16px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.07);
+          border: 1px solid rgba(255, 220, 190, 0.16);
+          color: #ffe4d4;
+          display: inline-flex;
         }
 
         .section-head {
