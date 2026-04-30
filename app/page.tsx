@@ -30,18 +30,19 @@ export default function Page() {
   const [selectedTheme, setSelectedTheme] = useState('rose');
   const [selectedTab, setSelectedTab] = useState('Ana Sayfa');
   const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
-const [chatOpen, setChatOpen] = useState(false);
-const [chatInput, setChatInput] = useState('');
-const [chatLoading, setChatLoading] = useState(false);
-const [chatMessages, setChatMessages] = useState<
-  { role: 'user' | 'lyra'; text: string }[]
->([
-  {
-    role: 'lyra',
-    text: 'Buradayım kankam. Ne yapıyoruz; içerik mi, moral mi, plan mı, yoksa birlikte bir şeyi mi çözüyoruz?',
-  },
-]);
-  const [teleText, setTeleText] = useState(
+
+    const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<
+    { role: 'user' | 'lyra'; text: string }[]
+  >([
+    {
+      role: 'lyra',
+      text: 'Buradayım kankam. Ne yapıyoruz; içerik mi, moral mi, plan mı, yoksa birlikte bir şeyi mi çözüyoruz?',
+    },
+  ]);
+   const [teleText, setTeleText] = useState(
     'Merhaba! Bugün seninle üretkenliğini artıracak 5 etkili alışkanlıktan bahsedeceğim. Hazırsan hemen başlayalım...'
   );
 
