@@ -24,7 +24,37 @@ declare global {
   }
 }
 
-export default function Page() {
+export default function Page() {const speakWithPhoneVoice = (text: string) => {
+  if (typeof window === "undefined") return;
+
+  if (!("speechSynthesis" in window)) {
+    console.log("Bu tarayıcı sesli okuma desteklemiyor.");
+    return;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "tr-TR";
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+
+  const voices = window.speechSynthesis.getVoices();
+
+  const turkishVoice =
+    voices.find((voice) => voice.lang === "tr-TR") ||
+    voices.find((voice) => voice.lang.startsWith("tr")) ||
+    voices[0];
+
+  if (turkishVoice) {
+    utterance.voice = turkishVoice;
+  }
+
+  window.speechSynthesis.cancel();
+
+  setTimeout(() => {
+    window.speechSynthesis.speak(utterance);
+  }, 100);
+};
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'lyra',
