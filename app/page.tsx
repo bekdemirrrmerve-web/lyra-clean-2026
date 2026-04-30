@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 type ToolKey =
   | 'Teleprompter'
@@ -64,6 +64,11 @@ export default function Page() {
   const [saves, setSaves] = useState('32');
   const [shares, setShares] = useState('18');
 
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [recording, setRecording] = useState(false);
+
   const quickTools: ToolCard[] = useMemo(
     () => [
       { title: 'Teleprompter', subtitle: 'Metin akışı ve kayıt desteği', icon: '📝' },
@@ -126,6 +131,50 @@ export default function Page() {
     }
   }
 
+  async function startCamera() {
+    setCameraError('');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: true,
+      });
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      setCameraActive(true);
+    } catch {
+      setCameraError(
+        'Kankam kamera açılmadı. Tarayıcı kamera iznini kontrol et veya Vercel HTTPS linkinden açtığından emin ol.'
+      );
+    }
+  }
+
+  function stopCamera() {
+    const video = videoRef.current;
+
+    if (video?.srcObject) {
+      const stream = video.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      video.srcObject = null;
+    }
+
+    setCameraActive(false);
+    setRecording(false);
+  }
+
+  function toggleRecording() {
+    if (!cameraActive) {
+      setCameraError('Önce kamerayı aç kankam.');
+      return;
+    }
+
+    setRecording((prev) => !prev);
+  }
+
   async function sendLyraMessage() {
     const text = chatInput.trim();
     if (!text || chatLoading) return;
@@ -176,6 +225,11 @@ export default function Page() {
   function openTool(tool: ToolKey) {
     setActiveTool(tool);
     setToolResult('');
+    setCameraError('');
+
+    if (tool !== 'Video Çekim') {
+      stopCamera();
+    }
   }
 
   return (
@@ -215,7 +269,9 @@ export default function Page() {
             <div className="panel-card glass">
               <h3>Canlı Görüntülü Ara</h3>
               <p>Lyra ile yüz yüze konuş.</p>
-              <button className="circle-btn">📹</button>
+              <button className="circle-btn" onClick={() => openTool('Video Çekim')}>
+                📹
+              </button>
             </div>
 
             <div className="panel-card glass">
@@ -274,17 +330,11 @@ export default function Page() {
             </div>
 
             <div className="call-controls">
-              <button className="control-btn">
-                🔊<span>Hoparlör</span>
-              </button>
-              <button className="control-btn">
-                🔇<span>Sessiz</span>
-              </button>
-              <button className="control-btn end">
-                📞<span>Bitir</span>
-              </button>
-              <button className="control-btn">
-                📷<span>Kamera</span>
+              <button className="control-btn"><span>🔊</span><span>Hoparlör</span></button>
+              <button className="control-btn"><span>🔇</span><span>Sessiz</span></button>
+              <button className="control-btn end"><span>📞</span><span>Bitir</span></button>
+              <button className="control-btn" onClick={() => openTool('Video Çekim')}>
+                <span>📷</span><span>Kamera</span>
               </button>
             </div>
           </section>
@@ -468,22 +518,10 @@ export default function Page() {
             </div>
 
             <div className="stats-grid">
-              <div className="stat-box">
-                <span>Takipçi</span>
-                <strong>11.9K</strong>
-              </div>
-              <div className="stat-box">
-                <span>Görüntülenme</span>
-                <strong>2.1K</strong>
-              </div>
-              <div className="stat-box">
-                <span>Beğeni</span>
-                <strong>185</strong>
-              </div>
-              <div className="stat-box">
-                <span>Kaydetme</span>
-                <strong>32</strong>
-              </div>
+              <div className="stat-box"><span>Takipçi</span><strong>11.9K</strong></div>
+              <div className="stat-box"><span>Görüntülenme</span><strong>2.1K</strong></div>
+              <div className="stat-box"><span>Beğeni</span><strong>185</strong></div>
+              <div className="stat-box"><span>Kaydetme</span><strong>32</strong></div>
             </div>
 
             <div className="analysis-box">
@@ -534,9 +572,7 @@ export default function Page() {
               }`}
               onClick={() => {
                 setSelectedTab(item);
-                if (item === 'Sirius') {
-                  setChatOpen(true);
-                }
+                if (item === 'Sirius') setChatOpen(true);
               }}
             >
               {item === 'Ana Sayfa' && '🏠'}
@@ -550,7 +586,13 @@ export default function Page() {
         </nav>
 
         {activeTool && (
-          <div className="modal-backdrop" onClick={() => setActiveTool(null)}>
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              setActiveTool(null);
+              stopCamera();
+            }}
+          >
             <section
               className="tool-modal glass"
               onClick={(event) => event.stopPropagation()}
@@ -560,7 +602,14 @@ export default function Page() {
                   <p>Stüdyo Modülü</p>
                   <h2>{activeTool}</h2>
                 </div>
-                <button onClick={() => setActiveTool(null)}>✕</button>
+                <button
+                  onClick={() => {
+                    setActiveTool(null);
+                    stopCamera();
+                  }}
+                >
+                  ✕
+                </button>
               </div>
 
               {activeTool === 'Teleprompter' && (
@@ -595,23 +644,55 @@ export default function Page() {
 
               {activeTool === 'Video Çekim' && (
                 <div className="modal-content">
-                  <div className="video-frame">
-                    <span>REC</span>
-                    <strong>Video çekim alanı</strong>
-                    <p>Burada kamera + teleprompter birlikte çalışacak.</p>
+                  <div className="video-frame camera-frame">
+                    <video
+                      ref={videoRef}
+                      className="camera-video"
+                      playsInline
+                      muted
+                    />
+
+                    {!cameraActive && (
+                      <div className="camera-placeholder">
+                        <strong>Video çekim alanı</strong>
+                        <p>Kamerayı açınca burada canlı önizleme görünecek.</p>
+                      </div>
+                    )}
+
+                    {cameraActive && (
+                      <div className="teleprompter-overlay">
+                        <p>{teleText}</p>
+                      </div>
+                    )}
+
+                    {recording && <span className="record-badge">● REC</span>}
                   </div>
 
+                  {cameraError && <div className="result-box">{cameraError}</div>}
+
                   <div className="modal-actions">
+                    <button onClick={startCamera}>Kamerayı Aç</button>
+                    <button onClick={stopCamera}>Kamerayı Kapat</button>
+                    <button onClick={toggleRecording}>
+                      {recording ? 'Kaydı Durdur' : 'Kayıt Başlat'}
+                    </button>
                     <button>9:16</button>
                     <button>Işık</button>
                     <button>Filtre</button>
                     <button
                       onClick={() =>
-                        askLyra('Video çekim planı hazırla. Kamera, ışık, hook, akış ve CTA olsun.')
+                        askLyra(
+                          'Video çekim planı hazırla. Kamera, ışık, hook, akış ve CTA olsun.'
+                        )
                       }
                     >
                       Çekim Planı Oluştur
                     </button>
+                  </div>
+
+                  <div className="result-box">
+                    <strong>Teleprompter metni:</strong>
+                    <p>{teleText}</p>
                   </div>
 
                   {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
@@ -657,30 +738,12 @@ export default function Page() {
               {activeTool === 'Etkileşim Hesaplama' && (
                 <div className="modal-content">
                   <div className="form-grid">
-                    <label>
-                      Takipçi
-                      <input value={followers} onChange={(event) => setFollowers(event.target.value)} />
-                    </label>
-                    <label>
-                      Görüntülenme
-                      <input value={views} onChange={(event) => setViews(event.target.value)} />
-                    </label>
-                    <label>
-                      Beğeni
-                      <input value={likes} onChange={(event) => setLikes(event.target.value)} />
-                    </label>
-                    <label>
-                      Yorum
-                      <input value={comments} onChange={(event) => setComments(event.target.value)} />
-                    </label>
-                    <label>
-                      Kaydetme
-                      <input value={saves} onChange={(event) => setSaves(event.target.value)} />
-                    </label>
-                    <label>
-                      Paylaşım
-                      <input value={shares} onChange={(event) => setShares(event.target.value)} />
-                    </label>
+                    <label>Takipçi <input value={followers} onChange={(event) => setFollowers(event.target.value)} /></label>
+                    <label>Görüntülenme <input value={views} onChange={(event) => setViews(event.target.value)} /></label>
+                    <label>Beğeni <input value={likes} onChange={(event) => setLikes(event.target.value)} /></label>
+                    <label>Yorum <input value={comments} onChange={(event) => setComments(event.target.value)} /></label>
+                    <label>Kaydetme <input value={saves} onChange={(event) => setSaves(event.target.value)} /></label>
+                    <label>Paylaşım <input value={shares} onChange={(event) => setShares(event.target.value)} /></label>
                   </div>
 
                   <div className="result-box">
@@ -802,9 +865,7 @@ export default function Page() {
                   onChange={(event) => setChatInput(event.target.value)}
                   placeholder="Lyra’ya yaz..."
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      sendLyraMessage();
-                    }
+                    if (event.key === 'Enter') sendLyraMessage();
                   }}
                 />
                 <button onClick={sendLyraMessage} disabled={chatLoading}>
@@ -814,6 +875,71 @@ export default function Page() {
             </section>
           </div>
         )}
+
+        <style jsx global>{`
+          .camera-frame {
+            position: relative;
+            overflow: hidden;
+            min-height: 520px;
+            background: #09070d;
+          }
+
+          .camera-video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+
+          .camera-placeholder {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            gap: 10px;
+            place-items: center;
+            text-align: center;
+            color: #fff4e8;
+          }
+
+          .teleprompter-overlay {
+            position: absolute;
+            left: 50%;
+            bottom: 28px;
+            transform: translateX(-50%);
+            z-index: 3;
+            width: min(88%, 720px);
+            max-height: 42%;
+            overflow: hidden;
+            padding: 18px 22px;
+            border-radius: 24px;
+            background: rgba(10, 7, 15, 0.58);
+            border: 1px solid rgba(255, 220, 190, 0.26);
+            backdrop-filter: blur(12px);
+            text-align: center;
+          }
+
+          .teleprompter-overlay p {
+            margin: 0;
+            color: #fff8ef;
+            font-size: clamp(22px, 4vw, 42px);
+            line-height: 1.35;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+          }
+
+          .record-badge {
+            position: absolute;
+            top: 18px;
+            left: 18px;
+            z-index: 4;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(255, 60, 60, 0.22);
+            color: #ffb3b3;
+            border: 1px solid rgba(255, 80, 80, 0.35);
+            font-weight: 700;
+          }
+        `}</style>
       </div>
     </main>
   );
