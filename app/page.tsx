@@ -65,9 +65,13 @@ export default function Page() {
   const [shares, setShares] = useState('18');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [recording, setRecording] = useState(false);
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState('');
 
   const quickTools: ToolCard[] = useMemo(
     () => [
@@ -154,6 +158,10 @@ export default function Page() {
   }
 
   function stopCamera() {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+    }
+
     const video = videoRef.current;
 
     if (video?.srcObject) {
@@ -167,12 +175,57 @@ export default function Page() {
   }
 
   function toggleRecording() {
-    if (!cameraActive) {
+    const video = videoRef.current;
+
+    if (!cameraActive || !video?.srcObject) {
       setCameraError('Önce kamerayı aç kankam.');
       return;
     }
 
-    setRecording((prev) => !prev);
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+
+    try {
+      recordedChunksRef.current = [];
+      setRecordedVideoUrl('');
+
+      const stream = video.srcObject as MediaStream;
+
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : MediaRecorder.isTypeSupported('video/webm')
+          ? 'video/webm'
+          : '';
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, {
+          type: mimeType || 'video/webm',
+        });
+
+        const url = URL.createObjectURL(blob);
+        setRecordedVideoUrl(url);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setCameraError('');
+    } catch {
+      setCameraError(
+        'Kankam bu tarayıcı video kaydını desteklemedi. Kamera açılır ama kayıt alamayabiliriz. Başka tarayıcıdan denemek gerekebilir.'
+      );
+    }
   }
 
   async function sendLyraMessage() {
@@ -695,6 +748,27 @@ export default function Page() {
                     <p>{teleText}</p>
                   </div>
 
+                  {recordedVideoUrl && (
+                    <div className="result-box">
+                      <strong>Kaydedilen Video</strong>
+
+                      <video
+                        src={recordedVideoUrl}
+                        controls
+                        playsInline
+                        className="recorded-preview"
+                      />
+
+                      <a
+                        href={recordedVideoUrl}
+                        download="sirius-lyra-video.webm"
+                        className="download-link"
+                      >
+                        Videoyu İndir
+                      </a>
+                    </div>
+                  )}
+
                   {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
                   {toolResult && <div className="result-box">{toolResult}</div>}
                 </div>
@@ -938,6 +1012,29 @@ export default function Page() {
             color: #ffb3b3;
             border: 1px solid rgba(255, 80, 80, 0.35);
             font-weight: 700;
+          }
+
+          .recorded-preview {
+            width: 100%;
+            margin-top: 14px;
+            border-radius: 18px;
+            background: #000;
+            border: 1px solid rgba(255, 220, 190, 0.18);
+          }
+
+          .download-link {
+            display: inline-flex;
+            margin-top: 14px;
+            padding: 12px 16px;
+            border-radius: 999px;
+            text-decoration: none;
+            color: #fff5eb;
+            background: linear-gradient(
+              135deg,
+              rgba(255, 181, 190, 0.28),
+              rgba(255, 214, 160, 0.16)
+            );
+            border: 1px solid rgba(255, 201, 169, 0.2);
           }
         `}</style>
       </div>
