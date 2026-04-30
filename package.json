@@ -1,25 +1,26 @@
 {
-  "name": "lyra-clean-2026",
+  "name": "sirius-ai-lyra",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "next": "14.2.5",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "three": "0.170.0",
-    "@types/three": "0.170.0",
-    "@react-three/fiber": "8.18.0",
-    "@react-three/drei": "9.122.0"
+    "next": "16.2.4",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "three": "^0.181.2",
+    "three-mesh-bvh": "^0.8.0"
   },
   "devDependencies": {
-    "@types/node": "20.14.10",
-    "@types/react": "18.3.3",
-    "@types/react-dom": "18.3.0",
-    "typescript": "5.5.3"
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "16.2.4",
+    "typescript": "^5.7.2"
   }
 }
