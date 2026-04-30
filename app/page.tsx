@@ -97,7 +97,7 @@ async function sendLyraMessage() {
   const text = chatInput.trim();
   if (!text || chatLoading) return;
 
-  const userMessage = { role: 'user', text };
+  const userMessage: { role: 'user'; text: string } = { role: 'user', text };
   const nextMessages = [...chatMessages, userMessage];
 
   setChatMessages(nextMessages);
