@@ -1,88 +1,98 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
-export const runtime = 'nodejs';
+type Message = {
+  role: "user" | "lyra" | "assistant" | "system";
+  text?: string;
+  content?: string;
+};
 
-export async function POST(req: NextRequest) {
+function getLastUserMessage(messages: Message[]) {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  return (lastUser?.text || lastUser?.content || "").toLowerCase();
+}
+
+function createLyraReply(userText: string) {
+  if (
+    userText.includes("dgs") ||
+    userText.includes("ders") ||
+    userText.includes("çalış") ||
+    userText.includes("matematik") ||
+    userText.includes("türkçe")
+  ) {
+    return `Tabii kankam, sana gerçekçi bir DGS planı yapayım. Bence ilk hedefin günde 3-4 saat net ve kaliteli çalışma olsun. Yeni başlıyorsan bir anda 8 saatlik plan yazmak güzel görünür ama sürdürülemez.
+
+Bugünlük plan şöyle olsun:
+
+Sabah veya ilk boş vaktinde 60 dakika matematik çalış. Konu olarak problem çözme temeli, sayı problemleri veya temel işlem becerisi seç. Burada amaç hız değil, mantığı oturtmak.
+
+Sonra 20 dakika mola ver.
+
+İkinci blokta 60 dakika Türkçe çalış. Paragraf, anlam bilgisi ve dil bilgisi karışık gitme. Bugün sadece paragraf çöz. 25-30 soru çöz, sonra yanlışlarını incele.
+
+Sonra 30-40 dakika mola ver.
+
+Üçüncü blokta 60 dakika tekrar ve soru çözümü yap. Sabah çalıştığın matematik konusundan 20-30 soru çöz. Yanlışlarını ayrı bir deftere yaz.
+
+Akşam da 30 dakika mini tekrar yap. Bugün ne öğrendin, hangi soru tipinde zorlandın, yarın neye devam edeceksin bunu not al.
+
+Yani bugün ideal süre:
+3 saat ana çalışma + 30 dakika tekrar.
+
+Ben olsam ilk 2 hafta şu sistemi kurardım:
+Haftada 5 gün çalışma, 1 gün hafif tekrar, 1 gün dinlenme.
+Günde 2 blok matematik, 1 blok Türkçe.
+Çünkü DGS’de asıl farkı düzenli soru çözümü ve yanlış analizi yaratıyor.
+
+Bugünün mini hedefi:
+40 matematik sorusu,
+30 paragraf sorusu,
+10 yanlış analizi.
+
+Kendine çok yüklenme ama her gün masaya oturma alışkanlığını kur. DGS biraz zeka değil, daha çok ritim sınavı gibi.`;
+  }
+
+  if (
+    userText.includes("merhaba") ||
+    userText.includes("selam") ||
+    userText.includes("naber")
+  ) {
+    return "Buradayım kankam. Bugün Lyra modundayım; istersen plan yaparız, ders çalışırız, içerik üretiriz ya da kafanı toparlarız.";
+  }
+
+  if (
+    userText.includes("kimya") ||
+    userText.includes("formül") ||
+    userText.includes("laboratuvar") ||
+    userText.includes("analiz")
+  ) {
+    return "Kimya tarafına geçtik kankam. Bana hangi alanı istediğini söyle: kozmetik formül, arıtma analizi, çözelti hesabı, pH, KOİ/BOİ, INCI içerik veya laboratuvar planı. Ona göre net bir çalışma çıkarayım.";
+  }
+
+  if (
+    userText.includes("içerik") ||
+    userText.includes("video") ||
+    userText.includes("instagram") ||
+    userText.includes("tiktok")
+  ) {
+    return "İçerik için bence önce kancayı kurmamız lazım. Bana konuyu söyle, sana 3 saniyelik giriş cümlesi, kısa video metni, çekim akışı ve CTA çıkarayım.";
+  }
+
+  return `Seni duydum kankam. Bunu biraz daha netleştirirsen sana düzgün bir plan çıkarırım. İstersen bana hedefini, süreni ve hangi konuda destek istediğini yaz; ben de sana adım adım yol haritası yapayım.`;
+}
+
+export async function POST(request: Request) {
   try {
-    const { messages } = await req.json();
+    const body = await request.json();
+    const messages = body.messages || [];
 
-    if (!Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: 'Mesaj listesi bulunamadı.' },
-        { status: 400 }
-      );
-    }
+    const lastUserText = getLastUserMessage(messages);
+    const reply = createLyraReply(lastUserText);
 
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'OPENAI_API_KEY bulunamadı.' },
-        { status: 500 }
-      );
-    }
-
-    const systemPrompt = `
-Senin adın Lyra.
-Türkçe konuşan, sıcak, doğal, zeki, destekleyici ve samimi bir kadın AI asistansın.
-Kullanıcıyla yakın arkadaş gibi konuş ama yapay, abartılı veya çocukça olma.
-Kısa, anlaşılır ve işe yarar cevaplar ver.
-Kullanıcı stresliyse önce onu anla, sonra çözüm öner.
-İçerik üretimi, kozmetik, cilt bakımı, kombin, makyaj, günlük plan, motivasyon ve araştırma konularında çok iyisin.
-Cevaplarında bazen “bence”, “ben olsam”, “kankam” gibi doğal ifadeler kullanabilirsin.
-Tıbbi, hukuki veya finansal konularda kesin hüküm verme; güvenli ve temkinli yönlendir.
-`;
-
-    const openAiMessages = [
-      {
-        role: 'system',
-        content: systemPrompt,
-      },
-      ...messages.map((m: any) => ({
-        role: m.role === 'user' ? 'user' : 'assistant',
-        content: String(m.text || ''),
-      })),
-    ];
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: openAiMessages,
-        temperature: 0.8,
-        max_tokens: 700,
-      }),
+    return NextResponse.json({ reply });
+  } catch {
+    return NextResponse.json({
+      reply:
+        "Kankam şu an mesajı işlerken küçük bir hata oldu ama buradayım. Bana tekrar yazar mısın?",
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      return NextResponse.json(
-        {
-          error: 'OpenAI cevabı alınamadı.',
-          detail: errorText,
-        },
-        { status: response.status }
-      );
-    }
-
-    const data = await response.json();
-    const text =
-      data.choices?.[0]?.message?.content ||
-      'Kankam cevap üretirken takıldım, bir daha dener misin?';
-
-    return NextResponse.json({ text });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error: 'Sunucudan cevap alınamadı.',
-        detail: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
   }
 }
