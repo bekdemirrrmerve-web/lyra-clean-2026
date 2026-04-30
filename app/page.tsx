@@ -127,11 +127,10 @@ async function sendLyraMessage() {
   } catch {
     setChatMessages((prev) => [
       ...prev,
-      {
-        role: 'lyra',
-        text: 'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
-      },
-    ]);
+     {
+  role: 'lyra' as const,
+  text: data.text || 'Kankam cevap üretirken takıldım, bir daha dener misin?',
+}
   } finally {
     setChatLoading(false);
   }
