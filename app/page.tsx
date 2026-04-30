@@ -19,14 +19,15 @@ type ToolCard = {
 };
 
 type ContentCard = {
-  type ChatMessage = {
-  role: 'user' | 'lyra';
-  text: string;
-};
   title: string;
   type: string;
   meta: string;
   icon: string;
+};
+
+type ChatMessage = {
+  role: 'user' | 'lyra';
+  text: string;
 };
 
 export default function Page() {
@@ -35,21 +36,17 @@ export default function Page() {
   const [selectedTab, setSelectedTab] = useState('Ana Sayfa');
   const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
 
-    const [chatOpen, setChatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-  {
-    role: 'lyra',
-    text: 'Buradayım kankam. Ne yapıyoruz; içerik mi, moral mi, plan mı, yoksa birlikte bir şeyi mi çözüyoruz?',
-  },
-]);
     {
       role: 'lyra',
       text: 'Buradayım kankam. Ne yapıyoruz; içerik mi, moral mi, plan mı, yoksa birlikte bir şeyi mi çözüyoruz?',
     },
   ]);
-   const [teleText, setTeleText] = useState(
+
+  const [teleText, setTeleText] = useState(
     'Merhaba! Bugün seninle üretkenliğini artıracak 5 etkili alışkanlıktan bahsedeceğim. Hazırsan hemen başlayalım...'
   );
 
@@ -93,7 +90,10 @@ export default function Page() {
   );
 
   const totalEngagement =
-    Number(likes || 0) + Number(comments || 0) + Number(saves || 0) + Number(shares || 0);
+    Number(likes || 0) +
+    Number(comments || 0) +
+    Number(saves || 0) +
+    Number(shares || 0);
 
   const engagementRate = Number(views || 0)
     ? ((totalEngagement / Number(views || 1)) * 100).toFixed(2)
@@ -101,52 +101,9 @@ export default function Page() {
 
   function generateIdea() {
     const result = `${ideaPlatform} için ${ideaTopic} konulu içerik fikri:
-async function sendLyraMessage() {
-  const text = chatInput.trim();
-  if (!text || chatLoading) return;
 
-const nextMessages: ChatMessage[] = [...chatMessages, userMessage];
-  const nextMessages = [...chatMessages, userMessage];
+Kanca: “Bu konuda çoğu kişi aynı hatayı yapıyor...”
 
-  setChatMessages(nextMessages);
-  setChatInput('');
-  setChatLoading(true);
-
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: nextMessages }),
-    });
-
-    if (!res.ok) {
-      throw new Error('AI cevabı alınamadı');
-    }
-
-        const data = await res.json();
-
-    const lyraMessage: ChatMessage = {
-      role: 'lyra',
-      text:
-        data.text ||
-        'Kankam cevap üretirken takıldım, bir daha dener misin?',
-    };
-
-    setChatMessages((prev) => [...prev, lyraMessage]);
-  } catch {
-    const errorMessage: ChatMessage = {
-      role: 'lyra',
-      text:
-        'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
-    };
-
-    setChatMessages((prev) => [...prev, errorMessage]);
-  } finally {
-    setChatLoading(false);
-  }
-}
-
-   
 Akış:
 1. İlk 3 saniyede merak uyandır.
 2. Kısa bir problem göster.
@@ -154,9 +111,55 @@ Akış:
 4. Uygulanabilir mini öneri ver.
 5. Sonunda yorum sorusu sor.
 
-CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
+CTA:
+“Bunu daha önce duymuş muydun? Yoruma yaz.”`;
 
     setIdeaResult(result);
+  }
+
+  async function sendLyraMessage() {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+
+    const userMessage: ChatMessage = { role: 'user', text };
+    const nextMessages: ChatMessage[] = [...chatMessages, userMessage];
+
+    setChatMessages(nextMessages);
+    setChatInput('');
+    setChatLoading(true);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: nextMessages }),
+      });
+
+      if (!res.ok) {
+        throw new Error('AI cevabı alınamadı');
+      }
+
+      const data = await res.json();
+
+      const lyraMessage: ChatMessage = {
+        role: 'lyra',
+        text:
+          data.text ||
+          'Kankam cevap üretirken takıldım, bir daha dener misin?',
+      };
+
+      setChatMessages((prev) => [...prev, lyraMessage]);
+    } catch {
+      const errorMessage: ChatMessage = {
+        role: 'lyra',
+        text:
+          'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
+      };
+
+      setChatMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setChatLoading(false);
+    }
   }
 
   return (
@@ -183,7 +186,13 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
             <div className="panel-card glass">
               <h3>Canlı Sesli Sohbet</h3>
               <div className="voice-bars">
-                <span /><span /><span /><span /><span /><span /><span />
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
               </div>
               <p>Seni dinliyorum...</p>
               <button className="circle-btn">🎙️</button>
@@ -237,10 +246,18 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
             </div>
 
             <div className="call-controls">
-              <button className="control-btn">🔊<span>Hoparlör</span></button>
-              <button className="control-btn">🔇<span>Sessiz</span></button>
-              <button className="control-btn end">📞<span>Bitir</span></button>
-              <button className="control-btn">📷<span>Kamera</span></button>
+              <button className="control-btn">
+                🔊<span>Hoparlör</span>
+              </button>
+              <button className="control-btn">
+                🔇<span>Sessiz</span>
+              </button>
+              <button className="control-btn end">
+                📞<span>Bitir</span>
+              </button>
+              <button className="control-btn">
+                📷<span>Kamera</span>
+              </button>
             </div>
           </section>
 
@@ -336,10 +353,10 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
                     {mood === 'Calm'
                       ? 'Sakin'
                       : mood === 'Energetic'
-                      ? 'Enerjik'
-                      : mood === 'Elegant'
-                      ? 'Zarif'
-                      : 'Rahat'}
+                        ? 'Enerjik'
+                        : mood === 'Elegant'
+                          ? 'Zarif'
+                          : 'Rahat'}
                   </span>
                 </div>
               </button>
@@ -423,10 +440,22 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
             </div>
 
             <div className="stats-grid">
-              <div className="stat-box"><span>Takipçi</span><strong>11.9K</strong></div>
-              <div className="stat-box"><span>Görüntülenme</span><strong>2.1K</strong></div>
-              <div className="stat-box"><span>Beğeni</span><strong>185</strong></div>
-              <div className="stat-box"><span>Kaydetme</span><strong>32</strong></div>
+              <div className="stat-box">
+                <span>Takipçi</span>
+                <strong>11.9K</strong>
+              </div>
+              <div className="stat-box">
+                <span>Görüntülenme</span>
+                <strong>2.1K</strong>
+              </div>
+              <div className="stat-box">
+                <span>Beğeni</span>
+                <strong>185</strong>
+              </div>
+              <div className="stat-box">
+                <span>Kaydetme</span>
+                <strong>32</strong>
+              </div>
             </div>
 
             <div className="analysis-box">
@@ -476,11 +505,11 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
                 item === 'Sirius' ? 'star-nav' : ''
               }`}
               onClick={() => {
-  setSelectedTab(item);
-  if (item === 'Sirius') {
-    setChatOpen(true);
-  }
-}}
+                setSelectedTab(item);
+                if (item === 'Sirius') {
+                  setChatOpen(true);
+                }
+              }}
             >
               {item === 'Ana Sayfa' && '🏠'}
               {item === 'Stüdyo' && '🎬'}
@@ -493,52 +522,11 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
         </nav>
 
         {activeTool && (
-          <div className="modal-backdrop" onClick={() => setActiveTool(null)}>{chatOpen && (
-  <div className="modal-backdrop" onClick={() => setChatOpen(false)}>
-    <section className="tool-modal glass lyra-chat-modal" onClick={(e) => e.stopPropagation()}>
-      <div className="modal-head">
-        <div>
-          <p>Sirius AI</p>
-          <h2>Lyra Sohbet</h2>
-        </div>
-        <button onClick={() => setChatOpen(false)}>✕</button>
-      </div>
-
-      <div className="lyra-chat-list">
-        {chatMessages.map((message, index) => (
-          <div key={index} className={`lyra-bubble ${message.role}`}>
-            <strong>{message.role === 'user' ? 'Sen' : 'Lyra'}</strong>
-            <span>{message.text}</span>
-          </div>
-        ))}
-
-        {chatLoading && (
-          <div className="lyra-bubble lyra">
-            <strong>Lyra</strong>
-            <span>Bir saniye kankam, düşünüyorum...</span>
-          </div>
-        )}
-      </div>
-
-      <div className="lyra-chat-input">
-        <input
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          placeholder="Lyra’ya yaz..."
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              sendLyraMessage();
-            }
-          }}
-        />
-        <button onClick={sendLyraMessage} disabled={chatLoading}>
-          {chatLoading ? '...' : 'Gönder'}
-        </button>
-      </div>
-    </section>
-  </div>
-)}
-            <section className="tool-modal glass" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-backdrop" onClick={() => setActiveTool(null)}>
+            <section
+              className="tool-modal glass"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="modal-head">
                 <div>
                   <p>Stüdyo Modülü</p>
@@ -551,7 +539,7 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
                 <div className="modal-content">
                   <textarea
                     value={teleText}
-                    onChange={(e) => setTeleText(e.target.value)}
+                    onChange={(event) => setTeleText(event.target.value)}
                     placeholder="Teleprompter metnini buraya yaz..."
                   />
                   <div className="teleprompter-preview">
@@ -586,7 +574,10 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
                   <div className="form-grid">
                     <label>
                       Platform
-                      <select value={ideaPlatform} onChange={(e) => setIdeaPlatform(e.target.value)}>
+                      <select
+                        value={ideaPlatform}
+                        onChange={(event) => setIdeaPlatform(event.target.value)}
+                      >
                         <option>TikTok</option>
                         <option>Instagram Reels</option>
                         <option>YouTube Shorts</option>
@@ -598,7 +589,7 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
                       Konu
                       <input
                         value={ideaTopic}
-                        onChange={(e) => setIdeaTopic(e.target.value)}
+                        onChange={(event) => setIdeaTopic(event.target.value)}
                         placeholder="kozmetik, kimya, vlog..."
                       />
                     </label>
@@ -615,12 +606,48 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
               {activeTool === 'Etkileşim Hesaplama' && (
                 <div className="modal-content">
                   <div className="form-grid">
-                    <label>Takipçi <input value={followers} onChange={(e) => setFollowers(e.target.value)} /></label>
-                    <label>Görüntülenme <input value={views} onChange={(e) => setViews(e.target.value)} /></label>
-                    <label>Beğeni <input value={likes} onChange={(e) => setLikes(e.target.value)} /></label>
-                    <label>Yorum <input value={comments} onChange={(e) => setComments(e.target.value)} /></label>
-                    <label>Kaydetme <input value={saves} onChange={(e) => setSaves(e.target.value)} /></label>
-                    <label>Paylaşım <input value={shares} onChange={(e) => setShares(e.target.value)} /></label>
+                    <label>
+                      Takipçi
+                      <input
+                        value={followers}
+                        onChange={(event) => setFollowers(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Görüntülenme
+                      <input
+                        value={views}
+                        onChange={(event) => setViews(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Beğeni
+                      <input
+                        value={likes}
+                        onChange={(event) => setLikes(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Yorum
+                      <input
+                        value={comments}
+                        onChange={(event) => setComments(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Kaydetme
+                      <input
+                        value={saves}
+                        onChange={(event) => setSaves(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Paylaşım
+                      <input
+                        value={shares}
+                        onChange={(event) => setShares(event.target.value)}
+                      />
+                    </label>
                   </div>
 
                   <div className="result-box">
@@ -637,8 +664,8 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
                 <div className="modal-content">
                   <div className="upload-box">📸 Fotoğraf yükleme alanı</div>
                   <div className="result-box">
-                    Fotoğraf yüklendiğinde AI burada caption, renk paleti,
-                    ürün çekim önerisi ve içerik fikri çıkaracak.
+                    Fotoğraf yüklendiğinde AI burada caption, renk paleti, ürün
+                    çekim önerisi ve içerik fikri çıkaracak.
                   </div>
                 </div>
               )}
@@ -675,6 +702,55 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
                   </div>
                 </div>
               )}
+            </section>
+          </div>
+        )}
+
+        {chatOpen && (
+          <div className="modal-backdrop" onClick={() => setChatOpen(false)}>
+            <section
+              className="tool-modal glass lyra-chat-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="modal-head">
+                <div>
+                  <p>Sirius AI</p>
+                  <h2>Lyra Sohbet</h2>
+                </div>
+                <button onClick={() => setChatOpen(false)}>✕</button>
+              </div>
+
+              <div className="lyra-chat-list">
+                {chatMessages.map((message, index) => (
+                  <div key={index} className={`lyra-bubble ${message.role}`}>
+                    <strong>{message.role === 'user' ? 'Sen' : 'Lyra'}</strong>
+                    <span>{message.text}</span>
+                  </div>
+                ))}
+
+                {chatLoading && (
+                  <div className="lyra-bubble lyra">
+                    <strong>Lyra</strong>
+                    <span>Bir saniye kankam, düşünüyorum...</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="lyra-chat-input">
+                <input
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  placeholder="Lyra’ya yaz..."
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      sendLyraMessage();
+                    }
+                  }}
+                />
+                <button onClick={sendLyraMessage} disabled={chatLoading}>
+                  {chatLoading ? '...' : 'Gönder'}
+                </button>
+              </div>
             </section>
           </div>
         )}
