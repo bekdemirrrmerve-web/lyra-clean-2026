@@ -1,503 +1,409 @@
-'use client';
+"use client";
 
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type Role = "user" | "lyra";
 
 type Message = {
-  role: 'user' | 'lyra';
+  role: Role;
   text: string;
 };
 
-export default function Page() {
+type BrowserSpeechRecognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: any) => void) | null;
+  onresult: ((event: any) => void) | null;
+};
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => BrowserSpeechRecognition;
+    webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+  }
+}
+
+export default function LyraPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
-      role: 'lyra',
-      text: 'Merhaba kankam, ben Lyra. Artık gerçek AI cevabı verebilen daha akıllı sürümüm. Yaz, seslen, birlikte toparlayalım.',
+      role: "lyra",
+      text: "Ben buradayım Merve. Bugün sesi, tasarımı ve o gerçek Lyra hissini birlikte toparlıyoruz.",
     },
   ]);
 
-  const [input, setInput] = useState('');
-  const [listening, setListening] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [thinking, setThinking] = useState(false);
-  const [voice, setVoice] = useState('nova');
+  const [input, setInput] = useState("");
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState("");
+  const [rate, setRate] = useState(0.95);
+  const [pitch, setPitch] = useState(1.08);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [avatarOk, setAvatarOk] = useState(true);
+  const [error, setError] = useState("");
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
 
-  async function askAI(nextMessages: Message[]) {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: nextMessages }),
-    });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.log('Chat API hata:', errorText);
-      throw new Error('Chat API çalışmadı');
+    const savedVoice = localStorage.getItem("lyra_voice_uri");
+    if (savedVoice) setSelectedVoiceURI(savedVoice);
+
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedVoiceURI) {
+      localStorage.setItem("lyra_voice_uri", selectedVoiceURI);
+    }
+  }, [selectedVoiceURI]);
+
+  const bestVoice = useMemo(() => {
+    if (!voices.length) return null;
+
+    const selected = voices.find((voice) => voice.voiceURI === selectedVoiceURI);
+    if (selected) return selected;
+
+    const softFemaleHints = [
+      "female",
+      "woman",
+      "zira",
+      "seda",
+      "ayşe",
+      "turkish",
+      "türkçe",
+      "google",
+      "microsoft",
+      "enhanced",
+    ];
+
+    return (
+      voices.find(
+        (voice) =>
+          voice.lang.toLowerCase().startsWith("tr") &&
+          softFemaleHints.some((hint) =>
+            `${voice.name} ${voice.lang}`.toLowerCase().includes(hint)
+          )
+      ) ||
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("tr")) ||
+      voices.find((voice) =>
+        softFemaleHints.some((hint) =>
+          `${voice.name} ${voice.lang}`.toLowerCase().includes(hint)
+        )
+      ) ||
+      voices[0]
+    );
+  }, [voices, selectedVoiceURI]);
+
+  function speak(text: string) {
+    if (typeof window === "undefined") return;
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    if (bestVoice) {
+      utterance.voice = bestVoice;
+      utterance.lang = bestVoice.lang || "tr-TR";
+    } else {
+      utterance.lang = "tr-TR";
     }
 
-    const data = await res.json();
-    return data.text || 'Kankam cevap üretirken takıldım, bir daha dener misin?';
+    utterance.rate = rate;
+    utterance.pitch = pitch;
+    utterance.volume = 1;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setError("Ses başlatılamadı. Telefonda bir kez ekrana dokunup tekrar dene.");
+    };
+
+    window.speechSynthesis.speak(utterance);
   }
 
-  async function speak(text: string) {
-    setSpeaking(true);
-
-    try {
-      const res = await fetch('/api/openai-tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice }),
-      });
-
-      if (!res.ok) {
-        throw new Error('TTS çalışmadı');
-      }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-
-      if (!audioRef.current) {
-        audioRef.current = new Audio();
-      }
-
-      audioRef.current.src = url;
-      audioRef.current.onended = () => {
-        setSpeaking(false);
-        URL.revokeObjectURL(url);
-      };
-
-      await audioRef.current.play();
-    } catch (err) {
-      console.log('OpenAI sesi olmadı, tarayıcı sesine geçiliyor:', err);
-
-      try {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'tr-TR';
-        utterance.rate = 0.95;
-        utterance.pitch = 1.08;
-        utterance.volume = 1;
-
-        utterance.onend = () => setSpeaking(false);
-
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
-      } catch {
-        setSpeaking(false);
-      }
-    }
+  function stopSpeaking() {
+    if (typeof window === "undefined") return;
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
   }
 
-  async function sendMessage(custom?: string) {
-    const text = (custom || input).trim();
-    if (!text || thinking) return;
+  async function askLyra(forcedText?: string) {
+    const userText = (forcedText || input).trim();
+    if (!userText) return;
 
-    const userMessage: Message = { role: 'user', text };
-    const nextMessages = [...messages, userMessage];
+    setError("");
+    setInput("");
+
+    const nextMessages: Message[] = [
+      ...messages,
+      {
+        role: "user",
+        text: userText,
+      },
+    ];
 
     setMessages(nextMessages);
-    setInput('');
-    setThinking(true);
+
+    let lyraReply =
+      "Seni duydum kankam. Şu an ücretsiz ses ve yeni tasarım modundayım. API bağlantısı varsa daha akıllı cevap vereceğim, yoksa da tasarım ve ses sistemi bozulmadan çalışmaya devam eder.";
 
     try {
-      const reply = await askAI(nextMessages);
-      const lyraMessage: Message = { role: 'lyra', text: reply };
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: nextMessages,
+        }),
+      });
 
-      setMessages((prev) => [...prev, lyraMessage]);
-      await speak(reply);
+      if (response.ok) {
+        const data = await response.json();
+        lyraReply =
+          data.reply ||
+          data.text ||
+          data.message ||
+          data.content ||
+          lyraReply;
+      }
     } catch {
-      const fallback =
-        'Kankam sunucudan cevap alamadım. Büyük ihtimalle API key eksik, yanlış ya da Vercel environment değişkeni güncellenmedi.';
-      setMessages((prev) => [...prev, { role: 'lyra', text: fallback }]);
-      await speak(fallback);
-    } finally {
-      setThinking(false);
+      lyraReply =
+        "Bağlantı tarafı şu an cevap vermedi ama merak etme, Lyra'nın ücretsiz ses ve arayüz kısmı çalışıyor. Önce görünüşü oturtalım, sonra beyni bağlarız.";
     }
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "lyra",
+        text: lyraReply,
+      },
+    ]);
+
+    speak(lyraReply);
   }
 
-  function listen() {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+  function startListening() {
+    if (typeof window === "undefined") return;
 
-    if (!SpeechRecognition) {
-      const msg =
-        'Bu tarayıcı mikrofondan konuşmayı desteklemiyor kankam. Yazıdan devam edelim.';
-      setMessages((prev) => [...prev, { role: 'lyra', text: msg }]);
-      speak(msg);
+    const Recognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!Recognition) {
+      setError(
+        "Bu tarayıcı ses tanımayı desteklemiyor. Chrome veya Edge ile dene kankam."
+      );
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'tr-TR';
+    stopSpeaking();
+
+    const recognition = new Recognition();
+    recognitionRef.current = recognition;
+
+    recognition.lang = "tr-TR";
     recognition.continuous = false;
     recognition.interimResults = false;
 
-    recognition.onstart = () => setListening(true);
+    recognition.onstart = () => {
+      setIsListening(true);
+      setError("");
+    };
 
-    recognition.onresult = (event: any) => {
-      const text = event.results?.[0]?.[0]?.transcript || '';
-      sendMessage(text);
+    recognition.onend = () => {
+      setIsListening(false);
     };
 
     recognition.onerror = () => {
-      setListening(false);
-      const msg =
-        'Mikrofonu alamadım kankam. Safari izinlerini kontrol et ya da yazıdan devam edelim.';
-      setMessages((prev) => [...prev, { role: 'lyra', text: msg }]);
-      speak(msg);
+      setIsListening(false);
+      setError("Mikrofon dinleyemedi. Tarayıcıdan mikrofon iznini kontrol et.");
     };
 
-    recognition.onend = () => setListening(false);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results?.[0]?.[0]?.transcript || "";
+      setInput(transcript);
+      askLyra(transcript);
+    };
 
     recognition.start();
   }
 
+  const voiceOptions = voices.filter(Boolean);
+
   return (
-    <main className="page">
-      <section className="card">
-        <div className="top">
-          <div>
-            <p className="mini">Sirius AI</p>
-            <h1>Lyra</h1>
-          </div>
+    <main className="lyra-page">
+      <div className="sun-glow sun-glow-one" />
+      <div className="sun-glow sun-glow-two" />
+      <div className="leaf leaf-one">✦</div>
+      <div className="leaf leaf-two">❧</div>
+      <div className="leaf leaf-three">✧</div>
 
-          <select value={voice} onChange={(e) => setVoice(e.target.value)}>
-            <option value="nova">Nova - kadın</option>
-            <option value="shimmer">Shimmer - parlak</option>
-            <option value="alloy">Alloy - dengeli</option>
-            <option value="fable">Fable - anlatıcı</option>
-            <option value="echo">Echo - erkek</option>
-            <option value="onyx">Onyx - kalın erkek</option>
-          </select>
+      <section className="lyra-topbar">
+        <div>
+          <p className="eyebrow">LYRA CLEAN / REBORN</p>
+          <h1>Lyra</h1>
         </div>
 
-        <div className="avatarBox">
-          <div className={`avatar ${speaking ? 'talking' : ''}`}>
-            <div className="face">
-              <div className="hair" />
-              <div className="eye left" />
-              <div className="eye right" />
-              <div className="mouth" />
-            </div>
-          </div>
-
-          <div>
-            <h2>
-              {thinking
-                ? 'Düşünüyorum...'
-                : speaking
-                ? 'Lyra konuşuyor...'
-                : listening
-                ? 'Dinliyorum...'
-                : 'Hazırım kankam'}
-            </h2>
-            <p>
-              Gerçek AI cevapları, sesli yanıt, içerik, kozmetik, plan, kombin
-              ve günlük destek için buradayım.
-            </p>
-          </div>
-        </div>
-
-        <div className="quick">
-          <button onClick={() => sendMessage('Bugün ne yapmalıyım?')}>
-            Bugün ne yapmalıyım?
-          </button>
-          <button onClick={() => sendMessage('Bana moral ver')}>
-            Moral ver
-          </button>
-          <button onClick={() => sendMessage('İçerik fikri ver')}>
-            İçerik fikri
-          </button>
-          <button onClick={() => sendMessage('Kombin öner')}>
-            Kombin öner
-          </button>
-        </div>
-
-        <div className="chat">
-          {messages.map((m, i) => (
-            <div key={i} className={`msg ${m.role}`}>
-              <b>{m.role === 'user' ? 'Sen' : 'Lyra'}</b>
-              <span>{m.text}</span>
-            </div>
-          ))}
-
-          {thinking && (
-            <div className="msg lyra">
-              <b>Lyra</b>
-              <span>Bir saniye kankam, düşünüyorum...</span>
-            </div>
-          )}
-        </div>
-
-        <div className="bar">
-          <button className={listening ? 'mic active' : 'mic'} onClick={listen}>
-            🎙️
-          </button>
-
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Lyra’ya yaz..."
-            disabled={thinking}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') sendMessage();
-            }}
-          />
-
-          <button className="send" onClick={() => sendMessage()} disabled={thinking}>
-            {thinking ? '...' : 'Gönder'}
-          </button>
+        <div className="status-pill">
+          <span className={isSpeaking ? "dot active" : "dot"} />
+          {isSpeaking ? "Konuşuyor" : isListening ? "Dinliyor" : "Hazır"}
         </div>
       </section>
 
-      <style>{`
-        body {
-          background: #fff8ee;
-          color: #2b241d;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        }
+      <section className="lyra-shell">
+        <aside className="avatar-card">
+          <div className="avatar-stage">
+            <div className="halo" />
 
-        .page {
-          min-height: 100vh;
-          padding: 18px;
-          background:
-            radial-gradient(circle at top left, rgba(255, 205, 120, .5), transparent 35%),
-            radial-gradient(circle at bottom right, rgba(130, 200, 155, .38), transparent 35%),
-            linear-gradient(135deg, #fff8ee, #ffffff);
-        }
+            {avatarOk ? (
+              <img
+                src="/lyra-avatar.png"
+                alt="Lyra Avatar"
+                className={isSpeaking ? "lyra-avatar speaking" : "lyra-avatar"}
+                onError={() => setAvatarOk(false)}
+              />
+            ) : (
+              <div className={isSpeaking ? "avatar-fallback speaking" : "avatar-fallback"}>
+                <div className="hair" />
+                <div className="face">
+                  <span className="eye left-eye" />
+                  <span className="eye right-eye" />
+                  <span className="mouth" />
+                </div>
+              </div>
+            )}
+          </div>
 
-        .card {
-          max-width: 860px;
-          min-height: calc(100vh - 36px);
-          margin: 0 auto;
-          padding: 20px;
-          border-radius: 32px;
-          background: rgba(255,255,255,.75);
-          border: 1px solid rgba(220, 170, 90, .45);
-          box-shadow: 0 24px 80px rgba(75, 50, 20, .14);
-          padding-bottom: 100px;
-        }
+          <div className="avatar-caption">
+            <h2>Beyaz mistik asistan modu</h2>
+            <p>
+              Ücretsiz tarayıcı sesiyle çalışır. Kadın sesi cihazında varsa onu
+              seçer; yoksa en doğal sesi kullanır.
+            </p>
+          </div>
 
-        .top {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: center;
-        }
+          <div className="quick-actions">
+            <button onClick={startListening} className="primary-button">
+              {isListening ? "Dinliyorum..." : "Seslen"}
+            </button>
 
-        .mini {
-          margin: 0;
-          color: #9a7842;
-          letter-spacing: .16em;
-          text-transform: uppercase;
-          font-size: 12px;
-        }
+            <button onClick={() => speak("Ben buradayım Merve. Sesim artık ücretsiz tarayıcı sesinden geliyor.")}>
+              Sesi dene
+            </button>
 
-        h1 {
-          margin: 0;
-          font-size: 44px;
-        }
+            <button onClick={stopSpeaking}>Sesi durdur</button>
+          </div>
+        </aside>
 
-        select {
-          border: 1px solid rgba(120,90,40,.25);
-          border-radius: 16px;
-          padding: 11px;
-          background: white;
-          max-width: 190px;
-        }
+        <section className="chat-card">
+          <div className="chat-header">
+            <div>
+              <p className="eyebrow">SOHBET MODU</p>
+              <h2>Lyra ile konuş</h2>
+            </div>
+            <span className="mini-badge">Web Speech API</span>
+          </div>
 
-        .avatarBox {
-          margin-top: 22px;
-          display: flex;
-          gap: 16px;
-          align-items: center;
-          padding: 16px;
-          border-radius: 28px;
-          background: linear-gradient(135deg, #ffffff, #fff0d7);
-          border: 1px solid rgba(220,170,90,.45);
-        }
+          <div className="messages">
+            {messages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className={
+                  message.role === "lyra"
+                    ? "message message-lyra"
+                    : "message message-user"
+                }
+              >
+                <span>{message.role === "lyra" ? "Lyra" : "Sen"}</span>
+                <p>{message.text}</p>
+              </div>
+            ))}
+          </div>
 
-        .avatar {
-          width: 110px;
-          height: 110px;
-          border-radius: 50%;
-          background: radial-gradient(circle at 50% 35%, #ffd8b7, #d57c54 65%, #793721);
-          display: grid;
-          place-items: center;
-          box-shadow: 0 14px 36px rgba(110,60,30,.24);
-          animation: float 3s ease-in-out infinite;
-          flex: 0 0 auto;
-        }
+          {error && <div className="soft-error">{error}</div>}
 
-        .avatar.talking {
-          animation: float 1.5s ease-in-out infinite, glow 1s ease-in-out infinite;
-        }
+          <div className="input-row">
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") askLyra();
+              }}
+              placeholder="Lyra'ya yaz veya seslen..."
+            />
+            <button onClick={() => askLyra()} className="send-button">
+              Gönder
+            </button>
+          </div>
 
-        .face {
-          width: 70px;
-          height: 82px;
-          border-radius: 45%;
-          background: #ffd4b0;
-          position: relative;
-          overflow: hidden;
-        }
+          <div className="settings-grid">
+            <label>
+              Ses seç
+              <select
+                value={selectedVoiceURI}
+                onChange={(event) => setSelectedVoiceURI(event.target.value)}
+              >
+                <option value="">Otomatik en iyi sesi seç</option>
+                {voiceOptions.map((voice) => (
+                  <option key={voice.voiceURI} value={voice.voiceURI}>
+                    {voice.name} / {voice.lang}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        .hair {
-          position: absolute;
-          top: -18px;
-          left: -10px;
-          width: 90px;
-          height: 50px;
-          border-radius: 50%;
-          background: #9c3c25;
-        }
+            <label>
+              Hız: {rate.toFixed(2)}
+              <input
+                type="range"
+                min="0.75"
+                max="1.2"
+                step="0.01"
+                value={rate}
+                onChange={(event) => setRate(Number(event.target.value))}
+              />
+            </label>
 
-        .eye {
-          position: absolute;
-          top: 38px;
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #526b42;
-        }
+            <label>
+              Ton: {pitch.toFixed(2)}
+              <input
+                type="range"
+                min="0.8"
+                max="1.3"
+                step="0.01"
+                value={pitch}
+                onChange={(event) => setPitch(Number(event.target.value))}
+              />
+            </label>
+          </div>
+        </section>
+      </section>
 
-        .eye.left {
-          left: 19px;
-        }
-
-        .eye.right {
-          right: 19px;
-        }
-
-        .mouth {
-          position: absolute;
-          left: 50%;
-          bottom: 20px;
-          transform: translateX(-50%);
-          width: 22px;
-          height: 8px;
-          border-radius: 0 0 18px 18px;
-          background: #a94c55;
-        }
-
-        .talking .mouth {
-          animation: talk .28s infinite alternate;
-        }
-
-        .quick {
-          margin: 18px 0;
-          display: flex;
-          gap: 9px;
-          overflow-x: auto;
-        }
-
-        .quick button {
-          white-space: nowrap;
-          border: 0;
-          border-radius: 999px;
-          padding: 11px 14px;
-          background: #fff1d4;
-          color: #5a421f;
-        }
-
-        .chat {
-          display: flex;
-          flex-direction: column;
-          gap: 11px;
-        }
-
-        .msg {
-          max-width: 90%;
-          padding: 13px 14px;
-          border-radius: 20px;
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-          line-height: 1.4;
-        }
-
-        .msg.user {
-          align-self: flex-end;
-          background: #2d2822;
-          color: white;
-        }
-
-        .msg.lyra {
-          align-self: flex-start;
-          background: white;
-          border: 1px solid rgba(220,170,90,.38);
-        }
-
-        .bar {
-          position: fixed;
-          left: 18px;
-          right: 18px;
-          bottom: 18px;
-          max-width: 860px;
-          margin: 0 auto;
-          display: flex;
-          gap: 9px;
-          align-items: center;
-          padding: 10px;
-          border-radius: 999px;
-          background: rgba(255,255,255,.9);
-          border: 1px solid rgba(220,170,90,.45);
-          box-shadow: 0 16px 50px rgba(70,50,25,.18);
-        }
-
-        input {
-          flex: 1;
-          border: 0;
-          outline: 0;
-          background: transparent;
-          font-size: 16px;
-        }
-
-        .mic,
-        .send {
-          border: 0;
-          border-radius: 999px;
-          height: 42px;
-          font-weight: 700;
-        }
-
-        .mic {
-          width: 42px;
-          background: #fff0cf;
-        }
-
-        .mic.active {
-          background: #c65c4d;
-          color: white;
-        }
-
-        .send {
-          padding: 0 15px;
-          background: #2d2822;
-          color: white;
-        }
-
-        .send:disabled,
-        input:disabled {
-          opacity: .6;
-        }
-
-        @keyframes float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-6px); }
-        }
-
-        @keyframes glow {
-          0%, 100% { box-shadow: 0 14px 36px rgba(110,60,30,.24); }
-          50% { box-shadow: 0 14px 50px rgba(230,150,60,.55); }
-        }
-
-        @keyframes talk {
-          from { height: 5px; width: 18px; }
-          to { height: 15px; width: 25px; }
-        }
-      `}</style>
+      <section className="feature-dock">
+        <div>PDF Özet</div>
+        <div>Araştırma</div>
+        <div>Kimya Lab</div>
+        <div>Astroloji</div>
+        <div>Not Defteri</div>
+        <div>Görsel</div>
+      </section>
     </main>
   );
 }
