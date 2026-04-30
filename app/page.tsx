@@ -2,8 +2,18 @@
 
 import { useMemo, useState } from 'react';
 
+type ToolKey =
+  | 'Teleprompter'
+  | 'Video Çekim'
+  | 'İçerik Fikri'
+  | 'Etkileşim Hesaplama'
+  | 'Fotoğraf Analizi'
+  | 'PDF Özetle'
+  | 'Notlar'
+  | 'Görsel Üret';
+
 type ToolCard = {
-  title: string;
+  title: ToolKey;
   subtitle: string;
   icon: string;
 };
@@ -15,16 +25,26 @@ type ContentCard = {
   icon: string;
 };
 
-type MoodCard = {
-  title: string;
-  subtitle: string;
-  image: string;
-};
-
 export default function Page() {
   const [selectedMood, setSelectedMood] = useState('Calm');
   const [selectedTheme, setSelectedTheme] = useState('rose');
   const [selectedTab, setSelectedTab] = useState('Ana Sayfa');
+  const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
+
+  const [teleText, setTeleText] = useState(
+    'Merhaba! Bugün seninle üretkenliğini artıracak 5 etkili alışkanlıktan bahsedeceğim. Hazırsan hemen başlayalım...'
+  );
+
+  const [ideaTopic, setIdeaTopic] = useState('kozmetik');
+  const [ideaPlatform, setIdeaPlatform] = useState('TikTok');
+  const [ideaResult, setIdeaResult] = useState('');
+
+  const [followers, setFollowers] = useState('11900');
+  const [views, setViews] = useState('2100');
+  const [likes, setLikes] = useState('185');
+  const [comments, setComments] = useState('22');
+  const [saves, setSaves] = useState('32');
+  const [shares, setShares] = useState('18');
 
   const quickTools: ToolCard[] = useMemo(
     () => [
@@ -54,40 +74,32 @@ export default function Page() {
     []
   );
 
-  const moods: MoodCard[] = useMemo(
-    () => [
-      {
-        title: 'Calm',
-        subtitle: 'Sakin',
-        image:
-          'linear-gradient(135deg, rgba(90,120,255,0.35), rgba(30,30,60,0.4))',
-      },
-      {
-        title: 'Energetic',
-        subtitle: 'Enerjik',
-        image:
-          'linear-gradient(135deg, rgba(255,155,85,0.45), rgba(120,50,20,0.35))',
-      },
-      {
-        title: 'Elegant',
-        subtitle: 'Zarif',
-        image:
-          'linear-gradient(135deg, rgba(180,120,255,0.4), rgba(80,40,120,0.35))',
-      },
-      {
-        title: 'Casual',
-        subtitle: 'Rahat',
-        image:
-          'linear-gradient(135deg, rgba(255,210,190,0.35), rgba(110,80,75,0.3))',
-      },
-    ],
-    []
-  );
+  const totalEngagement =
+    Number(likes || 0) + Number(comments || 0) + Number(saves || 0) + Number(shares || 0);
+
+  const engagementRate = Number(views || 0)
+    ? ((totalEngagement / Number(views || 1)) * 100).toFixed(2)
+    : '0.00';
+
+  function generateIdea() {
+    const result = `${ideaPlatform} için ${ideaTopic} konulu içerik fikri:
+
+Kanca: “Bu konuda çoğu kişi aynı hatayı yapıyor...”
+Akış:
+1. İlk 3 saniyede merak uyandır.
+2. Kısa bir problem göster.
+3. Kimyager/uzman bakışıyla sade açıkla.
+4. Uygulanabilir mini öneri ver.
+5. Sonunda yorum sorusu sor.
+
+CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
+
+    setIdeaResult(result);
+  }
 
   return (
     <main className={`page-shell theme-${selectedTheme}`}>
       <div className="page-container">
-        {/* TOP BAR */}
         <header className="topbar glass">
           <div className="brand">
             <div className="brand-star">✦</div>
@@ -104,20 +116,12 @@ export default function Page() {
           </div>
         </header>
 
-        {/* MAIN GRID */}
         <section className="hero-grid">
-          {/* LEFT PANEL */}
           <aside className="left-panel">
             <div className="panel-card glass">
               <h3>Canlı Sesli Sohbet</h3>
               <div className="voice-bars">
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
+                <span /><span /><span /><span /><span /><span /><span />
               </div>
               <p>Seni dinliyorum...</p>
               <button className="circle-btn">🎙️</button>
@@ -147,7 +151,6 @@ export default function Page() {
             </div>
           </aside>
 
-          {/* CENTER */}
           <section className="center-panel glass">
             <div className="live-header">
               <span className="status-badge">CANLI MOD</span>
@@ -161,6 +164,7 @@ export default function Page() {
               <div className="avatar-figure">
                 <div className="avatar-face">😊</div>
               </div>
+
               <div className="avatar-copy">
                 <h2>Lyra</h2>
                 <p>
@@ -178,7 +182,6 @@ export default function Page() {
             </div>
           </section>
 
-          {/* RIGHT PANEL */}
           <aside className="right-panel">
             <div className="panel-card glass">
               <div className="theme-row">
@@ -250,7 +253,6 @@ export default function Page() {
           </aside>
         </section>
 
-        {/* MOODS */}
         <section className="section-card glass">
           <div className="section-head">
             <div>
@@ -260,16 +262,23 @@ export default function Page() {
           </div>
 
           <div className="mood-grid">
-            {moods.map((mood) => (
+            {['Calm', 'Energetic', 'Elegant', 'Casual'].map((mood) => (
               <button
-                key={mood.title}
-                className={`mood-card ${selectedMood === mood.title ? 'selected' : ''}`}
-                onClick={() => setSelectedMood(mood.title)}
-                style={{ background: mood.image }}
+                key={mood}
+                className={`mood-card ${selectedMood === mood ? 'selected' : ''}`}
+                onClick={() => setSelectedMood(mood)}
               >
                 <div className="mood-overlay">
-                  <strong>{mood.title}</strong>
-                  <span>{mood.subtitle}</span>
+                  <strong>{mood}</strong>
+                  <span>
+                    {mood === 'Calm'
+                      ? 'Sakin'
+                      : mood === 'Energetic'
+                      ? 'Enerjik'
+                      : mood === 'Elegant'
+                      ? 'Zarif'
+                      : 'Rahat'}
+                  </span>
                 </div>
               </button>
             ))}
@@ -293,7 +302,6 @@ export default function Page() {
           </div>
         </section>
 
-        {/* STUDIO TOOLS */}
         <section className="section-card glass">
           <div className="section-head">
             <div>
@@ -304,18 +312,21 @@ export default function Page() {
 
           <div className="tools-grid">
             {quickTools.map((tool) => (
-              <div className="tool-card" key={tool.title}>
+              <button
+                className="tool-card"
+                key={tool.title}
+                onClick={() => setActiveTool(tool.title)}
+              >
                 <div className="tool-icon">{tool.icon}</div>
                 <div>
                   <h3>{tool.title}</h3>
                   <p>{tool.subtitle}</p>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </section>
 
-        {/* CONTENT IDEA + INTERACTION */}
         <section className="double-grid">
           <div className="section-card glass">
             <div className="section-head">
@@ -338,11 +349,6 @@ export default function Page() {
                 “Bu ürünü herkes yanlış kullanıyor olabilir... kimyager gözüyle
                 anlatıyorum.”
               </p>
-              <ul>
-                <li>Giriş: dikkat çeken ilk 3 saniye</li>
-                <li>Orta: ürün / içerik açıklaması</li>
-                <li>Bitiş: CTA + yorum sorusu</li>
-              </ul>
             </div>
           </div>
 
@@ -355,22 +361,10 @@ export default function Page() {
             </div>
 
             <div className="stats-grid">
-              <div className="stat-box">
-                <span>Takipçi</span>
-                <strong>11.9K</strong>
-              </div>
-              <div className="stat-box">
-                <span>Görüntülenme</span>
-                <strong>2.1K</strong>
-              </div>
-              <div className="stat-box">
-                <span>Beğeni</span>
-                <strong>185</strong>
-              </div>
-              <div className="stat-box">
-                <span>Kaydetme</span>
-                <strong>32</strong>
-              </div>
+              <div className="stat-box"><span>Takipçi</span><strong>11.9K</strong></div>
+              <div className="stat-box"><span>Görüntülenme</span><strong>2.1K</strong></div>
+              <div className="stat-box"><span>Beğeni</span><strong>185</strong></div>
+              <div className="stat-box"><span>Kaydetme</span><strong>32</strong></div>
             </div>
 
             <div className="analysis-box">
@@ -383,7 +377,6 @@ export default function Page() {
           </div>
         </section>
 
-        {/* RECENT CONTENTS */}
         <section className="section-card glass">
           <div className="section-head">
             <div>
@@ -413,12 +406,13 @@ export default function Page() {
           </div>
         </section>
 
-        {/* BOTTOM NAV */}
         <nav className="bottom-nav glass">
           {['Ana Sayfa', 'Stüdyo', 'Sirius', 'Sohbetler', 'Profil'].map((item) => (
             <button
               key={item}
-              className={`nav-item ${selectedTab === item ? 'active' : ''} ${item === 'Sirius' ? 'star-nav' : ''}`}
+              className={`nav-item ${selectedTab === item ? 'active' : ''} ${
+                item === 'Sirius' ? 'star-nav' : ''
+              }`}
               onClick={() => setSelectedTab(item)}
             >
               {item === 'Ana Sayfa' && '🏠'}
@@ -430,6 +424,149 @@ export default function Page() {
             </button>
           ))}
         </nav>
+
+        {activeTool && (
+          <div className="modal-backdrop" onClick={() => setActiveTool(null)}>
+            <section className="tool-modal glass" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <p>Stüdyo Modülü</p>
+                  <h2>{activeTool}</h2>
+                </div>
+                <button onClick={() => setActiveTool(null)}>✕</button>
+              </div>
+
+              {activeTool === 'Teleprompter' && (
+                <div className="modal-content">
+                  <textarea
+                    value={teleText}
+                    onChange={(e) => setTeleText(e.target.value)}
+                    placeholder="Teleprompter metnini buraya yaz..."
+                  />
+                  <div className="teleprompter-preview">
+                    <p>{teleText}</p>
+                  </div>
+                  <div className="modal-actions">
+                    <button>Başlat</button>
+                    <button>Duraklat</button>
+                    <button>Metni Kaydet</button>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'Video Çekim' && (
+                <div className="modal-content">
+                  <div className="video-frame">
+                    <span>REC</span>
+                    <strong>Video çekim alanı</strong>
+                    <p>Burada kamera + teleprompter birlikte çalışacak.</p>
+                  </div>
+                  <div className="modal-actions">
+                    <button>9:16</button>
+                    <button>Işık</button>
+                    <button>Filtre</button>
+                    <button>Kayıt Başlat</button>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'İçerik Fikri' && (
+                <div className="modal-content">
+                  <div className="form-grid">
+                    <label>
+                      Platform
+                      <select value={ideaPlatform} onChange={(e) => setIdeaPlatform(e.target.value)}>
+                        <option>TikTok</option>
+                        <option>Instagram Reels</option>
+                        <option>YouTube Shorts</option>
+                        <option>Story</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Konu
+                      <input
+                        value={ideaTopic}
+                        onChange={(e) => setIdeaTopic(e.target.value)}
+                        placeholder="kozmetik, kimya, vlog..."
+                      />
+                    </label>
+                  </div>
+
+                  <button className="primary-action" onClick={generateIdea}>
+                    Fikir Üret
+                  </button>
+
+                  {ideaResult && <pre className="result-box">{ideaResult}</pre>}
+                </div>
+              )}
+
+              {activeTool === 'Etkileşim Hesaplama' && (
+                <div className="modal-content">
+                  <div className="form-grid">
+                    <label>Takipçi <input value={followers} onChange={(e) => setFollowers(e.target.value)} /></label>
+                    <label>Görüntülenme <input value={views} onChange={(e) => setViews(e.target.value)} /></label>
+                    <label>Beğeni <input value={likes} onChange={(e) => setLikes(e.target.value)} /></label>
+                    <label>Yorum <input value={comments} onChange={(e) => setComments(e.target.value)} /></label>
+                    <label>Kaydetme <input value={saves} onChange={(e) => setSaves(e.target.value)} /></label>
+                    <label>Paylaşım <input value={shares} onChange={(e) => setShares(e.target.value)} /></label>
+                  </div>
+
+                  <div className="result-box">
+                    <h3>Etkileşim Oranı: %{engagementRate}</h3>
+                    <p>
+                      Toplam etkileşim: {totalEngagement}. Kaydetme ve paylaşım
+                      güçlü ise içerik algoritmada daha uzun yaşayabilir.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'Fotoğraf Analizi' && (
+                <div className="modal-content">
+                  <div className="upload-box">📸 Fotoğraf yükleme alanı</div>
+                  <div className="result-box">
+                    Fotoğraf yüklendiğinde AI burada caption, renk paleti,
+                    ürün çekim önerisi ve içerik fikri çıkaracak.
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'PDF Özetle' && (
+                <div className="modal-content">
+                  <div className="upload-box">📄 PDF yükleme alanı</div>
+                  <div className="result-box">
+                    PDF yüklendiğinde özet, önemli maddeler, soru-cevap ve
+                    teleprompter metni oluşturulacak.
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'Notlar' && (
+                <div className="modal-content">
+                  <textarea placeholder="Hızlı notunu yaz..." />
+                  <div className="modal-actions">
+                    <button>Notu Toparla</button>
+                    <button>Yapılacak Listeye Çevir</button>
+                    <button>Kaydet</button>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'Görsel Üret' && (
+                <div className="modal-content">
+                  <textarea placeholder="Üretmek istediğin görseli anlat..." />
+                  <div className="modal-actions">
+                    <button>Kapak Görseli</button>
+                    <button>Ürün Çekimi</button>
+                    <button>Moodboard</button>
+                    <button>Görsel Üret</button>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
       </div>
     </main>
   );
