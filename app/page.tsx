@@ -463,7 +463,12 @@ CTA: “Bunu daha önce duymuş muydun? Yoruma yaz.”`;
               className={`nav-item ${selectedTab === item ? 'active' : ''} ${
                 item === 'Sirius' ? 'star-nav' : ''
               }`}
-              onClick={() => setSelectedTab(item)}
+              onClick={() => {
+  setSelectedTab(item);
+  if (item === 'Sirius') {
+    setChatOpen(true);
+  }
+}}
             >
               {item === 'Ana Sayfa' && '🏠'}
               {item === 'Stüdyo' && '🎬'}
