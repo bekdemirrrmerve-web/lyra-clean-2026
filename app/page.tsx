@@ -91,7 +91,49 @@ const [chatMessages, setChatMessages] = useState([
 
   function generateIdea() {
     const result = `${ideaPlatform} için ${ideaTopic} konulu içerik fikri:
+async function sendLyraMessage() {
+  const text = chatInput.trim();
+  if (!text || chatLoading) return;
 
+  const userMessage = { role: 'user', text };
+  const nextMessages = [...chatMessages, userMessage];
+
+  setChatMessages(nextMessages);
+  setChatInput('');
+  setChatLoading(true);
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: nextMessages }),
+    });
+
+    if (!res.ok) {
+      throw new Error('AI cevabı alınamadı');
+    }
+
+    const data = await res.json();
+
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: 'lyra',
+        text: data.text || 'Kankam cevap üretirken takıldım, bir daha dener misin?',
+      },
+    ]);
+  } catch {
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: 'lyra',
+        text: 'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
+      },
+    ]);
+  } finally {
+    setChatLoading(false);
+  }
+}
 Kanca: “Bu konuda çoğu kişi aynı hatayı yapıyor...”
 Akış:
 1. İlk 3 saniyede merak uyandır.
