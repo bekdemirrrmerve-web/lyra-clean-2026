@@ -24,37 +24,69 @@ declare global {
   }
 }
 
-export default function Page() {const speakWithPhoneVoice = (text: string) => {
-  if (typeof window === "undefined") return;
+export default function Page() {
+  function speakWithPhoneVoice(text: string) {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
-  if (!("speechSynthesis" in window)) {
-    console.log("Bu tarayıcı sesli okuma desteklemiyor.");
-    return;
+    try {
+      const synth = window.speechSynthesis;
+      const cleanText = cleanSpeechText(text)
+        .replace(/[*_`#>]/g, '')
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+        .trim();
+
+      if (!cleanText) return;
+
+      synth.cancel();
+      synth.resume();
+
+      setAssistantSpeaking(true);
+      assistantSpeakingRef.current = true;
+
+      const chunks = cleanText
+        .split(/(?<=[.!?])\s+/)
+        .map((chunk) => chunk.trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      let index = 0;
+
+      const speakNext = () => {
+        if (index >= chunks.length) {
+          setAssistantSpeaking(false);
+          assistantSpeakingRef.current = false;
+          return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(chunks[index]);
+        utterance.lang = 'tr-TR';
+        utterance.rate = 1;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+
+        const voice = getBestVoice();
+        if (voice) utterance.voice = voice;
+
+        utterance.onend = () => {
+          index += 1;
+          setTimeout(speakNext, 80);
+        };
+
+        utterance.onerror = () => {
+          index += 1;
+          setTimeout(speakNext, 80);
+        };
+
+        synth.speak(utterance);
+      };
+
+      setTimeout(speakNext, 120);
+    } catch {
+      setAssistantSpeaking(false);
+      assistantSpeakingRef.current = false;
+    }
   }
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "tr-TR";
-  utterance.rate = 1;
-  utterance.pitch = 1;
-  utterance.volume = 1;
-
-  const voices = window.speechSynthesis.getVoices();
-
-  const turkishVoice =
-    voices.find((voice) => voice.lang === "tr-TR") ||
-    voices.find((voice) => voice.lang.startsWith("tr")) ||
-    voices[0];
-
-  if (turkishVoice) {
-    utterance.voice = turkishVoice;
-  }
-
-  window.speechSynthesis.cancel();
-
-  setTimeout(() => {
-    window.speechSynthesis.speak(utterance);
-  }, 100);
-};
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'lyra',
@@ -644,6 +676,8 @@ Kamera karşısında ben soft fresh seçerdim.`;
     const text = raw.trim();
     if (!text) return;
 
+    unlockSpeech();
+
     const reply = localLyraReply(text);
 
     setMessages((prev) => [...prev, { role: 'user', text }]);
@@ -651,6 +685,7 @@ Kamera karşısında ben soft fresh seçerdim.`;
     finalTranscriptRef.current = '';
 
     typeLyraReply(reply);
+    speakWithPhoneVoice(reply);
   }
 
   function handleLiveUserText(text: string) {
@@ -1131,6 +1166,7 @@ Kamera karşısında ben soft fresh seçerdim.`;
                     'Kahve modu açıldı kankam. Bugün dramatik dağılma yok; küçük küçük toparlıyoruz. Ne yapıyoruz?';
 
                   typeLyraReply(reply);
+                  speakWithPhoneVoice(reply);
                 }}
               >
                 Kahve Modu
