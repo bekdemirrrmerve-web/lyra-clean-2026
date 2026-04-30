@@ -976,3 +976,75 @@ button {
     padding: 10px;
   }
 }
+.lyra-chat-modal {
+  max-width: 760px;
+}
+
+.lyra-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 55vh;
+  overflow: auto;
+  padding: 6px 4px 18px;
+}
+
+.lyra-bubble {
+  max-width: 88%;
+  padding: 14px 16px;
+  border-radius: 20px;
+  display: grid;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.lyra-bubble strong {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.lyra-bubble span {
+  white-space: pre-wrap;
+}
+
+.lyra-bubble.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(255, 195, 160, 0.24), rgba(255, 150, 190, 0.18));
+  border: 1px solid rgba(255, 201, 169, 0.18);
+}
+
+.lyra-bubble.lyra {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 201, 169, 0.14);
+}
+
+.lyra-chat-input {
+  display: flex;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 201, 169, 0.12);
+}
+
+.lyra-chat-input input {
+  flex: 1;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 201, 169, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff6ee;
+  padding: 14px 16px;
+  outline: none;
+}
+
+.lyra-chat-input button {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 201, 169, 0.2);
+  background: linear-gradient(135deg, rgba(255, 181, 190, 0.28), rgba(255, 214, 160, 0.16));
+  color: #fff5eb;
+  padding: 12px 18px;
+  cursor: pointer;
+}
+
+.lyra-chat-input button:disabled {
+  opacity: 0.6;
+}
