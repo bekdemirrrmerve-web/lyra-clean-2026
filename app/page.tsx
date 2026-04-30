@@ -19,6 +19,10 @@ type ToolCard = {
 };
 
 type ContentCard = {
+  type ChatMessage = {
+  role: 'user' | 'lyra';
+  text: string;
+};
   title: string;
   type: string;
   meta: string;
@@ -34,9 +38,12 @@ export default function Page() {
     const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const [chatMessages, setChatMessages] = useState<
-    { role: 'user' | 'lyra'; text: string }[]
-  >([
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+  {
+    role: 'lyra',
+    text: 'Buradayım kankam. Ne yapıyoruz; içerik mi, moral mi, plan mı, yoksa birlikte bir şeyi mi çözüyoruz?',
+  },
+]);
     {
       role: 'lyra',
       text: 'Buradayım kankam. Ne yapıyoruz; içerik mi, moral mi, plan mı, yoksa birlikte bir şeyi mi çözüyoruz?',
@@ -98,7 +105,7 @@ async function sendLyraMessage() {
   const text = chatInput.trim();
   if (!text || chatLoading) return;
 
-  const userMessage: { role: 'user'; text: string } = { role: 'user', text };
+const nextMessages: ChatMessage[] = [...chatMessages, userMessage];
   const nextMessages = [...chatMessages, userMessage];
 
   setChatMessages(nextMessages);
