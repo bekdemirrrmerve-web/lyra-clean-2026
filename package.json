@@ -2,25 +2,32 @@
   "name": "sirius-ai-lyra",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start"
   },
   "dependencies": {
     "next": "16.2.4",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "three": "^0.181.2",
-    "three-mesh-bvh": "^0.8.0"
+    "three-mesh-bvh": "0.9.9"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "@types/react": "^19.0.8",
-    "@types/react-dom": "^19.0.3",
-    "eslint": "^9.17.0",
-    "eslint-config-next": "16.2.4",
-    "typescript": "^5.7.2"
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "next": "16.2.4",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "three-mesh-bvh": "0.9.9"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   }
 }
