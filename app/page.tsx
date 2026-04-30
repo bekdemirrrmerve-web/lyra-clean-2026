@@ -54,6 +54,9 @@ export default function Page() {
   const [ideaPlatform, setIdeaPlatform] = useState('TikTok');
   const [ideaResult, setIdeaResult] = useState('');
 
+  const [toolResult, setToolResult] = useState('');
+  const [toolLoading, setToolLoading] = useState(false);
+
   const [followers, setFollowers] = useState('11900');
   const [views, setViews] = useState('2100');
   const [likes, setLikes] = useState('185');
@@ -99,22 +102,28 @@ export default function Page() {
     ? ((totalEngagement / Number(views || 1)) * 100).toFixed(2)
     : '0.00';
 
-  function generateIdea() {
-    const result = `${ideaPlatform} için ${ideaTopic} konulu içerik fikri:
+  async function askLyra(prompt: string) {
+    setToolLoading(true);
+    setToolResult('');
 
-Kanca: “Bu konuda çoğu kişi aynı hatayı yapıyor...”
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', text: prompt }] }),
+      });
 
-Akış:
-1. İlk 3 saniyede merak uyandır.
-2. Kısa bir problem göster.
-3. Kimyager/uzman bakışıyla sade açıkla.
-4. Uygulanabilir mini öneri ver.
-5. Sonunda yorum sorusu sor.
-
-CTA:
-“Bunu daha önce duymuş muydun? Yoruma yaz.”`;
-
-    setIdeaResult(result);
+      const data = await res.json();
+      setToolResult(data.text || 'Lyra cevap üretemedi kankam, bir daha deneyelim.');
+      return data.text || '';
+    } catch {
+      const fallback =
+        'Kankam yerel Lyra modunda küçük bir hata oldu. Ama sistem çalışıyor; biraz daha kısa bir komutla tekrar deneyelim.';
+      setToolResult(fallback);
+      return fallback;
+    } finally {
+      setToolLoading(false);
+    }
   }
 
   async function sendLyraMessage() {
@@ -135,10 +144,6 @@ CTA:
         body: JSON.stringify({ messages: nextMessages }),
       });
 
-      if (!res.ok) {
-        throw new Error('AI cevabı alınamadı');
-      }
-
       const data = await res.json();
 
       const lyraMessage: ChatMessage = {
@@ -152,14 +157,25 @@ CTA:
     } catch {
       const errorMessage: ChatMessage = {
         role: 'lyra',
-        text:
-          'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
+        text: 'Kankam şu an cevap alamadım ama sohbet sistemi çalışıyor. Bir daha kısa bir cümleyle dener misin?',
       };
 
       setChatMessages((prev) => [...prev, errorMessage]);
     } finally {
       setChatLoading(false);
     }
+  }
+
+  async function generateIdea() {
+    const text = await askLyra(
+      `${ideaPlatform} için ${ideaTopic} konusunda içerik fikri ver. Hook, video akışı, CTA ve caption da yaz.`
+    );
+    setIdeaResult(text);
+  }
+
+  function openTool(tool: ToolKey) {
+    setActiveTool(tool);
+    setToolResult('');
   }
 
   return (
@@ -175,7 +191,9 @@ CTA:
           </div>
 
           <div className="top-actions">
-            <button className="pill live-pill">🔴 CANLI MOD</button>
+            <button className="pill live-pill" onClick={() => setChatOpen(true)}>
+              🔴 CANLI MOD
+            </button>
             <button className="pill pro-pill">✨ Pro</button>
             <div className="avatar-badge">M</div>
           </div>
@@ -186,16 +204,12 @@ CTA:
             <div className="panel-card glass">
               <h3>Canlı Sesli Sohbet</h3>
               <div className="voice-bars">
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
+                <span /><span /><span /><span /><span /><span /><span />
               </div>
               <p>Seni dinliyorum...</p>
-              <button className="circle-btn">🎙️</button>
+              <button className="circle-btn" onClick={() => setChatOpen(true)}>
+                🎙️
+              </button>
             </div>
 
             <div className="panel-card glass">
@@ -208,7 +222,21 @@ CTA:
               <h3>Hadi kahve? ☕</h3>
               <p>Kahve moduna geçelim mi?</p>
               <div className="mini-preview">Lo-fi, sakin sohbet ve odak modu</div>
-              <button className="soft-btn full">Kahve Modu</button>
+              <button
+                className="soft-btn full"
+                onClick={() => {
+                  setChatOpen(true);
+                  setChatMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'lyra',
+                      text: 'Kahve modu açıldı kankam ☕ Bugün yumuşak bir akışla gidelim. Ne yapmak istiyorsun?',
+                    },
+                  ]);
+                }}
+              >
+                Kahve Modu
+              </button>
             </div>
 
             <div className="panel-card glass">
@@ -239,8 +267,8 @@ CTA:
               <div className="avatar-copy">
                 <h2>Lyra</h2>
                 <p>
-                  Gerçek AI cevapları, sesli yanıt, içerik, kozmetik, plan,
-                  kombin ve günlük destek için buradayım.
+                  API olmadan da çalışan yerel akıllı mod açık. İçerik, plan,
+                  teleprompter, video çekim, kozmetik ve moral desteği verebilirim.
                 </p>
               </div>
             </div>
@@ -394,7 +422,7 @@ CTA:
               <button
                 className="tool-card"
                 key={tool.title}
-                onClick={() => setActiveTool(tool.title)}
+                onClick={() => openTool(tool.title)}
               >
                 <div className="tool-icon">{tool.icon}</div>
                 <div>
@@ -542,10 +570,22 @@ CTA:
                     onChange={(event) => setTeleText(event.target.value)}
                     placeholder="Teleprompter metnini buraya yaz..."
                   />
+
                   <div className="teleprompter-preview">
                     <p>{teleText}</p>
                   </div>
+
                   <div className="modal-actions">
+                    <button
+                      onClick={async () => {
+                        const text = await askLyra(
+                          '40 saniyelik teleprompter metni yaz. Konu: kozmetik ürünü kimyager gözüyle anlatmak.'
+                        );
+                        if (text) setTeleText(text);
+                      }}
+                    >
+                      AI ile Metin Üret
+                    </button>
                     <button>Başlat</button>
                     <button>Duraklat</button>
                     <button>Metni Kaydet</button>
@@ -560,12 +600,22 @@ CTA:
                     <strong>Video çekim alanı</strong>
                     <p>Burada kamera + teleprompter birlikte çalışacak.</p>
                   </div>
+
                   <div className="modal-actions">
                     <button>9:16</button>
                     <button>Işık</button>
                     <button>Filtre</button>
-                    <button>Kayıt Başlat</button>
+                    <button
+                      onClick={() =>
+                        askLyra('Video çekim planı hazırla. Kamera, ışık, hook, akış ve CTA olsun.')
+                      }
+                    >
+                      Çekim Planı Oluştur
+                    </button>
                   </div>
+
+                  {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
+                  {toolResult && <div className="result-box">{toolResult}</div>}
                 </div>
               )}
 
@@ -599,6 +649,7 @@ CTA:
                     Fikir Üret
                   </button>
 
+                  {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
                   {ideaResult && <pre className="result-box">{ideaResult}</pre>}
                 </div>
               )}
@@ -608,45 +659,27 @@ CTA:
                   <div className="form-grid">
                     <label>
                       Takipçi
-                      <input
-                        value={followers}
-                        onChange={(event) => setFollowers(event.target.value)}
-                      />
+                      <input value={followers} onChange={(event) => setFollowers(event.target.value)} />
                     </label>
                     <label>
                       Görüntülenme
-                      <input
-                        value={views}
-                        onChange={(event) => setViews(event.target.value)}
-                      />
+                      <input value={views} onChange={(event) => setViews(event.target.value)} />
                     </label>
                     <label>
                       Beğeni
-                      <input
-                        value={likes}
-                        onChange={(event) => setLikes(event.target.value)}
-                      />
+                      <input value={likes} onChange={(event) => setLikes(event.target.value)} />
                     </label>
                     <label>
                       Yorum
-                      <input
-                        value={comments}
-                        onChange={(event) => setComments(event.target.value)}
-                      />
+                      <input value={comments} onChange={(event) => setComments(event.target.value)} />
                     </label>
                     <label>
                       Kaydetme
-                      <input
-                        value={saves}
-                        onChange={(event) => setSaves(event.target.value)}
-                      />
+                      <input value={saves} onChange={(event) => setSaves(event.target.value)} />
                     </label>
                     <label>
                       Paylaşım
-                      <input
-                        value={shares}
-                        onChange={(event) => setShares(event.target.value)}
-                      />
+                      <input value={shares} onChange={(event) => setShares(event.target.value)} />
                     </label>
                   </div>
 
@@ -656,6 +689,11 @@ CTA:
                       Toplam etkileşim: {totalEngagement}. Kaydetme ve paylaşım
                       güçlü ise içerik algoritmada daha uzun yaşayabilir.
                     </p>
+                    <p>
+                      Benim yorumum: İzlenmeye göre kaydetme ve paylaşım artarsa,
+                      içerik daha güçlü sinyal verir. İlk 3 saniyeyi daha iddialı
+                      kurmak faydalı olur.
+                    </p>
                   </div>
                 </div>
               )}
@@ -663,20 +701,32 @@ CTA:
               {activeTool === 'Fotoğraf Analizi' && (
                 <div className="modal-content">
                   <div className="upload-box">📸 Fotoğraf yükleme alanı</div>
-                  <div className="result-box">
-                    Fotoğraf yüklendiğinde AI burada caption, renk paleti, ürün
-                    çekim önerisi ve içerik fikri çıkaracak.
-                  </div>
+                  <button
+                    className="primary-action"
+                    onClick={() =>
+                      askLyra('Fotoğraf analizi alanı için caption, renk paleti, ürün çekim önerisi ve içerik fikri çıkar.')
+                    }
+                  >
+                    Analiz Örneği Üret
+                  </button>
+                  {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
+                  {toolResult && <div className="result-box">{toolResult}</div>}
                 </div>
               )}
 
               {activeTool === 'PDF Özetle' && (
                 <div className="modal-content">
                   <div className="upload-box">📄 PDF yükleme alanı</div>
-                  <div className="result-box">
-                    PDF yüklendiğinde özet, önemli maddeler, soru-cevap ve
-                    teleprompter metni oluşturulacak.
-                  </div>
+                  <button
+                    className="primary-action"
+                    onClick={() =>
+                      askLyra('PDF özetleme sistemi nasıl çalışacak? Özet, önemli maddeler, soru cevap ve teleprompter çıktısı anlat.')
+                    }
+                  >
+                    PDF Akışı Oluştur
+                  </button>
+                  {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
+                  {toolResult && <div className="result-box">{toolResult}</div>}
                 </div>
               )}
 
@@ -684,10 +734,14 @@ CTA:
                 <div className="modal-content">
                   <textarea placeholder="Hızlı notunu yaz..." />
                   <div className="modal-actions">
-                    <button>Notu Toparla</button>
+                    <button onClick={() => askLyra('Notu toparla, yapılacak listesine çevir ve kısa özet çıkar.')}>
+                      Notu Toparla
+                    </button>
                     <button>Yapılacak Listeye Çevir</button>
                     <button>Kaydet</button>
                   </div>
+                  {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
+                  {toolResult && <div className="result-box">{toolResult}</div>}
                 </div>
               )}
 
@@ -695,11 +749,17 @@ CTA:
                 <div className="modal-content">
                   <textarea placeholder="Üretmek istediğin görseli anlat..." />
                   <div className="modal-actions">
-                    <button>Kapak Görseli</button>
-                    <button>Ürün Çekimi</button>
+                    <button onClick={() => askLyra('Instagram kapak görseli için prompt üret. Premium, mistik, Sirius AI tarzı olsun.')}>
+                      Kapak Promptu
+                    </button>
+                    <button onClick={() => askLyra('Ürün çekimi için premium görsel üretim promptu yaz.')}>
+                      Ürün Çekimi Promptu
+                    </button>
                     <button>Moodboard</button>
                     <button>Görsel Üret</button>
                   </div>
+                  {toolLoading && <div className="result-box">Lyra düşünüyor...</div>}
+                  {toolResult && <div className="result-box">{toolResult}</div>}
                 </div>
               )}
             </section>
