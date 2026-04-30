@@ -1,15 +1,16 @@
 import './globals.css';
+import type { Metadata } from 'next';
 
-export const metadata = {
-  title: 'Lyra Clean 2026',
-  description: 'Sesli ve yazılı Lyra AI asistanı',
+export const metadata: Metadata = {
+  title: 'Sirius AI',
+  description: 'Lyra destekli premium AI asistan arayüzü',
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <html lang="tr">
       <body>{children}</body>
