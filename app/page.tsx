@@ -37,6 +37,8 @@ export default function Page() {
   const [voiceReplyOn, setVoiceReplyOn] = useState(true);
   const [voiceLoopOn, setVoiceLoopOn] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [assistantSpeaking, setAssistantSpeaking] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('Hazır');
   const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
 
   const [selectedMood, setSelectedMood] = useState('Calm');
@@ -73,10 +75,12 @@ export default function Page() {
   const [saturation, setSaturation] = useState(12);
 
   const recognitionRef = useRef<any>(null);
+  const listeningLockRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const voiceLoopRef = useRef(false);
+  const assistantSpeakingRef = useRef(false);
 
   const totalEngagement =
     Number(likes || 0) +
@@ -110,6 +114,10 @@ export default function Page() {
   useEffect(() => {
     voiceLoopRef.current = voiceLoopOn;
   }, [voiceLoopOn]);
+
+  useEffect(() => {
+    assistantSpeakingRef.current = assistantSpeaking;
+  }, [assistantSpeaking]);
 
   useEffect(() => {
     return () => {
@@ -176,7 +184,7 @@ Bölünen = Bölen x Bölüm + Kalan
 Kalan her zaman bölenden küçüktür.
 
 Mini çalışma:
-Şimdi 20 dakika bu özeti oku, sonra 15 temel kavram sorusu çöz. Yanlışlarının yanına “neden kaçırdım?” diye not düş. Niko gibi söyleyeyim: panik yok, bu iş gözümüzde büyüdüğü kadar ejderha değil kankam.`;
+Şimdi 20 dakika bu özeti oku, sonra 15 temel kavram sorusu çöz. Yanlışlarının yanına “neden kaçırdım?” diye not düş. Panik yok kankam, bu iş gözümüzde büyüdüğü kadar ejderha değil.`;
   }
 
   function createDgsPlan() {
@@ -267,7 +275,7 @@ Telefon dikey 9:16, yüzün aydınlık, arka plan sade.
 Bence bunu tek çekimde değil, 3 kısa parça halinde çek. Daha dinamik olur.`;
   }
 
-  function createKozmetikReply(text: string) {
+  function createKozmetikReply() {
     return `Kozmetik tarafında ben bunu şöyle ele alırdım:
 
 Önce ürünün vaadine bak:
@@ -299,7 +307,7 @@ Bugün kendinden dev performans bekleme. Sadece sistemi yeniden aç:
 2. 10 dakika yap.
 3. Bitince “tamam, geri döndüm” de.
 
-Ben olsam bugün kendime kızmak yerine “küçük adımla toparlanıyorum” derdim. Niko usulü söyleyeyim: dramayı azaltıyoruz, aksiyonu başlatıyoruz.`;
+Ben olsam bugün kendime kızmak yerine “küçük adımla toparlanıyorum” derdim. Dramayı azaltıyoruz, aksiyonu başlatıyoruz.`;
   }
 
   function createKombinReply() {
@@ -379,7 +387,7 @@ Kamera karşısında ben soft fresh seçerdim. Hem temiz hem güven veren hem de
         'niacinamide',
       ])
     ) {
-      return createKozmetikReply(userText);
+      return createKozmetikReply();
     }
 
     if (includesAny(t, ['moral', 'motivasyon', 'bunaldim', 'yorgun', 'kotu', 'stres'])) {
@@ -413,31 +421,74 @@ Bunu sana dört şekilde çevirebilirim:
 Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
   }
 
-  function speak(text: string) {
-    if (!voiceReplyOn || typeof window === 'undefined' || !window.speechSynthesis) return;
+  function getBestTurkishVoice() {
+    const voices = window.speechSynthesis?.getVoices?.() || [];
 
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'tr-TR';
-    utterance.rate = 1;
-    utterance.pitch = 1.04;
-
-    const voices = window.speechSynthesis.getVoices();
-    const trVoice =
+    return (
+      voices.find((voice) => voice.lang?.toLowerCase() === 'tr-tr') ||
       voices.find((voice) => voice.lang?.toLowerCase().includes('tr')) ||
       voices.find((voice) => voice.name?.toLowerCase().includes('female')) ||
-      voices[0];
+      voices[0]
+    );
+  }
 
-    if (trVoice) utterance.voice = trVoice;
-
-    utterance.onend = () => {
+  function speak(text: string) {
+    if (!voiceReplyOn || typeof window === 'undefined' || !window.speechSynthesis) {
       if (voiceLoopRef.current) {
-        setTimeout(() => startListening(), 650);
+        setTimeout(() => startListening(), 700);
       }
-    };
+      return;
+    }
 
-    window.speechSynthesis.speak(utterance);
+    try {
+      stopListening();
+      window.speechSynthesis.cancel();
+
+      setAssistantSpeaking(true);
+      assistantSpeakingRef.current = true;
+      setVoiceStatus('Lyra konuşuyor');
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'tr-TR';
+      utterance.rate = 1;
+      utterance.pitch = 1.05;
+      utterance.volume = 1;
+
+      const voice = getBestTurkishVoice();
+      if (voice) utterance.voice = voice;
+
+      utterance.onend = () => {
+        setAssistantSpeaking(false);
+        assistantSpeakingRef.current = false;
+
+        if (voiceLoopRef.current) {
+          setVoiceStatus('Tekrar dinlemeye geçiyorum');
+          setTimeout(() => startListening(), 850);
+        } else {
+          setVoiceStatus('Hazır');
+        }
+      };
+
+      utterance.onerror = () => {
+        setAssistantSpeaking(false);
+        assistantSpeakingRef.current = false;
+        setVoiceStatus('Sesli cevap takıldı');
+
+        if (voiceLoopRef.current) {
+          setTimeout(() => startListening(), 850);
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      setAssistantSpeaking(false);
+      assistantSpeakingRef.current = false;
+      setVoiceStatus('Ses çalışmadı');
+
+      if (voiceLoopRef.current) {
+        setTimeout(() => startListening(), 850);
+      }
+    }
   }
 
   function sendMessage(customText?: string) {
@@ -458,11 +509,14 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
   }
 
   function startListening() {
+    if (listeningLockRef.current) return;
+    if (assistantSpeakingRef.current) return;
+
     const SpeechRecognitionCtor =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognitionCtor) {
-      alert('Bu tarayıcı ses algılamayı desteklemiyor kankam. Chrome veya Safari ile dene.');
+      alert('Bu tarayıcı ses algılamayı desteklemiyor kankam. Safari veya Chrome güncel sürüm dene.');
       return;
     }
 
@@ -470,34 +524,94 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
       window.speechSynthesis?.cancel();
 
       const recognition = new SpeechRecognitionCtor();
+
       recognition.lang = 'tr-TR';
       recognition.continuous = false;
       recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
 
-      recognition.onstart = () => setIsListening(true);
+      recognition.onstart = () => {
+        listeningLockRef.current = true;
+        setIsListening(true);
+        setVoiceStatus('Seni dinliyorum');
+      };
 
       recognition.onresult = (event: any) => {
         const transcript = event?.results?.[0]?.[0]?.transcript || '';
+
+        listeningLockRef.current = false;
         setIsListening(false);
-        if (transcript) sendMessage(transcript);
+
+        if (transcript.trim()) {
+          setVoiceStatus(`Duydum: ${transcript}`);
+          sendMessage(transcript);
+        } else if (voiceLoopRef.current) {
+          setTimeout(() => startListening(), 700);
+        }
       };
 
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
+      recognition.onerror = () => {
+        listeningLockRef.current = false;
+        setIsListening(false);
+
+        if (voiceLoopRef.current) {
+          setVoiceStatus('Tekrar dinlemeyi deniyorum');
+          setTimeout(() => startListening(), 1000);
+        } else {
+          setVoiceStatus('Dinleme durdu');
+        }
+      };
+
+      recognition.onend = () => {
+        listeningLockRef.current = false;
+        setIsListening(false);
+
+        if (voiceLoopRef.current && !assistantSpeakingRef.current) {
+          setVoiceStatus('Dinleme yenileniyor');
+          setTimeout(() => startListening(), 850);
+        } else if (!assistantSpeakingRef.current) {
+          setVoiceStatus('Hazır');
+        }
+      };
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch {
+      listeningLockRef.current = false;
       setIsListening(false);
-      alert('Sesli mod başlatılamadı kankam. Tarayıcı iznini kontrol et.');
+      setVoiceStatus('Sesli mod başlatılamadı');
     }
   }
 
   function stopListening() {
     try {
-      recognitionRef.current?.stop();
+      listeningLockRef.current = false;
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = null;
       setIsListening(false);
-    } catch {}
+    } catch {
+      listeningLockRef.current = false;
+      setIsListening(false);
+    }
+  }
+
+  function toggleHandsFreeVoice() {
+    const next = !voiceLoopRef.current;
+
+    voiceLoopRef.current = next;
+    setVoiceLoopOn(next);
+
+    if (next) {
+      setVoiceReplyOn(true);
+      setVoiceStatus('Karşılıklı konuşma açık');
+      setTimeout(() => startListening(), 300);
+    } else {
+      stopListening();
+      window.speechSynthesis?.cancel();
+      setAssistantSpeaking(false);
+      assistantSpeakingRef.current = false;
+      setVoiceStatus('Karşılıklı konuşma kapalı');
+    }
   }
 
   async function startCamera() {
@@ -648,7 +762,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
             <div className="star">✦</div>
             <div>
               <h1>Sirius AI</h1>
-              <p>Seninle, her adımda.</p>
+              <p>Seninle, her adımda. · {voiceStatus}</p>
             </div>
           </div>
 
@@ -662,9 +776,9 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
             <button
               className={voiceLoopOn ? 'pill active' : 'pill'}
-              onClick={() => setVoiceLoopOn((prev) => !prev)}
+              onClick={toggleHandsFreeVoice}
             >
-              {voiceLoopOn ? '🔁 Karşılıklı Açık' : '🔁 Karşılıklı Konuş'}
+              {voiceLoopOn ? '🔁 Tek Tuş Dinleme Açık' : '🔁 Tek Tuş Konuşma'}
             </button>
 
             <button
@@ -693,7 +807,15 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                 <span />
                 <span />
               </div>
-              <p>{isListening ? 'Seni dinliyorum...' : 'Hazırım kankam.'}</p>
+              <p>
+                {assistantSpeaking
+                  ? 'Lyra cevap veriyor...'
+                  : isListening
+                    ? 'Seni dinliyorum...'
+                    : voiceLoopOn
+                      ? 'Tek tuşlu karşılıklı konuşma açık.'
+                      : 'Hazırım kankam.'}
+              </p>
               <button className="round" onClick={isListening ? stopListening : startListening}>
                 🎙️
               </button>
@@ -764,6 +886,9 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
             <div className="stage-controls">
               <button onClick={startListening}>🎙️ Konuş</button>
+              <button onClick={toggleHandsFreeVoice}>
+                {voiceLoopOn ? '🔁 Kapat' : '🔁 Tek Tuş'}
+              </button>
               <button onClick={() => openTool('Video Çekim')}>📷 Kamera</button>
               <button onClick={() => sendMessage('Bugün ne yapmalıyım?')}>
                 ✨ Plan Yap
@@ -981,7 +1106,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
               key={item}
               className={item === 'Sirius' ? 'nav-star' : ''}
               onClick={() => {
-                if (item === 'Sirius') startListening();
+                if (item === 'Sirius') toggleHandsFreeVoice();
                 if (item === 'Stüdyo') {
                   document
                     .querySelector('.tools-grid')
@@ -1034,7 +1159,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                       playsInline
                       muted
                       className="camera-video"
-                      style={{ filter: `brightness(${1 + (glow + whiten) / 100}) contrast(${1 + whiten / 120}) saturate(${1 + saturation / 100}) blur(${smoothness / 55}px)` }}
+                      style={{ filter: beautyFilter }}
                     />
 
                     {!cameraActive && (
@@ -1214,7 +1339,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
               {activeTool === 'Kozmetik' && (
                 <div className="modal-content">
-                  <div className="notice">{createKozmetikReply('kozmetik')}</div>
+                  <div className="notice">{createKozmetikReply()}</div>
                 </div>
               )}
 
