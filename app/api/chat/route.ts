@@ -23,221 +23,527 @@ function getLastUserMessage(messages: LyraMessage[]) {
   return lastUser?.text || '';
 }
 
-function createDgsPlan() {
-  return `Tabii kankam, sana 1 saatlik net DGS çalışma planı hazırlıyorum:
+function hasAny(text: string, words: string[]) {
+  return words.some((word) => text.includes(word));
+}
 
-00:00 - 05:00
-Masayı toparla, suyu koy, telefonu sessize al. Bugünün mini hedefi: “1 saat boyunca sadece başlamak.”
+function createDgsPlan(userText: string) {
+  const oneHour =
+    userText.includes('1 saat') ||
+    userText.includes('bir saat') ||
+    userText.includes('60 dakika');
 
-05:00 - 25:00
-Matematik konu tekrarı:
+  if (oneHour) {
+    return `Tamam kankam, sana net ve uygulanabilir 1 saatlik DGS çalışma planı hazırladım:
+
+00:00 - 05:00 | Hazırlık
+Masayı toparla, suyu koy, telefonu sessize al. Bugünün amacı mükemmel çalışmak değil, sistemi tekrar başlatmak.
+
+05:00 - 25:00 | Matematik konu ısınması
+Bugün tek konu seç:
 - Temel kavramlar
 - Sayılar
-- Problemlerde kısa çözüm mantığı
-Burada amaç her şeyi bitirmek değil, beynini ısıtmak.
+- Problemler
+- Rasyonel sayılar
+- Denklem
 
-25:00 - 40:00
+20 dakika boyunca sadece konu mantığını tekrar et. Deftere mini özet çıkar.
+
+25:00 - 42:00 | Soru çözümü
 10-15 soru çöz.
-Yanlış yaptığın soruları geçme; yanına küçük not düş:
-“Ben burada neyi kaçırdım?”
+Hedef hız değil, doğru düşünme. Takıldığın soruda hemen cevaba bakma; önce “benden ne istiyor?” diye sor.
 
-40:00 - 50:00
-Türkçe paragraf:
-- 5 paragraf sorusu çöz
-- Süre tut
-- Cevabı bulmadan önce ana fikri kendine söyle
+42:00 - 52:00 | Türkçe paragraf
+5 paragraf sorusu çöz.
+Her paragrafta önce ana fikri bul, sonra şıklara geç.
 
-50:00 - 57:00
-Yanlış analizi:
-Bugün en çok nerede takıldın?
-İşlem hatası mı, konu eksiği mi, dikkat mi?
+52:00 - 58:00 | Yanlış analizi
+Yanlışlarını 3 kategoriye ayır:
+1. Konu eksiği
+2. Dikkat hatası
+3. Süre baskısı
 
-57:00 - 60:00
-Mini kapanış:
+58:00 - 60:00 | Kapanış
 Yarın için tek hedef yaz:
 “Yarın şu konudan 20 soru çözeceğim.”
 
-Bence bugün sadece bu 1 saati yapman bile seni moda sokar. Büyük plan değil, küçük ama gerçek bir başlangıç yapıyoruz.`;
+Ben olsam bugün sadece bunu yapardım. Çünkü asıl mesele uzun çalışmak değil, çalışmaya geri dönebilmek.`;
+  }
+
+  return `Kankam DGS için başlangıç planını şöyle kurardım:
+
+1. Önce seviye tespiti yap
+Bugün 20 matematik, 10 Türkçe sorusu çöz. Netini değil, nerede takıldığını gör.
+
+2. Matematikte ilk sıraya temel konuları koy
+- Temel kavramlar
+- Sayılar
+- Bölme-bölünebilme
+- Rasyonel sayılar
+- Problemler
+
+3. Türkçe tarafını her gün bırakma
+Günde 5-10 paragraf bile çok şey değiştirir. DGS’de paragraf düzenli çalışanın yüzünü güldürür.
+
+4. Günlük minimum plan
+- 30 dakika matematik konu
+- 30 dakika matematik soru
+- 20 dakika Türkçe paragraf
+- 10 dakika yanlış analizi
+
+5. Haftalık mantık
+Haftada 5 gün çalış, 1 gün deneme/mini test, 1 gün toparlama.
+
+Bence senin için en iyi başlangıç: büyük program değil, küçük ama her gün yapılabilen plan.`;
 }
 
-function createContentIdea(topic: string) {
-  return `Tamam kankam, sana hızlı içerik fikri çıkarıyorum:
+function createDailyPlan() {
+  return `Tamam kankam, bugün için sade ama işe yarar bir plan yapıyorum:
+
+Sabah / İlk blok
+- 10 dakika ortam toparla
+- 25 dakika en önemli işi yap
+- 5 dakika mola
+
+Orta blok
+- 1 içerik fikri seç
+- Kısa bir video metni çıkar
+- Çekim yapacaksan sadece 1 video hedefle
+
+Ders / Araştırma bloğu
+- 45 dakika odak çalışma
+- 10 dakika not çıkarma
+- 5 dakika “yarın neye devam edeceğim?” yazma
+
+Kendin için mini alan
+- 15 dakika yürüyüş, kahve, müzik veya sessizlik
+- Telefonu biraz azalt
+- Bugün kendine yüklenme; sadece akışı geri kur
+
+Günün ana hedefi:
+“Her şeyi bitirmek değil, kontrol hissini geri almak.”
+
+Bence bugün 3 görev seç:
+1. Mutlaka yapılacak
+2. Yapılsa iyi olur
+3. Enerji kalırsa yapılacak`;
+}
+
+function createContentIdea(userText: string) {
+  const text = normalize(userText);
+
+  let niche = 'kozmetik / kişisel gelişim / günlük içerik';
+  if (text.includes('kozmetik') || text.includes('cilt') || text.includes('serum')) {
+    niche = 'kozmetik ve kimyager bakışı';
+  } else if (text.includes('dgs') || text.includes('ders')) {
+    niche = 'ders çalışma ve motivasyon';
+  } else if (text.includes('anne') || text.includes('bebek')) {
+    niche = 'anne-bebek ve günlük yaşam';
+  }
+
+  return `Tamam kankam, sana ${niche} için güçlü bir içerik fikri çıkarıyorum:
 
 Kanca:
-“Bunu herkes kullanıyor ama çoğu kişi neden işe yaradığını bilmiyor.”
+“Bunu çoğu kişi yapıyor ama neden işe yaramadığını bilmiyor olabilir.”
 
 Video akışı:
-1. İlk 3 saniye: ürünü/konuyu göster.
-2. Problem: “Yanlış kullanımda etkisi azalabilir.”
-3. Bilimsel açıklama: Basit, kısa ve kimyager diliyle anlat.
-4. Örnek: Evde/üründe nerede karşımıza çıkıyor?
-5. Son: “Bunu daha önce duymuş muydun?”
+1. İlk 3 saniye:
+Ürünü/konuyu göster ve iddialı bir cümle kur.
 
-Konu:
-${topic || 'kozmetik / içerik üretimi'}
+2. Problem:
+“Burada mesele ürünün kötü olması değil, yanlış kullanım mantığı.”
+
+3. Açıklama:
+Kimyager/uzman bakışıyla ama sade anlat.
+Zor kelime kullanırsan hemen günlük örnekle aç.
+
+4. Mini çözüm:
+“Şöyle kullanırsan daha mantıklı olur…”
+
+5. Kapanış:
+“İstersen bir sonraki videoda bunun içerik listesini tek tek parçalayayım.”
 
 CTA:
-“Devamı gelsin mi? Yoruma yaz, bir sonraki videoda formül tarafını anlatayım.”
+“Bunu sen de böyle mi kullanıyordun? Yoruma yaz.”
 
-Bence bunu 35-45 saniyelik Reels/TikTok olarak çeksen güzel akar.`;
+Caption:
+Herkes ürün konuşuyor ama kullanım mantığını konuşan az. Ben kimyager gözüyle sade sade anlatıyorum.
+
+Hashtag:
+#kozmetik #ciltbakımı #kimyager #içerikönerisi #reelsfikirleri
+
+Bence bunu 35-45 saniyelik video yaparsan hem izlenebilir hem kaydedilebilir durur.`;
 }
 
-function createMoral() {
-  return `Kankam önce bir nefes. Gerçekten bazen insanın kafası aynı anda 40 sekme açık gibi oluyor, normal.
+function createTeleprompterText(userText: string) {
+  const text = normalize(userText);
 
-Bugün senden mükemmel olmanı istemiyoruz. Sadece küçük bir şeyi tamamlamanı istiyoruz. Çünkü motivasyon bazen başlamadan gelmiyor; başladıktan sonra geliyor.
+  if (text.includes('40') || text.includes('kirk')) {
+    return `Tabii kankam, 40 saniyelik teleprompter metni:
 
-Şu an yapman gereken:
-- En küçük adımı seç.
-- 10 dakika yap.
-- Sonra devam edip etmeyeceğine karar ver.
+“Bunu çoğu kişi kullanıyor ama bence asıl mesele ürünün kendisi değil, nasıl kullanıldığı.
 
-Ben olsam bugün kendime “her şeyi yetiştireceğim” demezdim. “Sadece sistemi tekrar çalıştıracağım” derdim. Bu daha gerçekçi ve daha şefkatli.`;
-}
+Bir üründen sonuç almak istiyorsan önce içeriğine, sonra kullanım sıklığına, sonra da hangi ürünlerle birlikte kullandığına bakman gerekiyor.
 
-function createKombin() {
-  return `Bence bugün üç farklı kombin düşünebiliriz:
+Çünkü bazı aktifler birlikte kullanıldığında cildi yorabilir, bazıları ise doğru sırayla kullanıldığında çok daha mantıklı çalışır.
 
-Soft fresh:
-- Krem pantolon
-- Beyaz/basic üst
-- Hafif pembe veya bej hırka
-- Nude makyaj, parlak dudak
+Ben kimyager gözüyle baktığımda şunu görüyorum: Cilt bakımında en pahalı ürün değil, en doğru rutin fark yaratıyor.
 
-Cool:
-- Siyah jean veya kumaş pantolon
-- Oversize gömlek/ceket
-- Toplu saç
-- İnce eyeliner + doğal ten
+İstersen bir sonraki videoda bu ürünün içerik listesini tek tek analiz edeyim.”`;
+  }
 
-Feminen:
-- Açık ton pantolon
-- V yaka bluz
-- Zarif kolye
-- Şeftali ton allık
-
-Ben olsam günlük ama şık görünmek için soft fresh tarafa giderdim. Hem temiz hem de kamera karşısında güzel durur.`;
-}
-
-function createCosmeticAnswer() {
-  return `Kozmetik tarafında kankam önce şuna bakardım:
-
-1. Ürün ne vaat ediyor?
-Nem, leke, bariyer, akne, aydınlık, sıkılaşma?
-
-2. Ana aktif ne?
-Örneğin:
-- Niacinamide: ton eşitleme, bariyer desteği
-- Panthenol: yatıştırma
-- Hyaluronic acid: nem
-- Retinol/retinal: yaşlanma karşıtı görünüm
-- AHA/BHA: pürüz ve gözenek görünümü
-
-3. Kullanım sıklığı doğru mu?
-Aktif içerikler fazla kullanılırsa cilt “iyi olayım derken” kızarabilir.
-
-4. Gündüz mü gece mi?
-Retinoid/asit tarzı içeriklerde güneş koruyucu önemli.
-
-İstersen bana ürünün adını veya içerik listesini yaz; ben onu kimyager gözüyle sade sade parçalarım.`;
-}
-
-function createTeleprompterText() {
-  return `Tabii kankam, teleprompter için hazır metin:
+  return `Tabii kankam, teleprompter için akıcı bir metin hazırladım:
 
 “Bugün size çoğu kişinin fark etmeden yaptığı küçük ama önemli bir hatadan bahsedeceğim.
 
-Bir ürünü sadece popüler diye kullanmak yetmez. İçindeki aktif madde ne, hangi oranlarda etkili olur, ciltte neyle birlikte kullanılır; bunları bilmek gerekiyor.
+Bir ürünü ya da yöntemi sadece popüler diye kullanmak yeterli değil. Neden işe yaradığını, ne zaman kullanılması gerektiğini ve hangi durumda işe yaramayabileceğini bilmek gerekiyor.
 
-Ben kimyager gözüyle baktığımda şunu görüyorum: Bazen ürün kötü değildir, kullanım şekli yanlıştır.
+Ben bu tarz şeylere biraz daha içerik ve mantık tarafından bakıyorum. Çünkü bazen sorun ürün değildir; yanlış zaman, yanlış miktar ya da yanlış beklentidir.
 
-O yüzden bir ürünü değerlendirirken sadece ambalajına değil, içeriğine ve kullanım mantığına bakın.
+O yüzden bir şeyi denemeden önce kendine şunu sor:
+Bu bana gerçekten uygun mu?
 
-Devamında bu ürünlerin içeriklerini tek tek analiz etmemi ister misiniz?”`;
+Devamında istersen bu konuyu daha detaylı anlatayım.”`;
+}
+
+function createEngagementAnswer() {
+  return `Kankam etkileşim hesaplamanın temel mantığı şu:
+
+Etkileşim oranı formülü:
+(Beğeni + Yorum + Kaydetme + Paylaşım) / Görüntülenme x 100
+
+Ama bence sadece beğeniye bakmak yanıltıcı. Reels/TikTok tarafında daha önemli olanlar:
+
+1. Kaydetme
+İçerik değerli bulunmuş demektir.
+
+2. Paylaşım
+İnsanlar bunu başkasına göndermek istemiş demektir.
+
+3. Yorum
+Konu tartışma veya bağ kurma yaratmış demektir.
+
+4. İzlenme / takipçi oranı
+Takipçinden fazla izleniyorsa keşfet potansiyeli vardır.
+
+Hızlı yorum:
+- Beğeni var ama kaydetme yoksa: içerik hoş ama yeterince faydalı değil.
+- Kaydetme var ama yorum yoksa: bilgi iyi ama tartışma sorusu eksik.
+- İzlenme düşükse: ilk 3 saniye yani hook zayıf olabilir.
+- Paylaşım yüksekse: konu sosyal olarak güçlüdür.
+
+Bana takipçi, görüntülenme, beğeni, yorum, kaydetme, paylaşım sayılarını yazarsan sana net oran ve yorum çıkarırım.`;
+}
+
+function createVideoPlan() {
+  return `Tamam kankam, video çekim planını şöyle yapalım:
+
+1. Hazırlık
+- Telefonu dikey 9:16 ayarla
+- Işığı yüzüne doğru al
+- Arka planı sade tut
+- İlk 3 saniyeyi en güçlü cümleye ayır
+
+2. Çekim akışı
+Sahne 1:
+Yüzün kamerada, direkt kanca cümlesi.
+
+Sahne 2:
+Ürün/konu yakın plan.
+
+Sahne 3:
+Sen açıklarken 1-2 kısa B-roll görüntü.
+
+Sahne 4:
+Son cümlede CTA:
+“Devamı gelsin mi?”
+
+3. Teleprompter ayarı
+- Yazı büyük olsun
+- Hız yavaş/orta
+- Cümleleri kısa tut
+- Her paragraf 1 fikir anlatsın
+
+4. Çekim sonrası
+- Kapak yazısı ekle
+- İlk cümleyi caption’a da koy
+- Yorum sorusu ekle
+
+Ben olsam ilk videoyu mükemmel yapmaya çalışmazdım; 1 temiz çekim alıp yayınlardım.`;
+}
+
+function createMoral() {
+  return `Kankam önce şunu söyleyeyim: şu an dağılmış hissetmen, hiçbir şeyi yapamayacağın anlamına gelmiyor.
+
+Bazen insanın zihni çok yoruluyor ve her şey gözünde büyüyor. O an çözüm “devasa motivasyon” değil, küçücük bir hareket.
+
+Şimdi sadece şunu yap:
+- 1 bardak su iç
+- 10 dakika tek bir şeye bak
+- Bitince kendine “tamam, sistem açıldı” de
+
+Bugün mükemmel olmak zorunda değilsin. Bugün sadece yeniden başlatma günü olabilir.
+
+Ben olsam kendime kızmazdım. Çünkü bazen yavaşlamak tembellik değil, toparlanma şeklidir.`;
+}
+
+function createKombin() {
+  return `Bence bugün üç seçenekten biri güzel olur:
+
+Soft fresh:
+- Krem veya açık renk pantolon
+- Beyaz/basic üst
+- Bej, pudra ya da açık pembe hırka
+- Nude dudak, şeftali allık
+
+Cool:
+- Siyah jean veya bol kesim pantolon
+- Oversize gömlek/ceket
+- Toplu saç
+- İnce eyeliner, temiz ten
+
+Feminen:
+- V yaka bluz
+- Açık ton pantolon
+- Zarif kolye
+- Hafif dalgalı saç
+- Parlak dudak
+
+Kamera karşısı için ben olsam soft fresh seçerdim. Çünkü hem temiz hem güven veren hem de yormayan bir görüntü verir.`;
+}
+
+function createCosmeticAnswer(userText: string) {
+  return `Kozmetik tarafında kankam ben bunu şöyle analiz ederdim:
+
+Önce ürünün iddiasına bak:
+- Nem mi?
+- Leke görünümü mü?
+- Bariyer onarımı mı?
+- Akne/sivilce desteği mi?
+- Aydınlık görünüm mü?
+- Yaşlanma karşıtı bakım mı?
+
+Sonra içerik mantığına bak:
+- Niacinamide: ton eşitleme ve bariyer desteği
+- Panthenol: yatıştırma
+- Hyaluronic acid: nem desteği
+- Retinol/retinal: yaşlanma karşıtı görünüm
+- AHA/BHA: pürüz ve gözenek görünümü
+- Seramid: bariyer desteği
+
+Dikkat:
+Bir ürünü “çok iyi” yapan şey sadece aktif içermesi değil. Formül dengesi, pH, kullanım sıklığı ve cilt tipine uygunluk da önemli.
+
+Sen bana ürünün adını veya INCI listesini yazarsan, ben onu sade sade:
+1. Ne işe yarar?
+2. Kim kullanmalı?
+3. Kim dikkat etmeli?
+4. İçerik iyi mi pazarlama mı?
+şeklinde parçalarım.
+
+Yazdığın konu:
+“${userText}”`;
+}
+
+function createPdfAnswer() {
+  return `PDF alanı için mantık şöyle olacak kankam:
+
+PDF yükleyince Lyra sana şunları çıkaracak:
+1. Kısa özet
+2. Uzun özet
+3. Önemli başlıklar
+4. Ana fikir
+5. Yapılacaklar listesi
+6. Sosyal medya içeriğine çevirme
+7. Teleprompter metnine çevirme
+8. Sunum taslağı çıkarma
+
+API’siz modda PDF dosyasını gerçekten okuyamam ama uygulama mantığını şöyle kuruyoruz:
+- PDF yükle
+- Metni çıkar
+- Özetle
+- İçerik fikrine dönüştür
+- Kaydet
+
+Gerçek PDF okuma için bir sonraki teknik adımda dosya yükleme alanı ve metin çıkarma sistemi ekleriz.`;
+}
+
+function createPhotoAnswer() {
+  return `Fotoğraf/görsel alanı için Lyra şunları yapacak:
+
+1. Fotoğraf analizi
+- Kadraj
+- Işık
+- Renk uyumu
+- Estetik yorum
+
+2. İçerik önerisi
+- Bu fotoğrafla ne paylaşılır?
+- Caption ne olmalı?
+- İlk cümle nasıl olmalı?
+
+3. Ürün çekimi
+- Arka plan önerisi
+- Işık önerisi
+- Props önerisi
+- Kapak yazısı
+
+API’siz modda görseli gerçekten okuyamam ama fotoğraf yükleme alanını canlı gösterebiliriz. Görsel analizi için ileride vision API veya başka ücretsiz görsel analiz mantığı eklenir.`;
 }
 
 function createDefaultReply(userText: string) {
   return `Duydum kankam: “${userText}”
 
-Şu an API’siz akıllı moddayım; yani gerçek OpenAI cevabı değil, uygulama içi Lyra mantığıyla cevap veriyorum.
+Şu an Lyra Offline Akıllı Mod’dayım. Yani API kullanmadan uygulama içinden cevap veriyorum.
 
-Bunu birlikte şöyle toparlayabiliriz:
-1. Konuyu küçültelim.
-2. İlk yapılacak adımı seçelim.
-3. Sana kısa ve uygulanabilir bir plan çıkarayım.
-
-Bana şunlardan biri gibi yazabilirsin:
-- “DGS planı hazırla”
-- “İçerik fikri ver”
+Bana şunlardan biri gibi yazarsan daha güçlü cevap veririm:
+- “DGS için 1 saatlik plan hazırla”
+- “Bugün ne yapmalıyım?”
+- “Instagram içerik fikri ver”
+- “40 saniyelik teleprompter metni yaz”
+- “Video çekim planı hazırla”
+- “Etkileşim oranımı yorumla”
+- “Kozmetik ürün içeriği analiz et”
 - “Moral ver”
 - “Kombin öner”
-- “Kozmetik içerik analizi yap”
-- “Teleprompter metni yaz”`;
+
+Bence şimdi konuyu tek cümleyle netleştir, ben sana hemen uygulanabilir bir plan çıkarayım.`;
 }
 
 function generateLocalLyraReply(userText: string) {
   const text = normalize(userText);
 
   if (
-    text.includes('dgs') ||
-    text.includes('ders') ||
-    text.includes('calisma') ||
-    text.includes('matematik') ||
-    text.includes('turkce') ||
-    text.includes('plan')
+    hasAny(text, [
+      'dgs',
+      'ders',
+      'calisma',
+      'matematik',
+      'turkce',
+      'sinav',
+      'soru',
+    ])
   ) {
-    return createDgsPlan();
+    return createDgsPlan(text);
   }
 
   if (
-    text.includes('icerik') ||
-    text.includes('video') ||
-    text.includes('reels') ||
-    text.includes('tiktok') ||
-    text.includes('hook') ||
-    text.includes('kanca')
+    hasAny(text, [
+      'bugun ne yap',
+      'gunluk plan',
+      'plan yap',
+      'yapilacak',
+      'todo',
+      'gorev',
+    ])
+  ) {
+    return createDailyPlan();
+  }
+
+  if (
+    hasAny(text, [
+      'icerik',
+      'reels',
+      'tiktok',
+      'instagram',
+      'hook',
+      'kanca',
+      'caption',
+      'hashtag',
+    ])
   ) {
     return createContentIdea(userText);
   }
 
   if (
-    text.includes('moral') ||
-    text.includes('motivasyon') ||
-    text.includes('kotu') ||
-    text.includes('yorgun') ||
-    text.includes('bunaldim') ||
-    text.includes('canim sikildi')
+    hasAny(text, [
+      'teleprompter',
+      'metin yaz',
+      'konusma metni',
+      'script',
+      '40 saniye',
+      '1 dakika',
+    ])
+  ) {
+    return createTeleprompterText(text);
+  }
+
+  if (
+    hasAny(text, [
+      'video cek',
+      'cekime',
+      'kamera',
+      'video plani',
+      'cekis',
+      'kayit',
+    ])
+  ) {
+    return createVideoPlan();
+  }
+
+  if (
+    hasAny(text, [
+      'etkilesim',
+      'engagement',
+      'begeni',
+      'yorum',
+      'kaydetme',
+      'paylasim',
+      'izlenme',
+    ])
+  ) {
+    return createEngagementAnswer();
+  }
+
+  if (
+    hasAny(text, [
+      'moral',
+      'motivasyon',
+      'bunaldim',
+      'yorgun',
+      'kotu hiss',
+      'canim sikildi',
+      'stres',
+    ])
   ) {
     return createMoral();
   }
 
   if (
-    text.includes('kombin') ||
-    text.includes('kiyafet') ||
-    text.includes('makyaj') ||
-    text.includes('sac')
+    hasAny(text, [
+      'kombin',
+      'kiyafet',
+      'makyaj',
+      'sac',
+      'stil',
+      'ne giy',
+    ])
   ) {
     return createKombin();
   }
 
   if (
-    text.includes('kozmetik') ||
-    text.includes('cilt') ||
-    text.includes('krem') ||
-    text.includes('serum') ||
-    text.includes('inci') ||
-    text.includes('formul')
+    hasAny(text, [
+      'kozmetik',
+      'cilt',
+      'krem',
+      'serum',
+      'inci',
+      'formul',
+      'aktif',
+      'retinol',
+      'niacinamide',
+    ])
   ) {
-    return createCosmeticAnswer();
+    return createCosmeticAnswer(userText);
   }
 
-  if (
-    text.includes('teleprompter') ||
-    text.includes('metin yaz') ||
-    text.includes('konusma metni') ||
-    text.includes('script')
-  ) {
-    return createTeleprompterText();
+  if (hasAny(text, ['pdf', 'dosya', 'ozetle', 'belge'])) {
+    return createPdfAnswer();
+  }
+
+  if (hasAny(text, ['foto', 'fotograf', 'gorsel', 'resim', 'kapak'])) {
+    return createPhotoAnswer();
   }
 
   return createDefaultReply(userText);
@@ -266,7 +572,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       {
-        text: 'Kankam şu an yerel Lyra modunda küçük bir hata oldu ama sistem çalışıyor. Bir daha kısa bir cümleyle dener misin?',
+        text: 'Kankam Lyra yerel modda küçük bir hata yaşadı. Bir daha daha kısa bir cümleyle dener misin?',
       },
       { status: 200 }
     );
