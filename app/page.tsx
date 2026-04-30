@@ -17,6 +17,8 @@ type ToolKey =
   | 'Notlar'
   | 'Görsel Prompt';
 
+type VoiceMode = 'off' | 'phone' | 'realistic';
+
 declare global {
   interface Window {
     webkitSpeechRecognition?: any;
@@ -26,6 +28,13 @@ declare global {
 
 export default function Page() {
   function speakWithPhoneVoice(text: string) {
+    if (voiceMode === 'off') return;
+
+    if (voiceMode === 'realistic') {
+      setLiveStatus('Gerçekçi ses yakında');
+      return;
+    }
+
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
     try {
@@ -105,6 +114,7 @@ export default function Page() {
   const [liveListening, setLiveListening] = useState(false);
   const [assistantSpeaking, setAssistantSpeaking] = useState(false);
   const [liveStatus, setLiveStatus] = useState('Canlı konuşma hazır');
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>('phone');
 
   const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
   const [selectedAvatar, setSelectedAvatar] = useState('Lyra');
@@ -570,6 +580,22 @@ Kamera karşısında ben soft fresh seçerdim.`;
   }
 
   function speakLive(text: string, afterEnd?: () => void) {
+    if (voiceMode === 'off') {
+      setAssistantSpeaking(false);
+      assistantSpeakingRef.current = false;
+      setLiveStatus('Sessiz mod açık');
+      afterEnd?.();
+      return;
+    }
+
+    if (voiceMode === 'realistic') {
+      setAssistantSpeaking(false);
+      assistantSpeakingRef.current = false;
+      setLiveStatus('Gerçekçi ses yakında');
+      afterEnd?.();
+      return;
+    }
+
     if (typeof window === 'undefined' || !window.speechSynthesis) {
       afterEnd?.();
       return;
@@ -1119,6 +1145,39 @@ Kamera karşısında ben soft fresh seçerdim.`;
             >
               {isDictating ? '🎙️ Yazıyor...' : '🎙️ Sesle Yaz'}
             </button>
+
+            <div className="voice-mode" aria-label="Lyra ses modu">
+              <button
+                className={voiceMode === 'off' ? 'voice-option active' : 'voice-option'}
+                onClick={() => {
+                  window.speechSynthesis?.cancel();
+                  setVoiceMode('off');
+                  setLiveStatus('Sessiz mod açık');
+                }}
+              >
+                Sessiz
+              </button>
+              <button
+                className={voiceMode === 'phone' ? 'voice-option active' : 'voice-option'}
+                onClick={() => {
+                  setVoiceMode('phone');
+                  setLiveStatus('Telefon sesi aktif');
+                  unlockSpeech();
+                }}
+              >
+                Telefon Sesi
+              </button>
+              <button
+                className={voiceMode === 'realistic' ? 'voice-option active coming' : 'voice-option coming'}
+                onClick={() => {
+                  window.speechSynthesis?.cancel();
+                  setVoiceMode('realistic');
+                  setLiveStatus('Gerçekçi ses yakında');
+                }}
+              >
+                Gerçekçi Ses Yakında
+              </button>
+            </div>
 
             <div className="profile">M</div>
           </div>
@@ -1883,6 +1942,39 @@ Kamera karşısında ben soft fresh seçerdim.`;
           display: flex;
           gap: 10px;
           flex-wrap: wrap;
+        }
+
+        .voice-mode {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          align-items: center;
+          padding: 5px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.055);
+          border: 1px solid rgba(255, 220, 190, 0.14);
+        }
+
+        .voice-option {
+          border: 1px solid rgba(255, 220, 190, 0.14);
+          background: rgba(255, 255, 255, 0.06);
+          color: #fff7ef;
+          border-radius: 999px;
+          padding: 9px 12px;
+          font-size: 13px;
+        }
+
+        .voice-option.active {
+          background: linear-gradient(
+            135deg,
+            rgba(255, 177, 188, 0.38),
+            rgba(255, 214, 165, 0.22)
+          );
+          box-shadow: 0 0 18px rgba(255, 186, 214, 0.2);
+        }
+
+        .voice-option.coming {
+          opacity: 0.78;
         }
 
         .pill,
