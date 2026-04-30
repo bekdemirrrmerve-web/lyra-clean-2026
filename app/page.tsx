@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 type VoiceMode = 'off' | 'phone' | 'realistic';
+
 type Panel =
   | 'chat'
   | 'pdf'
@@ -11,12 +12,19 @@ type Panel =
   | 'plan'
   | 'study'
   | 'engagement'
-  | 'video'
-  | 'notes';
+  | 'video';
 
 type Message = {
   role: 'user' | 'lyra';
   text: string;
+};
+
+type StudyNote = {
+  id: number;
+  topic: string;
+  mode: string;
+  content: string;
+  createdAt: string;
 };
 
 declare global {
@@ -32,7 +40,8 @@ export default function Page() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'lyra',
-      text: 'Buradayım kankam. Bugün üretim, plan, ders, içerik ve analiz tarafını birlikte toparlayabiliriz.',
+      text:
+        'Buradayım kankam. Bugün içerik, ders, plan, görsel, PDF ve video tarafını birlikte toparlayabiliriz.',
     },
   ]);
 
@@ -56,10 +65,6 @@ export default function Page() {
   const [socialGoal, setSocialGoal] = useState('kaydetme');
   const [socialResult, setSocialResult] = useState('');
 
-  const [ideaTopic, setIdeaTopic] = useState('kozmetik');
-  const [ideaPlatform, setIdeaPlatform] = useState('TikTok');
-  const [ideaResult, setIdeaResult] = useState('');
-
   const [dailyEnergy, setDailyEnergy] = useState('orta');
   const [dailyTasks, setDailyTasks] = useState('');
   const [dailyHours, setDailyHours] = useState('3');
@@ -70,6 +75,7 @@ export default function Page() {
   const [studyTopic, setStudyTopic] = useState('');
   const [studyMode, setStudyMode] = useState('Konu anlat');
   const [studyResult, setStudyResult] = useState('');
+  const [savedStudyNotes, setSavedStudyNotes] = useState<StudyNote[]>([]);
 
   const [pdfFileName, setPdfFileName] = useState('');
   const [pdfMode, setPdfMode] = useState('Kısa özet');
@@ -79,6 +85,7 @@ export default function Page() {
   const [imageStyle, setImageStyle] = useState('Realistic');
   const [imageRatio, setImageRatio] = useState('9:16');
   const [imageResult, setImageResult] = useState('');
+  const [generatedImageUrl, setGeneratedImageUrl] = useState('');
 
   const [followers, setFollowers] = useState('11900');
   const [views, setViews] = useState('2100');
@@ -92,18 +99,17 @@ export default function Page() {
   const [contentType, setContentType] = useState('Reels');
   const [videoFileName, setVideoFileName] = useState('');
 
-  const [noteText, setNoteText] = useState('');
-  const [noteResult, setNoteResult] = useState('');
-
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [recording, setRecording] = useState(false);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState('');
+  const [recordedMimeType, setRecordedMimeType] = useState('');
   const [cameraMode, setCameraMode] = useState<'wide' | 'normal' | 'close'>('normal');
+  const [videoRatio, setVideoRatio] = useState<'9:16' | '1:1' | '4:5' | '16:9' | 'full'>('9:16');
   const [beautyOn, setBeautyOn] = useState(true);
   const [teleprompterOn, setTeleprompterOn] = useState(true);
   const [teleText, setTeleText] = useState(
-    'Bugün size kısa ama işe yarayan bir içerik fikrinden bahsedeceğim...'
+    'Bugün size kısa ama işe yarayan bir bilgiden bahsedeceğim...'
   );
 
   const liveRecognitionRef = useRef<any>(null);
@@ -115,6 +121,8 @@ export default function Page() {
   const finalTranscriptRef = useRef('');
   const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const lastRepliesRef = useRef<string[]>([]);
+  const lastSpokenTextRef = useRef('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -146,21 +154,27 @@ export default function Page() {
     ? ((Number(comments || 0) / Number(views || 1)) * 100).toFixed(2)
     : '0.00';
 
-  const cameraScale = cameraMode === 'wide' ? 0.86 : cameraMode === 'normal' ? 0.95 : 1.08;
+  const cameraScale = cameraMode === 'wide' ? 0.82 : cameraMode === 'normal' ? 0.94 : 1.08;
 
   const cameraFilter = beautyOn
     ? 'brightness(1.08) contrast(1.03) saturate(1.08)'
     : 'none';
 
-  const tools: { key: Panel; title: string; icon: string; desc: string }[] = [
-    { key: 'pdf', title: 'PDF Özetle', icon: '📄', desc: 'PDF yükle, özet modunu seç' },
-    { key: 'image', title: 'Prompttan Görsel Oluştur', icon: '✨', desc: 'Görsel fikrini prompta çevir' },
-    { key: 'social', title: 'Sosyal Medya İçerik Asistanı', icon: '📱', desc: 'Hook, metin, caption, CTA' },
-    { key: 'plan', title: 'Günlük Plan Hazırla', icon: '☀️', desc: 'Enerjine göre plan çıkar' },
-    { key: 'study', title: 'Ders Çalışma Alanı', icon: '📚', desc: 'Not, özet, test, konu anlatımı' },
-    { key: 'engagement', title: 'Etkileşim Hesapla', icon: '📈', desc: 'Video ve hesap performansı' },
-    { key: 'video', title: 'Video Çekim / Kayıt', icon: '🎥', desc: 'Kamera, kayıt, teleprompter' },
-    { key: 'notes', title: 'Notlar', icon: '🗒️', desc: 'Not toparla, listele, sadeleştir' },
+  const videoAspectClass = useMemo(() => {
+    if (videoRatio === '1:1') return 'ratio-square';
+    if (videoRatio === '4:5') return 'ratio-four-five';
+    if (videoRatio === '16:9') return 'ratio-wide';
+    if (videoRatio === 'full') return 'ratio-full';
+    return 'ratio-story';
+  }, [videoRatio]);
+
+  const tools: { key: Panel; title: string; desc: string }[] = [
+    { key: 'pdf', title: 'PDF Özetle', desc: 'PDF yükle, özet modunu seç' },
+    { key: 'image', title: 'Görsel Oluştur', desc: 'Prompttan görsel önizleme üret' },
+    { key: 'social', title: 'İçerik Asistanı', desc: 'Hook, metin, caption, CTA' },
+    { key: 'plan', title: 'Günlük Plan', desc: 'Enerjine göre plan çıkar' },
+    { key: 'study', title: 'Ders Çalışma', desc: 'Not, test, konu anlatımı, PDF' },
+    { key: 'video', title: 'Video Çekim', desc: 'Kamera, oran, kayıt, paylaş' },
   ];
 
   useEffect(() => {
@@ -176,6 +190,14 @@ export default function Page() {
   }, [messages, isTyping]);
 
   useEffect(() => {
+    const saved = localStorage.getItem('sirius-study-notes');
+
+    if (saved) {
+      try {
+        setSavedStudyNotes(JSON.parse(saved));
+      } catch {}
+    }
+
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = () => {
         window.speechSynthesis.getVoices();
@@ -190,6 +212,7 @@ export default function Page() {
 
       if (typingTimerRef.current) clearInterval(typingTimerRef.current);
       if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
+      if (generatedImageUrl) URL.revokeObjectURL(generatedImageUrl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -211,6 +234,23 @@ export default function Page() {
 
   function includesAny(text: string, words: string[]) {
     return words.some((word) => text.includes(word));
+  }
+
+  function avoidRepeat(reply: string) {
+    const recent = lastRepliesRef.current;
+
+    if (!recent.includes(reply)) {
+      lastRepliesRef.current = [reply, ...recent].slice(0, 8);
+      return reply;
+    }
+
+    const variation = `${reply}
+
+Ek açı:
+Bunu farklılaştırmak için bu sefer konuyu daha kişisel bir girişle aç: “Ben bunu ilk duyduğumda şöyle düşünmüştüm...” Böylece aynı fikir bile daha özgün duyulur.`;
+
+    lastRepliesRef.current = [variation, ...recent].slice(0, 8);
+    return variation;
   }
 
   function cleanSpeechText(text: string) {
@@ -243,7 +283,6 @@ export default function Page() {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
     try {
-      window.speechSynthesis.cancel();
       window.speechSynthesis.resume();
 
       const u = new SpeechSynthesisUtterance(' ');
@@ -251,6 +290,16 @@ export default function Page() {
       u.volume = 0.01;
       window.speechSynthesis.speak(u);
     } catch {}
+  }
+
+  function interruptSpeech(reason = 'Sözünü aldım kankam') {
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {}
+
+    setAssistantSpeaking(false);
+    assistantSpeakingRef.current = false;
+    setLiveStatus(reason);
   }
 
   function speakWithPhoneVoice(text: string, afterEnd?: () => void) {
@@ -273,10 +322,13 @@ export default function Page() {
     try {
       const synth = window.speechSynthesis;
       const cleanText = cleanSpeechText(text);
+
       if (!cleanText) {
         afterEnd?.();
         return;
       }
+
+      lastSpokenTextRef.current = normalize(cleanText);
 
       synth.cancel();
       synth.resume();
@@ -284,11 +336,24 @@ export default function Page() {
       setAssistantSpeaking(true);
       assistantSpeakingRef.current = true;
 
-      const chunks = cleanText
-        .split(/(?<=[.!?])\s+/)
-        .map((chunk) => chunk.trim())
-        .filter(Boolean)
-        .slice(0, 14);
+      const chunks =
+        cleanText.length < 520
+          ? [cleanText]
+          : cleanText
+              .split(/(?<=[.!?])\s+/)
+              .map((chunk) => chunk.trim())
+              .filter(Boolean)
+              .reduce<string[]>((acc, sentence) => {
+                const last = acc[acc.length - 1] || '';
+
+                if ((last + ' ' + sentence).length < 420) {
+                  acc[acc.length - 1] = last ? `${last} ${sentence}` : sentence;
+                } else {
+                  acc.push(sentence);
+                }
+
+                return acc;
+              }, []);
 
       let index = 0;
 
@@ -296,14 +361,15 @@ export default function Page() {
         if (index >= chunks.length) {
           setAssistantSpeaking(false);
           assistantSpeakingRef.current = false;
+          setLiveStatus(liveOnRef.current ? 'Tekrar dinliyorum' : 'Canlı konuşma hazır');
           afterEnd?.();
           return;
         }
 
         const utterance = new SpeechSynthesisUtterance(chunks[index]);
         utterance.lang = 'tr-TR';
-        utterance.rate = 1;
-        utterance.pitch = 1.04;
+        utterance.rate = 1.22;
+        utterance.pitch = 1.03;
         utterance.volume = 1;
 
         const voice = getBestVoice();
@@ -311,18 +377,18 @@ export default function Page() {
 
         utterance.onend = () => {
           index += 1;
-          setTimeout(speakNext, 80);
+          setTimeout(speakNext, 30);
         };
 
         utterance.onerror = () => {
           index += 1;
-          setTimeout(speakNext, 80);
+          setTimeout(speakNext, 30);
         };
 
         synth.speak(utterance);
       };
 
-      setTimeout(speakNext, 120);
+      setTimeout(speakNext, 80);
     } catch {
       setAssistantSpeaking(false);
       assistantSpeakingRef.current = false;
@@ -339,7 +405,7 @@ export default function Page() {
     let index = 0;
 
     typingTimerRef.current = setInterval(() => {
-      index += 1;
+      index += 2;
 
       setMessages((prev) => {
         const next = [...prev];
@@ -360,87 +426,88 @@ export default function Page() {
 
         setIsTyping(false);
       }
-    }, 13);
+    }, 8);
   }
 
   function createSmartContentIdea(topicRaw?: string) {
-    const topic = (topicRaw || socialTopic || ideaTopic || 'güncel bir konu').trim();
+    const topic = (topicRaw || socialTopic || 'güncel bir konu').trim();
 
     const hooks = [
-      `Bu ${topic} meselesinde çoğu kişinin kaçırdığı minicik ama etkili bir nokta var.`,
-      `${topic} hakkında sana kimsenin düz anlatmadığı şeyi 30 saniyede göstereceğim.`,
-      `Bunu denemeden önce keşke biri bana ${topic} konusunda şunu söyleseydi.`,
-      `${topic} popüler diye iyi sanılıyor ama asıl mesele nasıl kullanıldığı.`,
-      `Bu içerik biraz fikir değiştirebilir: ${topic} sandığından daha stratejik.`,
-      `Eğer ${topic} ile ilgileniyorsan bu detayı kaydet, sonra lazım olacak.`,
+      `Bu ${topic} konusunda iyi sonuç almak istiyorsan önce şu küçük detayı bilmen lazım.`,
+      `${topic} hakkında çoğu kişinin atladığı şey aslında ürün/konu değil, kullanım sırası.`,
+      `Bunu herkes anlatıyor ama ${topic} tarafında asıl farkı yaratan nokta başka.`,
+      `${topic} sandığın kadar basit değil; ama doğru kurarsan çok daha anlaşılır hale geliyor.`,
+      `Ben olsam ${topic} konusuna direkt buradan başlardım.`,
+      `${topic} için kaydedilecek mini rehber: önce neye dikkat edeceğini bil.`,
       `Bunu yanlış yapınca sonuç alamıyorsun; doğru yapınca fark daha net oluyor.`,
+      `${topic} hakkında fikir değiştirecek bir ayrıntı söyleyeceğim.`,
     ];
 
-    const flows = [
-      ['Problemi göster', 'Yanlış bilinen noktayı söyle', 'Basit açıklama yap', 'Mini çözüm ver', 'Kaydet CTA ile bitir'],
-      ['Ürünü/konuyu göster', 'Mit cümlesi kur', 'Bilimsel mantığı sadeleştir', 'Örnek ver', 'Yorum sor'],
-      ['Önce şaşırtıcı cümle', 'Kısa hikâye', '3 maddelik çözüm', 'Uygulama önerisi', 'Devamı gelsin mi CTA'],
-      ['Sık yapılan hata', 'Neden işe yaramıyor', 'Doğru kullanım', 'Sonuç beklentisi', 'Kime uygun değil'],
-      ['Trend giriş', 'Kendi yorumun', 'Kimyager/analist gözü', 'Pratik öneri', 'Kaydet-paylaş çağrısı'],
+    const flowGroups = [
+      ['Yanlış bilinen şeyi söyle', 'Neden yanlış olduğunu açıkla', 'Doğru yaklaşımı göster', 'Mini örnek ver', 'Kaydet CTA'],
+      ['Problemle gir', 'İzleyicinin kendini görmesini sağla', '3 maddelik çözüm ver', 'Kısa örnekle güçlendir', 'Yorum sor'],
+      ['Trend cümleyle başla', 'Kişisel yorum ekle', 'Bilimsel/stratejik mantığı sadeleştir', 'Uygulama öner', 'Seriye bağla'],
+      ['Sık yapılan hatayı göster', 'Sonuç neden gelmiyor anlat', 'Doğru sırayı ver', 'Kimlere uygun değil söyle', 'Paylaş CTA'],
+      ['Önce iddialı ama güvenli cümle', 'Hemen kanıt/mantık ver', 'Kısa formül gibi anlat', 'Örnek senaryo kur', 'Devamı gelsin CTA'],
     ];
 
     const ctas = [
-      'Bunu kaydet, ürün alırken/uygularken lazım olur.',
+      'Bunu kaydet, sonra içerik çekerken/ürün seçerken işine yarar.',
       'Sen bunu daha önce böyle düşünmüş müydün?',
-      'Devamında bunu ürün örnekleriyle anlatayım mı?',
-      'Yorumlara “liste” yaz, bunu seri yapayım.',
-      'Bunu arkadaşına gönder; yanlış kullanıyorsa kurtaralım.',
+      'Devamında bunu örneklerle anlatayım mı?',
+      'Yorumlara “devam” yaz, bunu seri yapayım.',
+      'Bunu arkadaşına gönder; o da aynı hatayı yapıyor olabilir.',
       'Bir sonraki videoda hangi konuyu parçalayayım?',
     ];
 
-    const styles = [
-      'yakın plan, sade arka plan, doğal ışık',
-      'ürün/ekran gösterimi + yüz anlatımı',
-      'önce metin overlay, sonra konuşmalı açıklama',
-      'hızlı kesmeler, 3 sahne, net altyazı',
-      'premium ve sakin anlatım, az efekt',
+    const coverTexts = [
+      'Bunu çoğu kişi atlıyor',
+      'Asıl fark burada',
+      'Kaydetmelik mini rehber',
+      'Yanlış bilinen detay',
+      'Bu sıralama önemli',
     ];
 
-    const selectedFlow = pick(flows);
+    const flow = pick(flowGroups);
 
-    return `Başlık:
-${topic} için özgün ${socialPlatform || ideaPlatform} içerik fikri
+    return avoidRepeat(`Başlık:
+${topic} için özgün ${socialPlatform} içerik fikri
 
 Hook:
 ${pick(hooks)}
 
 Video Akışı:
-1. ${selectedFlow[0]}
-2. ${selectedFlow[1]}
-3. ${selectedFlow[2]}
-4. ${selectedFlow[3]}
-5. ${selectedFlow[4]}
+1. ${flow[0]}
+2. ${flow[1]}
+3. ${flow[2]}
+4. ${flow[3]}
+5. ${flow[4]}
 
 Ekran Yazıları:
-- “Bunu çoğu kişi atlıyor”
-- “Asıl fark burada”
-- “Kaydet, sonra lazım olur”
+- “${pick(coverTexts)}”
+- “Asıl mesele burada”
+- “Bunu kaydet”
 
 Konuşma Metni:
-“${topic} hakkında en sık gördüğüm hata şu: insanlar sonucu üründen ya da konudan bekliyor ama kullanım şekli ve bağlamı atlıyor. Ben olsam önce ihtiyacı netleştirir, sonra doğru adımı seçerdim. Çünkü bazen çözüm daha fazla şey yapmak değil, doğru şeyi doğru sırada yapmak.”
+“${topic} konusunda bence en büyük hata, herkesin aynı şeyi yapıp aynı sonucu beklemesi. Oysa burada farkı yaratan şey, konuyu doğru sırayla anlamak. Önce ihtiyacı belirle, sonra neden işe yarayıp yaramadığını düşün, en son uygulamaya geç. Bu şekilde hem daha bilinçli karar verirsin hem de boşuna vakit kaybetmezsin.”
 
 Caption:
-${topic} konusunda küçük detaylar büyük fark yaratabilir. Bu içerik işine yaradıysa kaydetmeyi unutma.
+${topic} konusunda küçük detaylar büyük fark yaratabilir. Kaydet, sonra lazım olur.
 
 CTA:
 ${pick(ctas)}
 
 Çekim Önerisi:
-${pick(styles)}
+Yüz yakın plan + ekranda 3 madde + sade arka plan. İlk 2 saniyede net vaat ver, videonun sonunda tek bir aksiyon iste.
 
 Ekstra Viral Açı:
-Videoyu “çoğu kişi bunu yanlış biliyor” açısıyla değil, “bunu böyle yapınca neden daha mantıklı oluyor?” açısıyla kur. Daha az saldırgan, daha güvenilir durur.`;
+Konuyu “şunu yapma” diye değil, “bunu böyle yaparsan daha mantıklı olur” diye anlat. Daha güvenilir ve paylaşılabilir durur.`);
   }
 
   function createSocialAssistantReply() {
-    const topic = socialTopic.trim() || 'cilt bakımı / içerik üretimi';
+    const topic = socialTopic.trim() || 'içerik üretimi';
 
-    return `Sosyal Medya İçerik Asistanı Çıktısı
+    return avoidRepeat(`Sosyal Medya İçerik Asistanı
 
 Konu:
 ${topic}
@@ -460,41 +527,41 @@ ${socialDuration}
 Amaç:
 ${socialGoal}
 
-3 Hook:
+3 Farklı Hook:
 1. ${pick([
-      `Bu ${topic} konusunda güzel sonuç almak istiyorsan önce bunu bil.`,
-      `${topic} sandığından daha kolay ama çoğu kişi ilk adımı yanlış atıyor.`,
-      `Bunu görünce “ben bunu neden daha önce düşünmedim?” diyebilirsin.`,
+      `${topic} konusunda içerik çekeceksen önce bu açıyı dene.`,
+      `${topic} hakkında herkes aynı şeyi söylüyor; sen şu yerden ayrış.`,
+      `Bu ${topic} fikri, izleyicinin “ben de bunu yaşıyorum” demesini sağlar.`,
     ])}
 2. ${pick([
-      `${socialPlatform} için kaydedilecek mini rehber: ${topic}.`,
-      `Bu videoyu ${socialAudience} mutlaka kaydetmeli.`,
-      `${topic} hakkında kısa ama net bir düzeltme yapalım.`,
+      `Bu video ${socialAudience} için direkt kaydetmelik olabilir.`,
+      `${socialPlatform} için kısa ama güçlü bir ${topic} fikri: önce problemi görünür yap.`,
+      `Eğer amacın ${socialGoal} ise videoyu bilgi değil, ihtiyaç üzerinden kur.`,
     ])}
 3. ${pick([
-      `Bunu yapıyorsan dur, önce şu detayı kontrol et.`,
-      `Ben olsam ${topic} konusunda önce şu sırayla giderdim.`,
-      `Küçük bir detay ama içerik performansını bile etkileyebilir.`,
+      `Bunu daha önce böyle anlatmadılar: ${topic}.`,
+      `${topic} için en basit ama etkili içerik yapısı bu.`,
+      `İlk 3 saniyede bunu söylersen izleyici kalma ihtimali artar.`,
     ])}
 
 Tam Video Metni:
-“Bugün ${topic} konusunu çok basit anlatacağım. Çünkü bu konuda en büyük hata, herkesin aynı şeyi yapması ama neden yaptığını bilmemesi. Eğer hedefin ${socialGoal} ise önce izleyicinin kendini videonun içinde görmesini sağlamalısın. Sonra tek bir net problem söyle, ardından mini çözüm ver. Fazla uzatma; bir fikri iyi anlat, gerisini seriye bırak.”
+“Bugün ${topic} konusunu sade ama etkili bir şekilde anlatacağım. Çünkü bu konuda en büyük sorun bilgi eksikliği değil; bilginin nasıl sunulduğu. İzleyici önce kendini görmeli. Sonra problemi net duymalı. En son da ona uygulanabilir küçük bir çözüm vermelisin. Eğer hedefin ${socialGoal} ise videonun sonunda tek ve net bir çağrı yap: kaydet, yorum yaz veya devamını iste.”
 
 Sahne Sahne Akış:
-1. İlk 3 saniye: güçlü hook + yüz yakın plan
-2. 3-10 saniye: problemi göster
-3. 10-20 saniye: çözümü anlat
-4. 20-27 saniye: örnek ver
-5. Son saniyeler: yorum/kaydet CTA
+1. İlk 3 saniye: Problem cümlesi + yüz yakın plan
+2. 3-10 saniye: İzleyicinin yaşadığı durumu tarif et
+3. 10-22 saniye: Çözümü 3 maddeyle anlat
+4. 22-28 saniye: Örnek ver
+5. Son: Tek CTA
 
 Caption:
-${topic} konusunda en net farkı küçük detaylar yaratıyor. Kaydet, sonra içerik üretirken dönüp bakarsın.
+${topic} konusunda fark yaratan şey bazen daha çok bilgi değil, daha net anlatımdır.
 
 CTA:
 ${pick([
       'Devamı gelsin mi?',
       'Bunu hangi konuya uyarlayayım?',
-      'Yorumlara “devam” yaz, ikinci bölümü hazırlayayım.',
+      'Yorumlara “liste” yaz, ikinci bölümü hazırlayayım.',
       'Kaydet, çekimden önce kontrol listesi gibi kullan.',
     ])}
 
@@ -502,10 +569,10 @@ Hashtag:
 #içeriküretimi #sosyalmedya #reelsfikirleri #tiktokfikirleri #üreticirehberi
 
 Kapak Yazısı:
-“${topic}: çoğu kişinin kaçırdığı detay”
+“${topic}: farklı anlatım açısı”
 
 Çekim Önerisi:
-Açık renk arka plan, doğal ışık, hızlı ama sakin konuşma, ekranda 3 ana madde.`;
+Açık renk arka plan, doğal ışık, hızlı ama sakin konuşma, ekranda 3 ana madde.`);
   }
 
   function createDailyPlan() {
@@ -558,8 +625,8 @@ Gün Sonu Kontrol:
 [ ] Kendimi suçlamadan günü kapattım`;
   }
 
-  function createStudyAssistantReply() {
-    const topic = studyTopic.trim() || 'çalışmak istediğin konu';
+  function createStudyAssistantReply(topicFromChat?: string) {
+    const topic = (topicFromChat || studyTopic || 'çalışmak istediğin konu').trim();
     const mode = studyMode;
 
     if (mode === 'Test hazırla') {
@@ -685,19 +752,236 @@ Verilenleri işaretle, isteneni ayır, sonra işlem yap.
 4. Mini Özet
 Konu öğrenmek = tanım + örnek + soru + yanlış analizi.
 
-İstersen bu konuyu daha detaylı, tablo şeklinde ya da sınav notu gibi hazırlayabilirim.`;
+İstersen bunu tablo şeklinde, sınav notu gibi veya PDF çalışma kağıdı gibi hazırlayabilirim.`;
+  }
+
+  function saveStudyNote() {
+    const topic = studyTopic.trim();
+
+    if (!topic || !studyResult.trim()) {
+      alert('Önce konu yazıp çıktı hazırla kankam.');
+      return;
+    }
+
+    const newNote: StudyNote = {
+      id: Date.now(),
+      topic,
+      mode: studyMode,
+      content: studyResult,
+      createdAt: new Date().toLocaleString('tr-TR'),
+    };
+
+    const next = [newNote, ...savedStudyNotes].slice(0, 30);
+    setSavedStudyNotes(next);
+    localStorage.setItem('sirius-study-notes', JSON.stringify(next));
+  }
+
+  function deleteStudyNote(id: number) {
+    const next = savedStudyNotes.filter((note) => note.id !== id);
+    setSavedStudyNotes(next);
+    localStorage.setItem('sirius-study-notes', JSON.stringify(next));
+  }
+
+  function makeStudyPdf() {
+    const content = studyResult.trim();
+
+    if (!content) {
+      alert('Önce ders çıktısı hazırla kankam.');
+      return;
+    }
+
+    const html = `
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${studyTopic || 'Ders Notu'}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 32px; color: #222; line-height: 1.55; }
+          h1 { color: #4d2a68; }
+          pre { white-space: pre-wrap; font-family: Arial, sans-serif; }
+        </style>
+      </head>
+      <body>
+        <h1>${studyTopic || 'Ders Notu'}</h1>
+        <p><strong>Mod:</strong> ${studyMode}</p>
+        <pre>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+        <script>window.print();</script>
+      </body>
+      </html>
+    `;
+
+    const win = window.open('', '_blank');
+
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    } else {
+      alert('PDF penceresi açılamadı. Tarayıcı popup iznini kontrol et.');
+    }
   }
 
   function generateImageFromPrompt() {
     const base = imagePrompt.trim() || 'mistik, parlak, premium sosyal medya görseli';
+    const ratio = imageRatio;
 
-    setImageResult(`Görsel üretim motoru henüz bağlanmadı; ama görsel üretime hazır final prompt hazırlandı.
+    let width = 1080;
+    let height = 1920;
+
+    if (ratio === '1:1') {
+      width = 1080;
+      height = 1080;
+    }
+
+    if (ratio === '16:9') {
+      width = 1600;
+      height = 900;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) return;
+
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+
+    if (imageStyle === 'Mystic') {
+      gradient.addColorStop(0, '#fff3fb');
+      gradient.addColorStop(0.35, '#dbc8ff');
+      gradient.addColorStop(0.7, '#bceeff');
+      gradient.addColorStop(1, '#fff0b8');
+    } else if (imageStyle === 'Product') {
+      gradient.addColorStop(0, '#ffffff');
+      gradient.addColorStop(0.5, '#f6eefc');
+      gradient.addColorStop(1, '#e7f7ff');
+    } else if (imageStyle === 'Beauty') {
+      gradient.addColorStop(0, '#ffe2ee');
+      gradient.addColorStop(0.5, '#fff8fb');
+      gradient.addColorStop(1, '#f4ddff');
+    } else {
+      gradient.addColorStop(0, '#fffafd');
+      gradient.addColorStop(0.4, '#e9e4ff');
+      gradient.addColorStop(0.75, '#dff7ff');
+      gradient.addColorStop(1, '#fff0c9');
+    }
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    for (let i = 0; i < 44; i += 1) {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      const r = 20 + Math.random() * 110;
+
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(255,255,255,${0.45 + Math.random() * 0.25})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    for (let i = 0; i < 28; i += 1) {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      const size = 10 + Math.random() * 22;
+
+      ctx.fillStyle = 'rgba(120, 76, 255, 0.32)';
+      ctx.font = `${size}px serif`;
+      ctx.fillText('✦', x, y);
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    roundRect(ctx, width * 0.08, height * 0.34, width * 0.84, height * 0.32, 42);
+    ctx.fill();
+
+    ctx.fillStyle = '#2a1830';
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.max(42, width * 0.055)}px Arial`;
+    wrapCanvasText(ctx, base, width / 2, height * 0.47, width * 0.72, Math.max(54, width * 0.065));
+
+    ctx.font = `${Math.max(24, width * 0.026)}px Arial`;
+    ctx.fillStyle = '#6c5676';
+    ctx.fillText(`${imageStyle} · ${imageRatio}`, width / 2, height * 0.64);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+
+      if (generatedImageUrl) URL.revokeObjectURL(generatedImageUrl);
+
+      const url = URL.createObjectURL(blob);
+      setGeneratedImageUrl(url);
+
+      setImageResult(`Görsel oluşturuldu.
+
+Not:
+Bu sürüm tarayıcı içinde görsel üretir. Gerçek AI image API bağlandığında aynı buton fotogerçekçi görsel üretecek.
 
 Final Prompt:
-${base}, ${imageStyle} style, ${imageRatio} aspect ratio, premium lighting, soft cloud-like background, starry glow, elegant composition, high detail, clean modern aesthetic, social-media ready, no text unless requested.
+${base}, ${imageStyle} style, ${imageRatio} aspect ratio, premium lighting, soft cloud-like background, starry glow, elegant composition, high detail, clean modern aesthetic, social-media ready.`);
+    }, 'image/png');
+  }
 
-Durum:
-Image API bağlanınca bu buton gerçek görsel üretecek. Şu an prompt ve önizleme sistemi hazır.`);
+  function roundRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number
+  ) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function wrapCanvasText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineHeight: number
+  ) {
+    const words = text.split(' ');
+    let line = '';
+    const lines: string[] = [];
+
+    words.forEach((word) => {
+      const test = `${line}${word} `;
+      const width = ctx.measureText(test).width;
+
+      if (width > maxWidth && line) {
+        lines.push(line);
+        line = `${word} `;
+      } else {
+        line = test;
+      }
+    });
+
+    lines.push(line);
+
+    lines.slice(0, 4).forEach((item, index) => {
+      ctx.fillText(item.trim(), x, y + index * lineHeight);
+    });
+  }
+
+  async function downloadGeneratedImage() {
+    if (!generatedImageUrl) return;
+
+    const a = document.createElement('a');
+    a.href = generatedImageUrl;
+    a.download = 'sirius-gorsel.png';
+    a.click();
   }
 
   function handlePdfUpload(file?: File | null) {
@@ -708,7 +992,7 @@ Image API bağlanınca bu buton gerçek görsel üretecek. Şu an prompt ve öni
 
 Mod: ${pdfMode}
 
-PDF özet motoru henüz bağlanmadı. Şu an dosya seçimi hazır.
+PDF okuma motoru için backend gerekir. Şu an dosya seçimi hazır.
 Backend eklendiğinde burada:
 - kısa özet
 - detaylı özet
@@ -718,33 +1002,8 @@ Backend eklendiğinde burada:
 oluşturulacak.`);
   }
 
-  function summarizeNote() {
-    const text = noteText.trim();
-
-    if (!text) {
-      setNoteResult('Önce not yaz kankam.');
-      return;
-    }
-
-    setNoteResult(`Not Toparlama
-
-Kısa Özet:
-${text.slice(0, 180)}${text.length > 180 ? '...' : ''}
-
-Yapılacak Mini Adımlar:
-1. Ana fikri seç.
-2. Gereksiz cümleleri çıkar.
-3. 3 maddelik plana çevir.
-4. İlk küçük adımı başlat.
-
-Benim fikrim:
-Bu notu tek seferde büyütme. Önce sadeleştir, sonra aksiyona çevir.`);
-  }
-
   function getEngagementComment() {
     const er = Number(engagementRate);
-    const sr = Number(saveRate);
-    const shr = Number(shareRate);
 
     if (er >= 12) return 'Güçlü performans. İçerik izleyiciyi aksiyona sokmuş.';
     if (er >= 7) return 'İyi performans. Kaydetme ve paylaşımı biraz daha artırırsan daha iyi yayılır.';
@@ -767,29 +1026,30 @@ Bu notu tek seferde büyütme. Önce sadeleştir, sonra aksiyona çevir.`);
 
     if (includesAny(t, ['ders', 'dgs', 'matematik', 'not', 'özet', 'ozet', 'test', 'çalış'])) {
       setStudyTopic(userText);
-      return createStudyAssistantReply();
+      return createStudyAssistantReply(userText);
     }
 
     if (includesAny(t, ['moral', 'yorgun', 'bunaldım', 'stres', 'kötü'])) {
-      return 'Kankam önce bir nefes. Şu an her şeyi tek seferde çözmek zorunda değilsin. Bir küçük adım seçelim: ya plan, ya ders, ya içerik. Kontrol hissini oradan geri alırız.';
+      return avoidRepeat(
+        'Kankam önce bir nefes. Şu an her şeyi tek seferde çözmek zorunda değilsin. Bir küçük adım seçelim: ya plan, ya ders, ya içerik. Kontrol hissini oradan geri alırız.'
+      );
     }
 
     if (includesAny(t, ['kamera', 'video', 'çekim', 'kayıt'])) {
       setActivePanel('video');
-      return 'Video alanını açıyorum kankam. iPhone’da aşırı yakın görünmemesi için kamera modunu Normal veya Geniş seçebilirsin.';
+      return avoidRepeat(
+        'Video alanını açıyorum kankam. iPhone’da aşırı yakın görünmemesi için kamera modunu Normal veya Geniş seçebilirsin. Oranı da 9:16, 1:1, 4:5 veya 16:9 yapabilirsin.'
+      );
     }
 
-    return `Duydum kankam: “${userText}”
+    return avoidRepeat(`Duydum kankam: “${userText}”
 
-Bunu sana şu şekillerde hazırlayabilirim:
-- içerik fikri
-- günlük plan
-- ders notu
-- video metni
-- sosyal medya stratejisi
-- kısa özet
+Bunu daha güçlü cevaplamak için şöyle ele alırım:
+- Önce asıl niyeti ayırırım.
+- Sonra bunu üretim, plan, ders veya içerik formatına çeviririm.
+- En sonunda uygulanabilir bir çıktı veririm.
 
-Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlayayım?`;
+Bence bu konuyu “tek cevap” gibi değil, küçük bir çıktıya çevirelim. İstersen sana bunu plan, içerik metni, ders notu veya kısa strateji olarak hazırlayayım.`);
   }
 
   function sendTextMessage(customText?: string) {
@@ -797,6 +1057,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     const text = raw.trim();
     if (!text) return;
 
+    interruptSpeech('Yeni mesajını aldım');
     unlockSpeech();
 
     const reply = localLyraReply(text);
@@ -812,6 +1073,8 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
   function handleLiveUserText(text: string) {
     if (!text.trim()) return;
 
+    interruptSpeech('Sözünü aldım');
+
     const reply = localLyraReply(text);
 
     setMessages((prev) => [
@@ -821,11 +1084,13 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     ]);
 
     speakWithPhoneVoice(reply, () => {
-      if (liveOnRef.current) setTimeout(() => startLiveListening(), 450);
+      if (liveOnRef.current) setTimeout(() => startLiveListening(), 350);
     });
   }
 
   function startDictation() {
+    interruptSpeech('Seni dinliyorum');
+
     const SpeechRecognitionCtor =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -853,6 +1118,10 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
       recognition.onresult = (event: any) => {
         let interim = '';
         let finalPart = '';
+
+        if (assistantSpeakingRef.current) {
+          interruptSpeech('Böldün, seni dinliyorum');
+        }
 
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           const transcript = event.results[i]?.[0]?.transcript || '';
@@ -922,9 +1191,6 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
   }
 
   function startLiveListening() {
-    if (liveListeningLockRef.current) return;
-    if (assistantSpeakingRef.current) return;
-
     const SpeechRecognitionCtor =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -933,13 +1199,14 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
       return;
     }
 
+    if (liveListeningLockRef.current) return;
+
     try {
       stopDictation();
-      window.speechSynthesis?.cancel();
 
       const recognition = new SpeechRecognitionCtor();
       recognition.lang = 'tr-TR';
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
@@ -964,26 +1231,37 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         }
 
         const heard = (finalText || interimText).trim();
+        const normalizedHeard = normalize(heard);
 
-        if (heard) {
-          setLiveStatus(`Duydum: ${heard}`);
+        if (!heard) return;
 
-          if (quickTimer) clearTimeout(quickTimer);
+        if (assistantSpeakingRef.current) {
+          const spoken = lastSpokenTextRef.current;
+          const looksLikeOwnVoice =
+            normalizedHeard.length > 8 && spoken.includes(normalizedHeard.slice(0, 20));
 
-          quickTimer = setTimeout(() => {
-            const textToSend = (finalText || interimText).trim();
-
-            if (textToSend.length > 1) {
-              try {
-                recognition.stop();
-              } catch {}
-
-              liveListeningLockRef.current = false;
-              setLiveListening(false);
-              handleLiveUserText(textToSend);
-            }
-          }, 650);
+          if (!looksLikeOwnVoice) {
+            interruptSpeech('Böldün, seni dinliyorum');
+          }
         }
+
+        setLiveStatus(`Duydum: ${heard}`);
+
+        if (quickTimer) clearTimeout(quickTimer);
+
+        quickTimer = setTimeout(() => {
+          const textToSend = (finalText || interimText).trim();
+
+          if (textToSend.length > 1) {
+            try {
+              recognition.stop();
+            } catch {}
+
+            liveListeningLockRef.current = false;
+            setLiveListening(false);
+            handleLiveUserText(textToSend);
+          }
+        }, 600);
       };
 
       recognition.onerror = () => {
@@ -1006,9 +1284,9 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         liveListeningLockRef.current = false;
         setLiveListening(false);
 
-        if (liveOnRef.current && !assistantSpeakingRef.current) {
-          setTimeout(() => startLiveListening(), 550);
-        } else if (!assistantSpeakingRef.current) {
+        if (liveOnRef.current) {
+          setTimeout(() => startLiveListening(), 450);
+        } else {
           setLiveStatus('Canlı konuşma hazır');
         }
       };
@@ -1043,15 +1321,12 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     if (next) {
       unlockSpeech();
       setLiveStatus('Canlı konuşma açılıyor');
+      startLiveListening();
 
-      speakWithPhoneVoice('Tamam kankam, buradayım. Konuş, seni dinliyorum.', () => {
-        if (liveOnRef.current) setTimeout(() => startLiveListening(), 400);
-      });
+      speakWithPhoneVoice('Tamam kankam, buradayım. Konuş, seni dinliyorum.');
     } else {
       stopLiveListening();
-      window.speechSynthesis?.cancel();
-      setAssistantSpeaking(false);
-      assistantSpeakingRef.current = false;
+      interruptSpeech('Canlı konuşma kapalı');
       setLiveStatus('Canlı konuşma kapalı');
     }
   }
@@ -1060,14 +1335,16 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     setCameraError('');
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const constraints: MediaStreamConstraints = {
         video: {
           facingMode: 'user',
-          width: { ideal: 720 },
-          height: { ideal: 1280 },
+          width: { ideal: videoRatio === '16:9' ? 1280 : 720 },
+          height: { ideal: videoRatio === '16:9' ? 720 : 1280 },
         },
         audio: true,
-      });
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -1099,6 +1376,20 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     } catch {}
   }
 
+  function getSupportedVideoMimeType() {
+    const candidates = [
+      'video/mp4;codecs=h264,aac',
+      'video/mp4',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+    ];
+
+    if (typeof MediaRecorder === 'undefined') return '';
+
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+  }
+
   function toggleRecording() {
     const video = videoRef.current;
 
@@ -1121,28 +1412,19 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
 
       recordedChunksRef.current = [];
       const stream = video.srcObject as MediaStream;
-
-      let mimeType = '';
-
-      if (typeof MediaRecorder !== 'undefined') {
-        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-          mimeType = 'video/webm;codecs=vp9';
-        } else if (MediaRecorder.isTypeSupported('video/webm')) {
-          mimeType = 'video/webm';
-        }
-      }
+      const mimeType = getSupportedVideoMimeType();
 
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      setRecordedMimeType(mimeType || 'video/webm');
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size > 0) recordedChunksRef.current.push(event.data);
       };
 
       recorder.onstop = () => {
-        const blob = new Blob(recordedChunksRef.current, {
-          type: mimeType || 'video/webm',
-        });
-
+        const type = mimeType || 'video/webm';
+        const blob = new Blob(recordedChunksRef.current, { type });
         const url = URL.createObjectURL(blob);
         setRecordedVideoUrl(url);
       };
@@ -1156,6 +1438,36 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     }
   }
 
+  async function shareRecordedVideo() {
+    if (!recordedVideoUrl) return;
+
+    const response = await fetch(recordedVideoUrl);
+    const blob = await response.blob();
+    const extension = recordedMimeType.includes('mp4') ? 'mp4' : 'webm';
+    const file = new File([blob], `sirius-video.${extension}`, {
+      type: recordedMimeType || blob.type,
+    });
+
+    const nav = navigator as Navigator & {
+      canShare?: (data: { files?: File[] }) => boolean;
+      share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>;
+    };
+
+    if (nav.canShare?.({ files: [file] }) && nav.share) {
+      await nav.share({
+        files: [file],
+        title: 'Sirius Video',
+        text: 'Sirius AI ile kaydedildi.',
+      });
+      return;
+    }
+
+    const a = document.createElement('a');
+    a.href = recordedVideoUrl;
+    a.download = `sirius-video.${extension}`;
+    a.click();
+  }
+
   function openPanel(panel: Panel) {
     setActivePanel(panel);
     if (panel !== 'video') stopCamera();
@@ -1166,7 +1478,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
       return (
         <section className="panel-card glass">
           <h2>PDF Özetle</h2>
-          <p className="muted">PDF yükle, özet modunu seç. Backend bağlanınca gerçek özet üretecek.</p>
+          <p className="muted">PDF yükle, özet modunu seç. Gerçek PDF okuma için sonra backend bağlanacak.</p>
 
           <div className="form-grid">
             <label>
@@ -1197,12 +1509,20 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     if (activePanel === 'image') {
       return (
         <section className="panel-card glass">
-          <h2>Prompttan Görsel Oluştur</h2>
-          <p className="muted">Şimdilik final prompt üretir; image API bağlanınca gerçek görsel oluşturur.</p>
+          <h2>Görsel Oluştur</h2>
+          <p className="muted">
+            Bu sürüm tarayıcı içinde görsel üretir. Fotogerçekçi AI görsel için sonra image API bağlanacak.
+          </p>
 
           <div className="image-preview">
-            <div className="sparkle">✦</div>
-            <span>Görsel Önizleme Alanı</span>
+            {generatedImageUrl ? (
+              <img src={generatedImageUrl} alt="Oluşturulan görsel" />
+            ) : (
+              <div>
+                <div className="sparkle">SIRIUS</div>
+                <span>Görsel önizleme alanı</span>
+              </div>
+            )}
           </div>
 
           <textarea
@@ -1236,11 +1556,17 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
             </label>
           </div>
 
-          <button className="primary" onClick={generateImageFromPrompt}>
-            Görsel Oluştur
-          </button>
+          <div className="toolbar">
+            <button className="primary" onClick={generateImageFromPrompt}>
+              Görsel Oluştur
+            </button>
 
-          <pre className="result">{imageResult || 'Henüz görsel promptu oluşturulmadı.'}</pre>
+            <button onClick={downloadGeneratedImage} disabled={!generatedImageUrl}>
+              Görseli İndir
+            </button>
+          </div>
+
+          <pre className="result">{imageResult || 'Henüz görsel oluşturulmadı.'}</pre>
         </section>
       );
     }
@@ -1248,7 +1574,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     if (activePanel === 'social') {
       return (
         <section className="panel-card glass">
-          <h2>Sosyal Medya İçerik Asistanı</h2>
+          <h2>İçerik Asistanı</h2>
           <p className="muted">Konuya göre özgün hook, video metni, caption ve CTA üretir.</p>
 
           <div className="form-grid">
@@ -1322,7 +1648,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     if (activePanel === 'plan') {
       return (
         <section className="panel-card glass">
-          <h2>Günlük Plan Hazırla</h2>
+          <h2>Günlük Plan</h2>
           <p className="muted">Enerjine ve vaktine göre gerçekçi bir gün planı çıkarır.</p>
 
           <div className="form-grid">
@@ -1370,8 +1696,8 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     if (activePanel === 'study') {
       return (
         <section className="panel-card glass">
-          <h2>Ders Çalışma Alanı</h2>
-          <p className="muted">Konu anlatımı, not, test, ezber kartı veya yanlış analizi hazırlar.</p>
+          <h2>Ders Çalışma</h2>
+          <p className="muted">Konu anlatımı, not, test, ezber kartı, yanlış analizi ve PDF çıktısı.</p>
 
           <div className="form-grid">
             <label>
@@ -1396,11 +1722,151 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
             </label>
           </div>
 
-          <button className="primary" onClick={() => setStudyResult(createStudyAssistantReply())}>
-            Hazırla
-          </button>
+          <div className="toolbar">
+            <button className="primary" onClick={() => setStudyResult(createStudyAssistantReply())}>
+              Hazırla
+            </button>
+            <button onClick={saveStudyNote}>Konuyu Kaydet</button>
+            <button onClick={makeStudyPdf}>PDF Yap</button>
+          </div>
 
           <pre className="result">{studyResult || 'Henüz ders çıktısı hazırlanmadı.'}</pre>
+
+          <h3>Kayıtlı Konular</h3>
+          <div className="saved-list">
+            {savedStudyNotes.length === 0 && <p className="muted">Henüz kayıtlı konu yok.</p>}
+
+            {savedStudyNotes.map((note) => (
+              <div className="saved-item" key={note.id}>
+                <strong>{note.topic}</strong>
+                <span>{note.mode} · {note.createdAt}</span>
+                <div className="toolbar">
+                  <button
+                    onClick={() => {
+                      setStudyTopic(note.topic);
+                      setStudyMode(note.mode);
+                      setStudyResult(note.content);
+                    }}
+                  >
+                    Aç
+                  </button>
+                  <button onClick={() => deleteStudyNote(note.id)}>Sil</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    if (activePanel === 'video') {
+      return (
+        <section className="panel-card glass">
+          <h2>Video Çekim</h2>
+          <p className="muted">iPhone için oran, kadraj, kayıt ve paylaşma seçenekleri.</p>
+
+          <div className={`camera-frame ${videoAspectClass}`}>
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              className="camera-video"
+              style={{
+                filter: cameraFilter,
+                transform: `scaleX(-1) scale(${cameraScale})`,
+                objectFit: 'contain',
+              }}
+            />
+
+            {!cameraActive && (
+              <div className="camera-placeholder">
+                <strong>Kamera kapalı</strong>
+                <p>Kamerayı açınca önizleme burada görünecek.</p>
+              </div>
+            )}
+
+            {cameraActive && teleprompterOn && (
+              <div className="tele-overlay">
+                <p>{teleText}</p>
+              </div>
+            )}
+
+            {recording && <span className="rec">REC</span>}
+          </div>
+
+          {cameraError && <div className="notice danger">{cameraError}</div>}
+
+          <div className="toolbar">
+            <button onClick={startCamera}>Kamerayı Aç</button>
+            <button onClick={stopCamera}>Kapat</button>
+            <button onClick={toggleRecording}>{recording ? 'Kaydı Durdur' : 'Kayıt Başlat'}</button>
+            <button onClick={shareRecordedVideo} disabled={!recordedVideoUrl}>
+              Paylaş / Kaydet
+            </button>
+          </div>
+
+          <div className="form-grid">
+            <label>
+              Video Oranı
+              <select value={videoRatio} onChange={(e) => setVideoRatio(e.target.value as any)}>
+                <option value="9:16">9:16 Story/Reels/TikTok</option>
+                <option value="4:5">4:5 Instagram Feed</option>
+                <option value="1:1">1:1 Kare</option>
+                <option value="16:9">16:9 YouTube</option>
+                <option value="full">Tam Alan</option>
+              </select>
+            </label>
+
+            <label>
+              Kamera Modu
+              <select value={cameraMode} onChange={(e) => setCameraMode(e.target.value as any)}>
+                <option value="wide">Geniş</option>
+                <option value="normal">Normal</option>
+                <option value="close">Yakın</option>
+              </select>
+            </label>
+
+            <label>
+              Beauty Filter
+              <select value={beautyOn ? 'Açık' : 'Kapalı'} onChange={(e) => setBeautyOn(e.target.value === 'Açık')}>
+                <option>Açık</option>
+                <option>Kapalı</option>
+              </select>
+            </label>
+
+            <label>
+              Teleprompter
+              <select
+                value={teleprompterOn ? 'Açık' : 'Kapalı'}
+                onChange={(e) => setTeleprompterOn(e.target.value === 'Açık')}
+              >
+                <option>Açık</option>
+                <option>Kapalı</option>
+              </select>
+            </label>
+          </div>
+
+          <textarea
+            className="textarea"
+            value={teleText}
+            onChange={(e) => setTeleText(e.target.value)}
+            placeholder="Teleprompter metnini yaz..."
+          />
+
+          {recordedVideoUrl && (
+            <div className="notice">
+              <strong>Kaydedilen Video</strong>
+              <p>Format: {recordedMimeType || 'tarayıcı varsayılanı'}</p>
+              <video src={recordedVideoUrl} controls playsInline className="recorded" />
+              <a
+                href={recordedVideoUrl}
+                download={`sirius-video.${recordedMimeType.includes('mp4') ? 'mp4' : 'webm'}`}
+                className="download"
+              >
+                Videoyu İndir
+              </a>
+            </div>
+          )}
         </section>
       );
     }
@@ -1408,7 +1874,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     if (activePanel === 'engagement') {
       return (
         <section className="panel-card glass">
-          <h2>Etkileşim Hesapla</h2>
+          <h2>Etkileşim Analizi</h2>
           <p className="muted">Manuel verilerle oran hesaplar; link ve video alanı API için hazırdır.</p>
 
           <div className="form-grid">
@@ -1433,12 +1899,12 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
 
             <label>
               Video Linki
-              <input value={videoLink} onChange={(e) => setVideoLink(e.target.value)} placeholder="Video bağlantısı..." />
+              <input value={videoLink} onChange={(e) => setVideoLink(e.target.value)} />
             </label>
 
             <label>
               Hesap Linki
-              <input value={accountLink} onChange={(e) => setAccountLink(e.target.value)} placeholder="Profil bağlantısı..." />
+              <input value={accountLink} onChange={(e) => setAccountLink(e.target.value)} />
             </label>
 
             <label>
@@ -1497,125 +1963,10 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
       );
     }
 
-    if (activePanel === 'video') {
-      return (
-        <section className="panel-card glass">
-          <h2>Video Çekim / Kayıt</h2>
-          <p className="muted">iPhone için daha doğal kadraj. Kamera modunu geniş/normal/yakın seçebilirsin.</p>
-
-          <div className="camera-frame">
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="camera-video"
-              style={{
-                filter: cameraFilter,
-                transform: `scaleX(-1) scale(${cameraScale})`,
-                objectFit: 'contain',
-              }}
-            />
-
-            {!cameraActive && (
-              <div className="camera-placeholder">
-                <strong>Kamera kapalı</strong>
-                <p>Kamerayı açınca önizleme burada görünecek.</p>
-              </div>
-            )}
-
-            {cameraActive && teleprompterOn && (
-              <div className="tele-overlay">
-                <p>{teleText}</p>
-              </div>
-            )}
-
-            {recording && <span className="rec">● REC</span>}
-          </div>
-
-          {cameraError && <div className="notice danger">{cameraError}</div>}
-
-          <div className="toolbar">
-            <button onClick={startCamera}>Kamerayı Aç</button>
-            <button onClick={stopCamera}>Kapat</button>
-            <button onClick={toggleRecording}>{recording ? 'Kaydı Durdur' : 'Kayıt Başlat'}</button>
-          </div>
-
-          <div className="form-grid">
-            <label>
-              Kamera Modu
-              <select value={cameraMode} onChange={(e) => setCameraMode(e.target.value as any)}>
-                <option value="wide">Geniş</option>
-                <option value="normal">Normal</option>
-                <option value="close">Yakın</option>
-              </select>
-            </label>
-
-            <label>
-              Beauty Filter
-              <select value={beautyOn ? 'Açık' : 'Kapalı'} onChange={(e) => setBeautyOn(e.target.value === 'Açık')}>
-                <option>Açık</option>
-                <option>Kapalı</option>
-              </select>
-            </label>
-
-            <label>
-              Teleprompter
-              <select
-                value={teleprompterOn ? 'Açık' : 'Kapalı'}
-                onChange={(e) => setTeleprompterOn(e.target.value === 'Açık')}
-              >
-                <option>Açık</option>
-                <option>Kapalı</option>
-              </select>
-            </label>
-          </div>
-
-          <textarea
-            className="textarea"
-            value={teleText}
-            onChange={(e) => setTeleText(e.target.value)}
-            placeholder="Teleprompter metnini yaz..."
-          />
-
-          {recordedVideoUrl && (
-            <div className="notice">
-              <strong>Kaydedilen Video</strong>
-              <video src={recordedVideoUrl} controls playsInline className="recorded" />
-              <a href={recordedVideoUrl} download="sirius-video.webm" className="download">
-                Videoyu İndir
-              </a>
-            </div>
-          )}
-        </section>
-      );
-    }
-
-    if (activePanel === 'notes') {
-      return (
-        <section className="panel-card glass">
-          <h2>Notlar</h2>
-          <p className="muted">Notlarını toparlar, sadeleştirir, mini plana çevirir.</p>
-
-          <textarea
-            className="textarea"
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            placeholder="Notlarını yaz..."
-          />
-
-          <button className="primary" onClick={summarizeNote}>
-            Notu Toparla
-          </button>
-
-          <pre className="result">{noteResult || 'Henüz not toparlanmadı.'}</pre>
-        </section>
-      );
-    }
-
     return (
       <section className="panel-card glass chat-panel">
-        <h2>Lyra Mesajlaşma Alanı</h2>
-        <p className="muted">Yaz, sesle yazdır ya da canlı konuşmayı başlat.</p>
+        <h2>Lyra Mesajlaşma</h2>
+        <p className="muted">Yaz, sesle yazdır ya da canlı konuşmayı başlat. Lyra cevapları artık daha hızlı okur.</p>
 
         <div className="chat-list">
           {messages.map((message, index) => (
@@ -1639,6 +1990,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           <input
             value={chatInput}
             onChange={(e) => {
+              if (assistantSpeakingRef.current) interruptSpeech('Yazmaya başladın, sustum');
               setChatInput(e.target.value);
               finalTranscriptRef.current = e.target.value;
             }}
@@ -1649,6 +2001,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           />
           <button onClick={() => sendTextMessage()}>Gönder</button>
           <button onClick={toggleDictation}>{isDictating ? 'Durdur' : 'Sesle Yaz'}</button>
+          <button onClick={() => interruptSpeech('Sustum kankam')}>Sustur</button>
         </div>
       </section>
     );
@@ -1658,10 +2011,11 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
     <main className="page">
       <div className="cloud cloud-one" />
       <div className="cloud cloud-two" />
+
       <div className="shell">
         <header className="topbar glass">
           <div className="brand">
-            <div className="brand-star">✦</div>
+            <div className="brand-star">S</div>
             <div>
               <h1>Sirius AI</h1>
               <p>Lyra ile üret, planla, çalış, analiz et.</p>
@@ -1677,17 +2031,21 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
               {isDictating ? 'Yazıyor...' : 'Sesle Yaz'}
             </button>
 
+            <button className="pill" onClick={() => interruptSpeech('Sustum kankam')}>
+              Sustur
+            </button>
+
             <div className="voice-mode">
               <button
                 className={voiceMode === 'off' ? 'voice active' : 'voice'}
                 onClick={() => {
-                  window.speechSynthesis?.cancel();
+                  interruptSpeech('Sessiz mod açık');
                   setVoiceMode('off');
-                  setLiveStatus('Sessiz mod açık');
                 }}
               >
                 Sessiz
               </button>
+
               <button
                 className={voiceMode === 'phone' ? 'voice active' : 'voice'}
                 onClick={() => {
@@ -1698,12 +2056,12 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
               >
                 Telefon Sesi
               </button>
+
               <button
                 className={voiceMode === 'realistic' ? 'voice active' : 'voice'}
                 onClick={() => {
-                  window.speechSynthesis?.cancel();
+                  interruptSpeech('Gerçekçi ses yakında');
                   setVoiceMode('realistic');
-                  setLiveStatus('Gerçekçi ses yakında');
                 }}
               >
                 Gerçekçi Ses
@@ -1717,14 +2075,14 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
             <span className="eyebrow">SIRIUS CANLI ALAN</span>
             <h2>Bugün ne üretiyoruz kankam?</h2>
             <p>
-              PDF özet, görsel prompt, sosyal medya içerik fikri, günlük plan, ders notu,
+              PDF özet, görsel üretim, sosyal medya içerik fikri, günlük plan, ders notu,
               video kayıt ve etkileşim analizi tek yerde.
             </p>
 
             <div className="hero-buttons">
               <button onClick={toggleLiveConversation}>{liveOn ? 'Canlıyı Kapat' : 'Canlı Konuşmayı Başlat'}</button>
               <button onClick={() => openPanel('social')}>İçerik Üret</button>
-              <button onClick={() => openPanel('plan')}>Günlük Plan</button>
+              <button onClick={() => openPanel('engagement')}>Etkileşim Analizi</button>
             </div>
 
             <div className="status-line">
@@ -1741,7 +2099,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
               <div className="orb-ring ring-one" />
               <div className="orb-ring ring-two" />
               <div className="orb-ring ring-three" />
-              <div className="orb-core">✦</div>
+              <div className="orb-core">S</div>
             </div>
             <p>{assistantSpeaking ? 'Lyra konuşuyor...' : liveListening ? 'Seni dinliyorum...' : 'Hazır'}</p>
           </div>
@@ -1754,7 +2112,6 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
               className={activePanel === tool.key ? 'tool-card glass selected' : 'tool-card glass'}
               onClick={() => openPanel(tool.key)}
             >
-              <span>{tool.icon}</span>
               <strong>{tool.title}</strong>
               <small>{tool.desc}</small>
             </button>
@@ -1766,35 +2123,22 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
 
           <aside className="side-column">
             <section className="mini-card glass">
-              <h3>Hızlı İçerik Fikri</h3>
-              <input
-                value={ideaTopic}
-                onChange={(e) => setIdeaTopic(e.target.value)}
-                placeholder="Konu yaz..."
-              />
-              <select value={ideaPlatform} onChange={(e) => setIdeaPlatform(e.target.value)}>
-                <option>TikTok</option>
-                <option>Instagram Reels</option>
-                <option>YouTube Shorts</option>
-                <option>Story</option>
-              </select>
-              <button
-                className="primary"
-                onClick={() => setIdeaResult(createSmartContentIdea(ideaTopic))}
-              >
-                Fikir Üret
+              <h3>Etkileşim Kısayolu</h3>
+              <p className="muted">Video linki, hesap linki ve manuel metriklerle analiz yap.</p>
+              <button className="primary" onClick={() => openPanel('engagement')}>
+                Etkileşim Panelini Aç
               </button>
-              <pre className="small-result">{ideaResult || 'Konu yazıp fikir üret.'}</pre>
             </section>
 
             <section className="mini-card glass">
-              <h3>Kahve Modu ☕</h3>
+              <h3>Kahve Modu</h3>
               <p className="muted">Yumuşak plan, sakin akış, küçük adım.</p>
               <button
                 className="primary"
                 onClick={() => {
-                  const reply =
-                    'Kahve modu açıldı kankam. Bugün her şeyi aynı anda çözmüyoruz; bir küçük adım seçiyoruz. İstersen önce planı toparlayalım.';
+                  const reply = avoidRepeat(
+                    'Kahve modu açıldı kankam. Bugün her şeyi aynı anda çözmüyoruz; bir küçük adım seçiyoruz. İstersen önce planı toparlayalım.'
+                  );
                   typeLyraReply(reply);
                   speakWithPhoneVoice(reply);
                 }}
@@ -1835,6 +2179,11 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
 
         button {
           cursor: pointer;
+        }
+
+        button:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
         }
 
         .page {
@@ -1880,8 +2229,8 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         }
 
         .glass {
-          background: rgba(255, 255, 255, 0.62);
-          border: 1px solid rgba(255, 255, 255, 0.82);
+          background: rgba(255, 255, 255, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.9);
           backdrop-filter: blur(22px);
           box-shadow: 0 24px 70px rgba(95, 72, 118, 0.13);
         }
@@ -1908,7 +2257,8 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           border-radius: 20px;
           display: grid;
           place-items: center;
-          font-size: 30px;
+          font-size: 22px;
+          font-weight: 900;
           color: #8c4dff;
           background: linear-gradient(135deg, #fff, #ffe8f2, #e7f4ff);
           box-shadow: 0 12px 28px rgba(143, 94, 255, 0.16);
@@ -1925,12 +2275,18 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           margin-bottom: 2px;
           font-size: 30px;
           letter-spacing: -0.04em;
+          color: #241929;
+        }
+
+        h2,
+        h3 {
+          color: #241929;
         }
 
         .brand p,
         .muted {
           margin: 0;
-          color: #766b7e;
+          color: #5f5266;
           line-height: 1.55;
         }
 
@@ -1953,8 +2309,9 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           border-radius: 999px;
           padding: 11px 16px;
           background: linear-gradient(135deg, #fff, #ffe7f1);
-          color: #37223e;
+          color: #2c1833;
           box-shadow: 0 10px 25px rgba(131, 92, 145, 0.12);
+          font-weight: 800;
         }
 
         .pill.active,
@@ -1962,13 +2319,13 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         .primary {
           background: linear-gradient(135deg, #ffb8d2, #bba7ff, #a9e7ff);
           color: #22152c;
-          font-weight: 800;
+          font-weight: 900;
         }
 
         .voice-mode {
           padding: 5px;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.74);
+          background: rgba(255, 255, 255, 0.82);
           display: flex;
           gap: 5px;
           flex-wrap: wrap;
@@ -2012,15 +2369,15 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           margin-bottom: 14px;
           border-radius: 999px;
           padding: 8px 12px;
-          color: #7f4cff;
-          background: rgba(255, 255, 255, 0.72);
+          color: #7042db;
+          background: rgba(255, 255, 255, 0.82);
           font-size: 12px;
           font-weight: 900;
           letter-spacing: 0.12em;
         }
 
         .hero h2 {
-          font-size: clamp(36px, 6vw, 74px);
+          font-size: clamp(36px, 6vw, 72px);
           line-height: 0.96;
           margin-bottom: 18px;
           letter-spacing: -0.07em;
@@ -2029,14 +2386,14 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
 
         .hero p {
           max-width: 680px;
-          color: #6f6076;
+          color: #5d4e64;
           line-height: 1.7;
           font-size: 17px;
         }
 
         .status-line {
           margin-top: 18px;
-          color: #7c6b86;
+          color: #6d5c74;
           font-size: 14px;
         }
 
@@ -2063,7 +2420,8 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           display: grid;
           place-items: center;
           color: white;
-          font-size: 54px;
+          font-size: 46px;
+          font-weight: 900;
           background:
             radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.95), transparent 22%),
             conic-gradient(from 90deg, #ff8ecb, #b69cff, #8fdcff, #8cf1c9, #ffe08a, #ff8ecb);
@@ -2086,7 +2444,6 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
             rgba(255, 224, 138, 0.28),
             rgba(255, 142, 203, 0.3)
           );
-          filter: blur(0.2px);
         }
 
         .ring-one {
@@ -2112,7 +2469,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         }
 
         .assistant-orb.listening .orb-ring {
-          animation-duration: 1.6s;
+          animation-duration: 1.4s;
         }
 
         @keyframes orbIdle {
@@ -2138,12 +2495,13 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
 
         .tools-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(3, 1fr);
           gap: 14px;
         }
 
         .tool-card {
-          min-height: 150px;
+          aspect-ratio: 1 / 0.78;
+          min-height: 145px;
           border-radius: 28px;
           border: 0;
           padding: 18px;
@@ -2151,7 +2509,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           color: #2d1d32;
           display: grid;
           align-content: end;
-          gap: 6px;
+          gap: 8px;
           transition: 0.2s ease;
         }
 
@@ -2161,18 +2519,20 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           box-shadow: 0 28px 70px rgba(143, 94, 255, 0.18);
         }
 
-        .tool-card span {
-          font-size: 34px;
+        .tool-card strong {
+          font-size: 21px;
+          color: #241929;
         }
 
         .tool-card small {
-          color: #77677e;
+          color: #5f5266;
           line-height: 1.35;
+          font-weight: 600;
         }
 
         .content-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 360px;
+          grid-template-columns: minmax(0, 1fr) 340px;
           gap: 18px;
           align-items: start;
         }
@@ -2198,20 +2558,26 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         label {
           display: grid;
           gap: 8px;
-          color: #57465f;
-          font-weight: 700;
+          color: #3f2f47;
+          font-weight: 800;
         }
 
         input,
         textarea,
         select {
           width: 100%;
-          border: 1px solid rgba(108, 82, 126, 0.12);
-          background: rgba(255, 255, 255, 0.75);
-          color: #2d1d32;
+          border: 1px solid rgba(74, 48, 88, 0.18);
+          background: rgba(255, 255, 255, 0.94);
+          color: #241929;
           border-radius: 18px;
           padding: 13px 14px;
           outline: none;
+          font-weight: 600;
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+          color: #8b7a93;
         }
 
         textarea {
@@ -2224,23 +2590,18 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         }
 
         .result,
-        .small-result,
         .mini-result,
         .notice {
           white-space: pre-wrap;
-          border: 1px solid rgba(108, 82, 126, 0.1);
-          background: rgba(255, 255, 255, 0.62);
+          border: 1px solid rgba(74, 48, 88, 0.12);
+          background: rgba(255, 255, 255, 0.88);
           border-radius: 22px;
           padding: 16px;
-          color: #33243a;
+          color: #241929;
           line-height: 1.6;
           margin-top: 14px;
           overflow: auto;
-        }
-
-        .small-result {
-          max-height: 320px;
-          font-size: 13px;
+          font-weight: 600;
         }
 
         .chat-list {
@@ -2256,8 +2617,9 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           max-width: 86%;
           border-radius: 22px;
           padding: 14px 16px;
-          background: rgba(255, 255, 255, 0.78);
+          background: rgba(255, 255, 255, 0.9);
           box-shadow: 0 12px 30px rgba(99, 72, 111, 0.08);
+          color: #241929;
         }
 
         .bubble.user {
@@ -2269,6 +2631,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           margin: 6px 0 0;
           white-space: pre-wrap;
           line-height: 1.55;
+          color: #241929;
         }
 
         .typing-cursor::after {
@@ -2289,7 +2652,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
 
         .chat-input {
           display: grid;
-          grid-template-columns: 1fr auto auto;
+          grid-template-columns: 1fr auto auto auto;
           gap: 10px;
         }
 
@@ -2298,18 +2661,27 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           border-radius: 26px;
           display: grid;
           place-items: center;
-          gap: 8px;
           text-align: center;
           background:
             radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.85), transparent 18%),
             linear-gradient(135deg, #ffdff0, #e9e4ff, #dff7ff, #fff0c9);
           color: #5e4380;
           margin: 16px 0;
+          overflow: hidden;
           box-shadow: inset 0 0 70px rgba(255, 255, 255, 0.44);
         }
 
+        .image-preview img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          display: block;
+        }
+
         .sparkle {
-          font-size: 58px;
+          font-size: 36px;
+          font-weight: 900;
+          letter-spacing: 0.18em;
         }
 
         .metric-grid {
@@ -2322,30 +2694,72 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
         .metric-grid div {
           border-radius: 22px;
           padding: 16px;
-          background: rgba(255, 255, 255, 0.72);
+          background: rgba(255, 255, 255, 0.82);
           display: grid;
           gap: 5px;
         }
 
         .metric-grid strong {
           font-size: 24px;
-          color: #7c4dff;
+          color: #6d40e8;
         }
 
         .metric-grid span {
-          color: #75627b;
+          color: #5f5266;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .saved-list {
+          display: grid;
+          gap: 10px;
+          margin-top: 12px;
+        }
+
+        .saved-item {
+          border-radius: 20px;
+          padding: 14px;
+          background: rgba(255, 255, 255, 0.82);
+          border: 1px solid rgba(74, 48, 88, 0.1);
+          display: grid;
+          gap: 6px;
+        }
+
+        .saved-item span {
+          color: #65546d;
           font-size: 13px;
         }
 
         .camera-frame {
           position: relative;
-          min-height: 560px;
           border-radius: 28px;
           overflow: hidden;
           background: #f4eff8;
           border: 1px solid rgba(108, 82, 126, 0.1);
           display: grid;
           place-items: center;
+          margin-top: 14px;
+        }
+
+        .ratio-story {
+          aspect-ratio: 9 / 16;
+          max-height: 760px;
+        }
+
+        .ratio-square {
+          aspect-ratio: 1 / 1;
+        }
+
+        .ratio-four-five {
+          aspect-ratio: 4 / 5;
+        }
+
+        .ratio-wide {
+          aspect-ratio: 16 / 9;
+        }
+
+        .ratio-full {
+          min-height: 560px;
         }
 
         .camera-video {
@@ -2360,7 +2774,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           position: relative;
           z-index: 2;
           text-align: center;
-          color: #6f6076;
+          color: #5f5266;
         }
 
         .tele-overlay {
@@ -2374,8 +2788,8 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           overflow: hidden;
           padding: 16px 20px;
           border-radius: 24px;
-          background: rgba(255, 255, 255, 0.76);
-          border: 1px solid rgba(255, 255, 255, 0.8);
+          background: rgba(255, 255, 255, 0.84);
+          border: 1px solid rgba(255, 255, 255, 0.92);
           backdrop-filter: blur(12px);
           text-align: center;
         }
@@ -2384,8 +2798,8 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           margin: 0;
           font-size: clamp(20px, 3.4vw, 36px);
           line-height: 1.35;
-          color: #291934;
-          font-weight: 800;
+          color: #241929;
+          font-weight: 900;
         }
 
         .rec {
@@ -2394,7 +2808,7 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           left: 16px;
           z-index: 5;
           color: #c81939;
-          background: rgba(255, 255, 255, 0.76);
+          background: rgba(255, 255, 255, 0.84);
           border-radius: 999px;
           padding: 8px 12px;
           font-weight: 900;
@@ -2428,7 +2842,9 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
           .content-grid {
             grid-template-columns: 1fr;
           }
+        }
 
+        @media (max-width: 820px) {
           .tools-grid {
             grid-template-columns: repeat(2, 1fr);
           }
@@ -2460,12 +2876,12 @@ Ben olsam önce bunu küçük bir çıktıya çevirirdim. Ne formatta hazırlaya
             grid-template-columns: 1fr;
           }
 
-          .hero h2 {
-            font-size: 42px;
+          .hero {
+            grid-template-columns: 1fr;
           }
 
-          .camera-frame {
-            min-height: 430px;
+          .hero h2 {
+            font-size: 42px;
           }
 
           .assistant-orb {
