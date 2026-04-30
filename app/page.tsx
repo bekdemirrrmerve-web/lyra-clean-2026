@@ -123,52 +123,30 @@ const nextMessages: ChatMessage[] = [...chatMessages, userMessage];
       throw new Error('AI cevabı alınamadı');
     }
 
-    const data = await res.json();
+        const data = await res.json();
 
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        role: 'lyra' as const,
-        text:
-          data.text ||
-          'Kankam cevap üretirken takıldım, bir daha dener misin?',
-      },
-    ]);
+    const lyraMessage: ChatMessage = {
+      role: 'lyra',
+      text:
+        data.text ||
+        'Kankam cevap üretirken takıldım, bir daha dener misin?',
+    };
+
+    setChatMessages((prev) => [...prev, lyraMessage]);
   } catch {
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        role: 'lyra' as const,
-        text:
-          'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
-      },
-    ]);
+    const errorMessage: ChatMessage = {
+      role: 'lyra',
+      text:
+        'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
+    };
+
+    setChatMessages((prev) => [...prev, errorMessage]);
   } finally {
     setChatLoading(false);
   }
 }
 
-    const data = await res.json();
-
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        role: 'lyra',
-        text: data.text || 'Kankam cevap üretirken takıldım, bir daha dener misin?',
-      },
-    ]);
-  } catch {
-    setChatMessages((prev) => [
-      ...prev,
-     {
-  role: 'lyra' as const,
-  text: data.text || 'Kankam cevap üretirken takıldım, bir daha dener misin?',
-}
-  } finally {
-    setChatLoading(false);
-  }
-}
-Kanca: “Bu konuda çoğu kişi aynı hatayı yapıyor...”
+   
 Akış:
 1. İlk 3 saniyede merak uyandır.
 2. Kısa bir problem göster.
