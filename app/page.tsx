@@ -120,6 +120,31 @@ async function sendLyraMessage() {
     setChatMessages((prev) => [
       ...prev,
       {
+        role: 'lyra' as const,
+        text:
+          data.text ||
+          'Kankam cevap üretirken takıldım, bir daha dener misin?',
+      },
+    ]);
+  } catch {
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: 'lyra' as const,
+        text:
+          'Kankam şu an cevap alamadım. API kredisi/key tarafı eksik olabilir ama sohbet sistemi doğru bağlandı.',
+      },
+    ]);
+  } finally {
+    setChatLoading(false);
+  }
+}
+
+    const data = await res.json();
+
+    setChatMessages((prev) => [
+      ...prev,
+      {
         role: 'lyra',
         text: data.text || 'Kankam cevap üretirken takıldım, bir daha dener misin?',
       },
