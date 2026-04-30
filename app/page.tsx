@@ -33,7 +33,9 @@ export default function Page() {
 const [chatOpen, setChatOpen] = useState(false);
 const [chatInput, setChatInput] = useState('');
 const [chatLoading, setChatLoading] = useState(false);
-const [chatMessages, setChatMessages] = useState([
+const [chatMessages, setChatMessages] = useState<
+  { role: 'user' | 'lyra'; text: string }[]
+>([
   {
     role: 'lyra',
     text: 'Buradayım kankam. Ne yapıyoruz; içerik mi, moral mi, plan mı, yoksa birlikte bir şeyi mi çözüyoruz?',
