@@ -29,16 +29,14 @@ export default function Page() {
     {
       role: 'lyra',
       text:
-        'Buradayım kankam. Sesli konuşabiliriz, DGS planı yapabiliriz, içerik fikri çıkarabiliriz ya da kamerayı açıp teleprompter ile çekime geçebiliriz.',
+        'Buradayım kankam. Yazabilir, sesle yazdırabilir, içerik fikri çıkarabilir, DGS planı yapabilir ya da kamerayı açıp teleprompter ile çekime geçebiliriz.',
     },
   ]);
 
   const [chatInput, setChatInput] = useState('');
-  const [voiceReplyOn, setVoiceReplyOn] = useState(true);
-  const [voiceLoopOn, setVoiceLoopOn] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [assistantSpeaking, setAssistantSpeaking] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState('Hazır');
+  const [isDictating, setIsDictating] = useState(false);
+  const [dictationStatus, setDictationStatus] = useState('Hazır');
+  const [isTyping, setIsTyping] = useState(false);
   const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
 
   const [selectedMood, setSelectedMood] = useState('Calm');
@@ -75,12 +73,13 @@ export default function Page() {
   const [saturation, setSaturation] = useState(12);
 
   const recognitionRef = useRef<any>(null);
-  const listeningLockRef = useRef(false);
+  const dictationOnRef = useRef(false);
+  const finalTranscriptRef = useRef('');
+  const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
-  const voiceLoopRef = useRef(false);
-  const assistantSpeakingRef = useRef(false);
 
   const totalEngagement =
     Number(likes || 0) +
@@ -101,7 +100,7 @@ export default function Page() {
   }, [smoothness, glow, whiten, saturation]);
 
   const tools: { title: ToolKey; icon: string; desc: string }[] = [
-    { title: 'Teleprompter', icon: '📝', desc: 'Metin yaz, okut, çekime hazırla' },
+    { title: 'Teleprompter', icon: '📝', desc: 'Metin yaz, çekime hazırla' },
     { title: 'Video Çekim', icon: '🎥', desc: 'Kamera, efekt, kayıt ve overlay' },
     { title: 'İçerik Fikri', icon: '💡', desc: 'Hook, akış, CTA, caption' },
     { title: 'Etkileşim', icon: '📈', desc: 'Oran ve performans yorumu' },
@@ -112,19 +111,17 @@ export default function Page() {
   ];
 
   useEffect(() => {
-    voiceLoopRef.current = voiceLoopOn;
-  }, [voiceLoopOn]);
-
-  useEffect(() => {
-    assistantSpeakingRef.current = assistantSpeaking;
-  }, [assistantSpeaking]);
-
-  useEffect(() => {
     return () => {
-      window.speechSynthesis?.cancel();
-      stopListening();
+      stopDictation();
       stopCamera();
-      if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
+
+      if (typingTimerRef.current) {
+        clearInterval(typingTimerRef.current);
+      }
+
+      if (recordedVideoUrl) {
+        URL.revokeObjectURL(recordedVideoUrl);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -184,7 +181,7 @@ Bölünen = Bölen x Bölüm + Kalan
 Kalan her zaman bölenden küçüktür.
 
 Mini çalışma:
-Şimdi 20 dakika bu özeti oku, sonra 15 temel kavram sorusu çöz. Yanlışlarının yanına “neden kaçırdım?” diye not düş. Panik yok kankam, bu iş gözümüzde büyüdüğü kadar ejderha değil.`;
+20 dakika bu özeti oku, sonra 15 temel kavram sorusu çöz. Yanlışlarının yanına “neden kaçırdım?” diye not düş. Panik yok kankam, bu iş gözümüzde büyüdüğü kadar ejderha değil.`;
   }
 
   function createDgsPlan() {
@@ -213,11 +210,12 @@ Konu eksiği mi?
 Dikkat hatası mı?
 İşlem hatası mı?
 
-Bugünün hedefi: “mükemmel çalışma” değil, “çalışma düzenini tekrar başlatma”. Bence çok iyi başlangıç olur.`;
+Bugünün hedefi: mükemmel çalışma değil, çalışma düzenini tekrar başlatma. Bence çok iyi başlangıç olur.`;
   }
 
   function createContentIdea(text: string) {
     const topic = ideaTopic || text || 'kozmetik';
+
     return `${ideaPlatform} için içerik fikri:
 
 Hook:
@@ -328,7 +326,19 @@ Kamera karşısında ben soft fresh seçerdim. Hem temiz hem güven veren hem de
   function localLyraReply(userText: string) {
     const t = normalize(userText);
 
-    if (!t) return 'Buradayım kankam, bir şey yaz ya da sesli söyle.';
+    if (includesAny(t, ['vay', 'oha', 'ciddi misin', 'inanmiyorum'])) {
+      return 'Aaa dur, bu baya iyiymiş kankam! Şaşırdım ama güzel şaşırdım. Hadi bunu hemen toparlayalım.';
+    }
+
+    if (includesAny(t, ['komik', 'guldum', 'güldüm', 'haha', 'ahah'])) {
+      return 'Ahahah tamam, buna ben de güldüm. Ama şaka maka buradan güzel bir içerik bile çıkar kankam.';
+    }
+
+    if (includesAny(t, ['heyecan', 'basardim', 'başardım', 'oldu'])) {
+      return 'Ayy tamam işte bu! Çok iyi oldu kankam. Şimdi bunu bozmayalım, bir sonraki en mantıklı adıma geçelim.';
+    }
+
+    if (!t) return 'Buradayım kankam, bir şey yaz ya da sesle yazdır.';
 
     if (includesAny(t, ['nap', 'napiyorsun', 'napiyosun', 'ne yapiyorsun'])) {
       return 'Seni bekliyorum kankam. Bir elimde plan, bir elimde içerik fikri, gözüm de kamerada. Bugün neyi birlikte çözüyoruz?';
@@ -349,6 +359,7 @@ Kamera karşısında ben soft fresh seçerdim. Hem temiz hem güven veren hem de
       if (includesAny(t, ['temel kavram', 'not', 'ozet'])) {
         return createDgsTemelKavramlar();
       }
+
       return createDgsPlan();
     }
 
@@ -390,7 +401,16 @@ Kamera karşısında ben soft fresh seçerdim. Hem temiz hem güven veren hem de
       return createKozmetikReply();
     }
 
-    if (includesAny(t, ['moral', 'motivasyon', 'bunaldim', 'yorgun', 'kotu', 'stres'])) {
+    if (
+      includesAny(t, [
+        'moral',
+        'motivasyon',
+        'bunaldim',
+        'yorgun',
+        'kotu',
+        'stres',
+      ])
+    ) {
       return createMoralReply();
     }
 
@@ -421,197 +441,165 @@ Bunu sana dört şekilde çevirebilirim:
 Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
   }
 
-  function getBestTurkishVoice() {
-    const voices = window.speechSynthesis?.getVoices?.() || [];
-
-    return (
-      voices.find((voice) => voice.lang?.toLowerCase() === 'tr-tr') ||
-      voices.find((voice) => voice.lang?.toLowerCase().includes('tr')) ||
-      voices.find((voice) => voice.name?.toLowerCase().includes('female')) ||
-      voices[0]
-    );
-  }
-
-  function speak(text: string) {
-    if (!voiceReplyOn || typeof window === 'undefined' || !window.speechSynthesis) {
-      if (voiceLoopRef.current) {
-        setTimeout(() => startListening(), 700);
-      }
-      return;
-    }
-
+  function stopDictation() {
     try {
-      stopListening();
-      window.speechSynthesis.cancel();
-
-      setAssistantSpeaking(true);
-      assistantSpeakingRef.current = true;
-      setVoiceStatus('Lyra konuşuyor');
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'tr-TR';
-      utterance.rate = 1;
-      utterance.pitch = 1.05;
-      utterance.volume = 1;
-
-      const voice = getBestTurkishVoice();
-      if (voice) utterance.voice = voice;
-
-      utterance.onend = () => {
-        setAssistantSpeaking(false);
-        assistantSpeakingRef.current = false;
-
-        if (voiceLoopRef.current) {
-          setVoiceStatus('Tekrar dinlemeye geçiyorum');
-          setTimeout(() => startListening(), 850);
-        } else {
-          setVoiceStatus('Hazır');
-        }
-      };
-
-      utterance.onerror = () => {
-        setAssistantSpeaking(false);
-        assistantSpeakingRef.current = false;
-        setVoiceStatus('Sesli cevap takıldı');
-
-        if (voiceLoopRef.current) {
-          setTimeout(() => startListening(), 850);
-        }
-      };
-
-      window.speechSynthesis.speak(utterance);
+      dictationOnRef.current = false;
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = null;
+      setIsDictating(false);
+      setDictationStatus('Hazır');
     } catch {
-      setAssistantSpeaking(false);
-      assistantSpeakingRef.current = false;
-      setVoiceStatus('Ses çalışmadı');
-
-      if (voiceLoopRef.current) {
-        setTimeout(() => startListening(), 850);
-      }
+      dictationOnRef.current = false;
+      setIsDictating(false);
+      setDictationStatus('Hazır');
     }
   }
 
-  function sendMessage(customText?: string) {
-    const raw = customText ?? chatInput;
-    const text = raw.trim();
-    if (!text) return;
-
-    const reply = localLyraReply(text);
-
-    setMessages((prev) => [
-      ...prev,
-      { role: 'user', text },
-      { role: 'lyra', text: reply },
-    ]);
-
-    setChatInput('');
-    speak(reply);
-  }
-
-  function startListening() {
-    if (listeningLockRef.current) return;
-    if (assistantSpeakingRef.current) return;
-
+  function startDictation() {
     const SpeechRecognitionCtor =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognitionCtor) {
-      alert('Bu tarayıcı ses algılamayı desteklemiyor kankam. Safari veya Chrome güncel sürüm dene.');
+      alert(
+        'Bu tarayıcı sesle yazmayı desteklemiyor kankam. Safari veya Chrome güncel sürüm dene.'
+      );
       return;
     }
 
     try {
-      window.speechSynthesis?.cancel();
+      dictationOnRef.current = true;
+      finalTranscriptRef.current = chatInput.trim();
 
       const recognition = new SpeechRecognitionCtor();
 
       recognition.lang = 'tr-TR';
-      recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
-        listeningLockRef.current = true;
-        setIsListening(true);
-        setVoiceStatus('Seni dinliyorum');
+        setIsDictating(true);
+        setDictationStatus('Sesle yazıyor...');
       };
 
       recognition.onresult = (event: any) => {
-        const transcript = event?.results?.[0]?.[0]?.transcript || '';
+        let interim = '';
+        let finalPart = '';
 
-        listeningLockRef.current = false;
-        setIsListening(false);
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const transcript = event.results[i]?.[0]?.transcript || '';
 
-        if (transcript.trim()) {
-          setVoiceStatus(`Duydum: ${transcript}`);
-          sendMessage(transcript);
-        } else if (voiceLoopRef.current) {
-          setTimeout(() => startListening(), 700);
+          if (event.results[i].isFinal) {
+            finalPart += transcript + ' ';
+          } else {
+            interim += transcript;
+          }
         }
+
+        if (finalPart.trim()) {
+          finalTranscriptRef.current =
+            `${finalTranscriptRef.current} ${finalPart}`.trim();
+        }
+
+        const combined = `${finalTranscriptRef.current} ${interim}`.trim();
+        setChatInput(combined);
+        setDictationStatus(interim ? `Algılıyor: ${interim}` : 'Sesle yazıyor...');
       };
 
       recognition.onerror = () => {
-        listeningLockRef.current = false;
-        setIsListening(false);
+        setIsDictating(false);
 
-        if (voiceLoopRef.current) {
-          setVoiceStatus('Tekrar dinlemeyi deniyorum');
-          setTimeout(() => startListening(), 1000);
+        if (dictationOnRef.current) {
+          setDictationStatus('Tekrar dinlemeye çalışıyor...');
+          setTimeout(() => {
+            if (dictationOnRef.current) startDictation();
+          }, 350);
         } else {
-          setVoiceStatus('Dinleme durdu');
+          setDictationStatus('Hazır');
         }
       };
 
       recognition.onend = () => {
-        listeningLockRef.current = false;
-        setIsListening(false);
+        setIsDictating(false);
 
-        if (voiceLoopRef.current && !assistantSpeakingRef.current) {
-          setVoiceStatus('Dinleme yenileniyor');
-          setTimeout(() => startListening(), 850);
-        } else if (!assistantSpeakingRef.current) {
-          setVoiceStatus('Hazır');
+        if (dictationOnRef.current) {
+          setDictationStatus('Dinleme yenileniyor...');
+          setTimeout(() => {
+            if (dictationOnRef.current) startDictation();
+          }, 250);
+        } else {
+          setDictationStatus('Hazır');
         }
       };
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch {
-      listeningLockRef.current = false;
-      setIsListening(false);
-      setVoiceStatus('Sesli mod başlatılamadı');
+      dictationOnRef.current = false;
+      setIsDictating(false);
+      setDictationStatus('Sesle yazma başlatılamadı');
     }
   }
 
-  function stopListening() {
-    try {
-      listeningLockRef.current = false;
-      recognitionRef.current?.stop?.();
-      recognitionRef.current = null;
-      setIsListening(false);
-    } catch {
-      listeningLockRef.current = false;
-      setIsListening(false);
-    }
-  }
-
-  function toggleHandsFreeVoice() {
-    const next = !voiceLoopRef.current;
-
-    voiceLoopRef.current = next;
-    setVoiceLoopOn(next);
-
-    if (next) {
-      setVoiceReplyOn(true);
-      setVoiceStatus('Karşılıklı konuşma açık');
-      setTimeout(() => startListening(), 300);
+  function toggleDictation() {
+    if (dictationOnRef.current) {
+      stopDictation();
     } else {
-      stopListening();
-      window.speechSynthesis?.cancel();
-      setAssistantSpeaking(false);
-      assistantSpeakingRef.current = false;
-      setVoiceStatus('Karşılıklı konuşma kapalı');
+      startDictation();
     }
+  }
+
+  function typeLyraReply(reply: string) {
+    if (typingTimerRef.current) {
+      clearInterval(typingTimerRef.current);
+    }
+
+    setIsTyping(true);
+    setMessages((prev) => [...prev, { role: 'lyra', text: '' }]);
+
+    let index = 0;
+
+    typingTimerRef.current = setInterval(() => {
+      index += 1;
+
+      setMessages((prev) => {
+        const next = [...prev];
+        const lastIndex = next.length - 1;
+
+        if (lastIndex >= 0 && next[lastIndex].role === 'lyra') {
+          next[lastIndex] = {
+            ...next[lastIndex],
+            text: reply.slice(0, index),
+          };
+        }
+
+        return next;
+      });
+
+      if (index >= reply.length) {
+        if (typingTimerRef.current) {
+          clearInterval(typingTimerRef.current);
+          typingTimerRef.current = null;
+        }
+
+        setIsTyping(false);
+      }
+    }, 14);
+  }
+
+  function sendMessage(customText?: string) {
+    const raw = customText ?? chatInput;
+    const text = raw.trim();
+
+    if (!text) return;
+
+    const reply = localLyraReply(text);
+
+    setMessages((prev) => [...prev, { role: 'user', text }]);
+    setChatInput('');
+    finalTranscriptRef.current = '';
+
+    typeLyraReply(reply);
   }
 
   async function startCamera() {
@@ -645,6 +633,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
       if (recording) mediaRecorderRef.current?.stop();
 
       const video = videoRef.current;
+
       if (video?.srcObject) {
         const stream = video.srcObject as MediaStream;
         stream.getTracks().forEach((track) => track.stop());
@@ -680,6 +669,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
       const stream = video.srcObject as MediaStream;
 
       let mimeType = '';
+
       if (typeof MediaRecorder !== 'undefined') {
         if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
           mimeType = 'video/webm;codecs=vp9';
@@ -703,6 +693,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         const blob = new Blob(recordedChunksRef.current, {
           type: mimeType || 'video/webm',
         });
+
         const url = URL.createObjectURL(blob);
         setRecordedVideoUrl(url);
       };
@@ -730,6 +721,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
   function createVisualPrompt() {
     const base = visualPrompt.trim() || 'Sirius AI premium sosyal medya kapağı';
+
     setVisualResult(
       `Premium, mistik, sıcak ışıklı, modern bir ${base}. Soft pembe, altın, kahve tonları. Şık UI kartları, yıldız sembolü, zarif tipografi, yüksek kaliteli sosyal medya kapağı.`
     );
@@ -751,7 +743,10 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
   function openTool(tool: ToolKey) {
     setActiveTool(tool);
-    if (tool !== 'Video Çekim') stopCamera();
+
+    if (tool !== 'Video Çekim') {
+      stopCamera();
+    }
   }
 
   return (
@@ -762,33 +757,27 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
             <div className="star">✦</div>
             <div>
               <h1>Sirius AI</h1>
-              <p>Seninle, her adımda. · {voiceStatus}</p>
+              <p>Seninle, her adımda. · {dictationStatus}</p>
             </div>
           </div>
 
           <div className="top-actions">
             <button
-              className={isListening ? 'pill active' : 'pill'}
-              onClick={isListening ? stopListening : startListening}
+              className={isDictating ? 'pill active' : 'pill'}
+              onClick={toggleDictation}
             >
-              {isListening ? '🎙️ Dinliyorum' : '🎙️ Sesli Konuş'}
+              {isDictating ? '🎙️ Yazıyor...' : '🎙️ Sesle Yaz'}
             </button>
 
             <button
-              className={voiceLoopOn ? 'pill active' : 'pill'}
-              onClick={toggleHandsFreeVoice}
-            >
-              {voiceLoopOn ? '🔁 Tek Tuş Dinleme Açık' : '🔁 Tek Tuş Konuşma'}
-            </button>
-
-            <button
-              className={voiceReplyOn ? 'pill active' : 'pill'}
+              className="pill"
               onClick={() => {
-                setVoiceReplyOn((prev) => !prev);
-                window.speechSynthesis?.cancel();
+                setChatInput('');
+                finalTranscriptRef.current = '';
+                setDictationStatus('Yazı temizlendi');
               }}
             >
-              {voiceReplyOn ? '🔊 Ses Açık' : '🔇 Ses Kapalı'}
+              🧹 Temizle
             </button>
 
             <div className="profile">M</div>
@@ -798,7 +787,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         <section className="hero-grid">
           <aside className="left-stack">
             <div className="side-card glass">
-              <h3>Canlı Sesli Sohbet</h3>
+              <h3>Canlı Sessiz Sohbet</h3>
               <div className="wave">
                 <span />
                 <span />
@@ -808,15 +797,13 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                 <span />
               </div>
               <p>
-                {assistantSpeaking
-                  ? 'Lyra cevap veriyor...'
-                  : isListening
-                    ? 'Seni dinliyorum...'
-                    : voiceLoopOn
-                      ? 'Tek tuşlu karşılıklı konuşma açık.'
-                      : 'Hazırım kankam.'}
+                {isDictating
+                  ? 'Konuşuyorsun, ben yazıya çeviriyorum...'
+                  : isTyping
+                    ? 'Lyra cevap yazıyor...'
+                    : 'Hazırım kankam.'}
               </p>
-              <button className="round" onClick={isListening ? stopListening : startListening}>
+              <button className="round" onClick={toggleDictation}>
                 🎙️
               </button>
             </div>
@@ -837,8 +824,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                 onClick={() => {
                   const reply =
                     'Kahve modu açıldı kankam. Bugün dramatik dağılma yok; küçük küçük toparlıyoruz. Ne yapıyoruz?';
-                  setMessages((prev) => [...prev, { role: 'lyra', text: reply }]);
-                  speak(reply);
+
+                  typeLyraReply(reply);
                 }}
               >
                 Kahve Modu
@@ -878,17 +865,17 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
               <div className="avatar-text">
                 <h2>{selectedAvatar}</h2>
                 <p>
-                  Sesli konuşma, içerik fikri, DGS planı, teleprompter,
-                  kamera çekimi ve günlük destek için buradayım.
+                  Sesle yazdırma, sessiz sohbet, içerik fikri, DGS planı,
+                  teleprompter, kamera çekimi ve günlük destek için buradayım.
                 </p>
               </div>
             </div>
 
             <div className="stage-controls">
-              <button onClick={startListening}>🎙️ Konuş</button>
-              <button onClick={toggleHandsFreeVoice}>
-                {voiceLoopOn ? '🔁 Kapat' : '🔁 Tek Tuş'}
+              <button onClick={toggleDictation}>
+                {isDictating ? '🎙️ Durdur' : '🎙️ Sesle Yaz'}
               </button>
+              <button onClick={() => sendMessage()}>💬 Gönder</button>
               <button onClick={() => openTool('Video Çekim')}>📷 Kamera</button>
               <button onClick={() => sendMessage('Bugün ne yapmalıyım?')}>
                 ✨ Plan Yap
@@ -1005,11 +992,14 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         <section className="content-grid">
           <div className="section glass">
             <h2>Lyra Sohbet</h2>
+
             <div className="chat-list">
               {messages.map((message, index) => (
                 <div key={index} className={`bubble ${message.role}`}>
                   <strong>{message.role === 'user' ? 'Sen' : 'Lyra'}</strong>
-                  <p>{message.text}</p>
+                  <p className={message.role === 'lyra' && isTyping && index === messages.length - 1 ? 'typing-cursor' : ''}>
+                    {message.text}
+                  </p>
                 </div>
               ))}
             </div>
@@ -1017,21 +1007,29 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
             <div className="chat-input">
               <input
                 value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Lyra’ya yaz..."
+                onChange={(event) => {
+                  setChatInput(event.target.value);
+                  finalTranscriptRef.current = event.target.value;
+                }}
+                placeholder={
+                  isDictating
+                    ? 'Konuş, buraya yazıyorum...'
+                    : 'Lyra’ya yaz veya sesle yazdır...'
+                }
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') sendMessage();
                 }}
               />
               <button onClick={() => sendMessage()}>Gönder</button>
-              <button onClick={isListening ? stopListening : startListening}>
-                {isListening ? 'Durdur' : 'Konuş'}
+              <button onClick={toggleDictation}>
+                {isDictating ? 'Durdur' : 'Sesle Yaz'}
               </button>
             </div>
           </div>
 
           <div className="section glass">
             <h2>İçerik Fikri Alanı</h2>
+
             <div className="form-row">
               <select
                 value={ideaPlatform}
@@ -1106,7 +1104,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
               key={item}
               className={item === 'Sirius' ? 'nav-star' : ''}
               onClick={() => {
-                if (item === 'Sirius') toggleHandsFreeVoice();
+                if (item === 'Sirius') toggleDictation();
+
                 if (item === 'Stüdyo') {
                   document
                     .querySelector('.tools-grid')
@@ -1141,6 +1140,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                   <p>Stüdyo Modülü</p>
                   <h2>{activeTool}</h2>
                 </div>
+
                 <button
                   onClick={() => {
                     setActiveTool(null);
@@ -1248,12 +1248,14 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                   {recordedVideoUrl && (
                     <div className="notice">
                       <strong>Kaydedilen Video</strong>
+
                       <video
                         src={recordedVideoUrl}
                         controls
                         playsInline
                         className="recorded"
                       />
+
                       <a
                         href={recordedVideoUrl}
                         download="sirius-lyra-video.webm"
@@ -1273,7 +1275,9 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                     onChange={(event) => setTeleText(event.target.value)}
                     className="textarea"
                   />
+
                   <div className="tele-box">{teleText}</div>
+
                   <div className="actions">
                     <button onClick={generateTeleText}>Metin Üret</button>
                     <button onClick={() => navigator.clipboard.writeText(teleText)}>
@@ -1298,14 +1302,17 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                       <option>YouTube Shorts</option>
                       <option>Story</option>
                     </select>
+
                     <input
                       value={ideaTopic}
                       onChange={(event) => setIdeaTopic(event.target.value)}
                     />
                   </div>
+
                   <div className="actions">
                     <button onClick={generateIdea}>Fikir Üret</button>
                   </div>
+
                   <pre className="result">{ideaResult}</pre>
                 </div>
               )}
@@ -1313,13 +1320,55 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
               {activeTool === 'Etkileşim' && (
                 <div className="modal-content">
                   <div className="stats-grid">
-                    <label>Takipçi<input value={followers} onChange={(e) => setFollowers(e.target.value)} /></label>
-                    <label>Görüntülenme<input value={views} onChange={(e) => setViews(e.target.value)} /></label>
-                    <label>Beğeni<input value={likes} onChange={(e) => setLikes(e.target.value)} /></label>
-                    <label>Yorum<input value={comments} onChange={(e) => setComments(e.target.value)} /></label>
-                    <label>Kaydetme<input value={saves} onChange={(e) => setSaves(e.target.value)} /></label>
-                    <label>Paylaşım<input value={shares} onChange={(e) => setShares(e.target.value)} /></label>
+                    <label>
+                      Takipçi
+                      <input
+                        value={followers}
+                        onChange={(event) => setFollowers(event.target.value)}
+                      />
+                    </label>
+
+                    <label>
+                      Görüntülenme
+                      <input
+                        value={views}
+                        onChange={(event) => setViews(event.target.value)}
+                      />
+                    </label>
+
+                    <label>
+                      Beğeni
+                      <input
+                        value={likes}
+                        onChange={(event) => setLikes(event.target.value)}
+                      />
+                    </label>
+
+                    <label>
+                      Yorum
+                      <input
+                        value={comments}
+                        onChange={(event) => setComments(event.target.value)}
+                      />
+                    </label>
+
+                    <label>
+                      Kaydetme
+                      <input
+                        value={saves}
+                        onChange={(event) => setSaves(event.target.value)}
+                      />
+                    </label>
+
+                    <label>
+                      Paylaşım
+                      <input
+                        value={shares}
+                        onChange={(event) => setShares(event.target.value)}
+                      />
+                    </label>
                   </div>
+
                   <div className="notice">
                     <strong>Etkileşim oranı: %{engagementRate}</strong>
                     <p>
@@ -1351,6 +1400,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                     className="textarea"
                     placeholder="Notlarını yaz..."
                   />
+
                   <div className="actions">
                     <button onClick={summarizeNote}>Notu Toparla</button>
                     <button onClick={() => navigator.clipboard.writeText(noteText)}>
@@ -1368,9 +1418,11 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
                     className="textarea"
                     placeholder="Nasıl bir görsel istiyorsun?"
                   />
+
                   <div className="actions">
                     <button onClick={createVisualPrompt}>Prompt Üret</button>
                   </div>
+
                   <pre className="result">{visualResult}</pre>
                 </div>
               )}
@@ -1495,7 +1547,11 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         .chip.selected,
         .actions button:hover,
         .stage-controls button:hover {
-          background: linear-gradient(135deg, rgba(255, 177, 188, 0.35), rgba(255, 214, 165, 0.2));
+          background: linear-gradient(
+            135deg,
+            rgba(255, 177, 188, 0.35),
+            rgba(255, 214, 165, 0.2)
+          );
         }
 
         .profile {
@@ -1553,16 +1609,46 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           animation: wave 1.1s infinite ease-in-out;
         }
 
-        .wave span:nth-child(1) { height: 10px; }
-        .wave span:nth-child(2) { height: 18px; animation-delay: .1s; }
-        .wave span:nth-child(3) { height: 28px; animation-delay: .2s; }
-        .wave span:nth-child(4) { height: 16px; animation-delay: .3s; }
-        .wave span:nth-child(5) { height: 24px; animation-delay: .4s; }
-        .wave span:nth-child(6) { height: 12px; animation-delay: .5s; }
+        .wave span:nth-child(1) {
+          height: 10px;
+        }
+
+        .wave span:nth-child(2) {
+          height: 18px;
+          animation-delay: 0.1s;
+        }
+
+        .wave span:nth-child(3) {
+          height: 28px;
+          animation-delay: 0.2s;
+        }
+
+        .wave span:nth-child(4) {
+          height: 16px;
+          animation-delay: 0.3s;
+        }
+
+        .wave span:nth-child(5) {
+          height: 24px;
+          animation-delay: 0.4s;
+        }
+
+        .wave span:nth-child(6) {
+          height: 12px;
+          animation-delay: 0.5s;
+        }
 
         @keyframes wave {
-          0%, 100% { transform: scaleY(.7); opacity: .6; }
-          50% { transform: scaleY(1.15); opacity: 1; }
+          0%,
+          100% {
+            transform: scaleY(0.7);
+            opacity: 0.6;
+          }
+
+          50% {
+            transform: scaleY(1.15);
+            opacity: 1;
+          }
         }
 
         .round {
@@ -1572,7 +1658,11 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           display: grid;
           place-items: center;
           margin-top: 10px;
-          background: radial-gradient(circle, rgba(255, 178, 190, 0.45), rgba(255, 208, 170, 0.18));
+          background: radial-gradient(
+            circle,
+            rgba(255, 178, 190, 0.45),
+            rgba(255, 208, 170, 0.18)
+          );
         }
 
         .avatar-stage {
@@ -1580,8 +1670,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           display: grid;
           grid-template-rows: auto 1fr auto;
           background:
-            radial-gradient(circle at 50% 30%, rgba(255, 195, 160, .22), transparent 28%),
-            linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+            radial-gradient(circle at 50% 30%, rgba(255, 195, 160, 0.22), transparent 28%),
+            linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.035));
         }
 
         .stage-top {
@@ -1591,9 +1681,9 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         }
 
         .stage-top button {
-          background: rgba(0,0,0,.25);
+          background: rgba(0, 0, 0, 0.25);
           color: #fff;
-          border: 1px solid rgba(255,255,255,.12);
+          border: 1px solid rgba(255, 255, 255, 0.12);
           border-radius: 50%;
           width: 40px;
           height: 40px;
@@ -1619,10 +1709,12 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           display: grid;
           place-items: center;
           background:
-            radial-gradient(circle at 50% 38%, rgba(255,255,255,.18), transparent 26%),
-            linear-gradient(160deg, rgba(255, 198, 174, .24), rgba(119, 92, 148, .18));
-          border: 1px solid rgba(255, 220, 190, .18);
-          box-shadow: inset 0 0 70px rgba(255,255,255,.06), 0 35px 80px rgba(0,0,0,.35);
+            radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.18), transparent 26%),
+            linear-gradient(160deg, rgba(255, 198, 174, 0.24), rgba(119, 92, 148, 0.18));
+          border: 1px solid rgba(255, 220, 190, 0.18);
+          box-shadow:
+            inset 0 0 70px rgba(255, 255, 255, 0.06),
+            0 35px 80px rgba(0, 0, 0, 0.35);
         }
 
         .face {
@@ -1669,8 +1761,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           text-align: left;
           border-radius: 22px;
           padding: 16px;
-          border: 1px solid rgba(255, 220, 190, .14);
-          background: rgba(255,255,255,.055);
+          border: 1px solid rgba(255, 220, 190, 0.14);
+          background: rgba(255, 255, 255, 0.055);
           color: #fff7ef;
           display: grid;
           align-content: end;
@@ -1679,8 +1771,12 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
 
         .mood.selected,
         .tool-card:hover {
-          outline: 2px solid rgba(255, 195, 160, .35);
-          background: linear-gradient(135deg, rgba(255, 177, 188, 0.2), rgba(255, 214, 165, 0.12));
+          outline: 2px solid rgba(255, 195, 160, 0.35);
+          background: linear-gradient(
+            135deg,
+            rgba(255, 177, 188, 0.2),
+            rgba(255, 214, 165, 0.12)
+          );
         }
 
         .tool-card span,
@@ -1713,19 +1809,42 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           max-width: 84%;
           border-radius: 20px;
           padding: 14px 16px;
-          border: 1px solid rgba(255, 220, 190, .15);
-          background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255, 220, 190, 0.15);
+          background: rgba(255, 255, 255, 0.06);
         }
 
         .bubble.user {
           margin-left: auto;
-          background: rgba(255, 188, 190, .16);
+          background: rgba(255, 188, 190, 0.16);
         }
 
         .bubble p {
           margin: 6px 0 0;
           line-height: 1.55;
           white-space: pre-wrap;
+        }
+
+        .typing-cursor::after {
+          content: '';
+          display: inline-block;
+          width: 7px;
+          height: 1em;
+          margin-left: 3px;
+          background: rgba(255, 245, 235, 0.8);
+          vertical-align: -2px;
+          animation: cursorBlink 0.8s infinite;
+        }
+
+        @keyframes cursorBlink {
+          0%,
+          45% {
+            opacity: 1;
+          }
+
+          46%,
+          100% {
+            opacity: 0;
+          }
         }
 
         .chat-input {
@@ -1738,8 +1857,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         textarea,
         select {
           width: 100%;
-          border: 1px solid rgba(255, 220, 190, .15);
-          background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255, 220, 190, 0.15);
+          background: rgba(255, 255, 255, 0.06);
           color: #fff7ef;
           border-radius: 16px;
           padding: 12px 14px;
@@ -1760,8 +1879,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         .notice,
         .tele-box {
           white-space: pre-wrap;
-          border: 1px solid rgba(255, 220, 190, .14);
-          background: rgba(255,255,255,.055);
+          border: 1px solid rgba(255, 220, 190, 0.14);
+          background: rgba(255, 255, 255, 0.055);
           border-radius: 18px;
           padding: 14px;
           color: #fff7ef;
@@ -1777,8 +1896,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         }
 
         .tabs button {
-          border: 1px solid rgba(255,220,190,.14);
-          background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255, 220, 190, 0.14);
+          background: rgba(255, 255, 255, 0.06);
           color: #fff7ef;
           border-radius: 999px;
           padding: 10px 14px;
@@ -1805,8 +1924,12 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         }
 
         .nav-star {
-          background: radial-gradient(circle, rgba(255, 179, 204, .55), rgba(255, 209, 154, .22)) !important;
-          box-shadow: 0 0 28px rgba(255, 186, 214, .4);
+          background: radial-gradient(
+            circle,
+            rgba(255, 179, 204, 0.55),
+            rgba(255, 209, 154, 0.22)
+          ) !important;
+          box-shadow: 0 0 28px rgba(255, 186, 214, 0.4);
         }
 
         .modal-backdrop {
@@ -1816,7 +1939,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           padding: 22px;
           display: grid;
           place-items: center;
-          background: rgba(8, 5, 11, .72);
+          background: rgba(8, 5, 11, 0.72);
           backdrop-filter: blur(12px);
         }
 
@@ -1856,7 +1979,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           border-radius: 24px;
           overflow: hidden;
           background: #07050b;
-          border: 1px solid rgba(255,220,190,.14);
+          border: 1px solid rgba(255, 220, 190, 0.14);
         }
 
         .camera-video {
@@ -1884,8 +2007,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           z-index: 2;
           pointer-events: none;
           background:
-            radial-gradient(circle at 50% 28%, rgba(255,255,255,.2), transparent 32%),
-            radial-gradient(circle at 50% 70%, rgba(255,210,190,.12), transparent 40%);
+            radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.2), transparent 32%),
+            radial-gradient(circle at 50% 70%, rgba(255, 210, 190, 0.12), transparent 40%);
         }
 
         .tele-overlay {
@@ -1899,8 +2022,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           overflow: hidden;
           padding: 16px 20px;
           border-radius: 22px;
-          background: rgba(10, 7, 15, .58);
-          border: 1px solid rgba(255,220,190,.18);
+          background: rgba(10, 7, 15, 0.58);
+          border: 1px solid rgba(255, 220, 190, 0.18);
           backdrop-filter: blur(10px);
           text-align: center;
         }
@@ -1910,7 +2033,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           font-size: clamp(22px, 4vw, 40px);
           line-height: 1.35;
           color: #fff9f4;
-          text-shadow: 0 2px 12px rgba(0,0,0,.6);
+          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
         }
 
         .rec {
@@ -1919,8 +2042,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           left: 16px;
           z-index: 5;
           color: #ffb5b5;
-          background: rgba(255,60,60,.22);
-          border: 1px solid rgba(255,80,80,.35);
+          background: rgba(255, 60, 60, 0.22);
+          border: 1px solid rgba(255, 80, 80, 0.35);
           border-radius: 999px;
           padding: 8px 12px;
           font-weight: 800;
@@ -1945,7 +2068,7 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         }
 
         .danger {
-          border-color: rgba(255,90,90,.35);
+          border-color: rgba(255, 90, 90, 0.35);
         }
 
         .recorded {
@@ -1962,7 +2085,11 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           text-decoration: none;
           border-radius: 999px;
           padding: 12px 16px;
-          background: linear-gradient(135deg, rgba(255, 177, 188, 0.35), rgba(255, 214, 165, 0.2));
+          background: linear-gradient(
+            135deg,
+            rgba(255, 177, 188, 0.35),
+            rgba(255, 214, 165, 0.2)
+          );
         }
 
         .custom-line {
@@ -1980,19 +2107,48 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
           width: 26px;
           height: 26px;
           border-radius: 50%;
-          border: 1px solid rgba(255,255,255,.2);
+          border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        .d1 { background: #5c3524; }
-        .d2 { background: #8e5535; }
-        .d3 { background: #c78250; }
-        .d4 { background: #d8c4a8; }
-        .d5 { background: #2d2728; }
-        .e1 { background: #83a8b8; }
-        .e2 { background: #9b6b43; }
-        .e3 { background: #879d7d; }
-        .e4 { background: #c7c1b9; }
-        .e5 { background: #39404e; }
+        .d1 {
+          background: #5c3524;
+        }
+
+        .d2 {
+          background: #8e5535;
+        }
+
+        .d3 {
+          background: #c78250;
+        }
+
+        .d4 {
+          background: #d8c4a8;
+        }
+
+        .d5 {
+          background: #2d2728;
+        }
+
+        .e1 {
+          background: #83a8b8;
+        }
+
+        .e2 {
+          background: #9b6b43;
+        }
+
+        .e3 {
+          background: #879d7d;
+        }
+
+        .e4 {
+          background: #c7c1b9;
+        }
+
+        .e5 {
+          background: #39404e;
+        }
 
         .mini-grid {
           display: grid;
@@ -2004,8 +2160,8 @@ Ben olsam önce bunu küçük bir plana çevirirdim. Ne yapmak istiyorsun?`;
         .mini-grid div {
           border-radius: 14px;
           padding: 12px;
-          background: rgba(255,255,255,.055);
-          border: 1px solid rgba(255,220,190,.12);
+          background: rgba(255, 255, 255, 0.055);
+          border: 1px solid rgba(255, 220, 190, 0.12);
           color: #ead2c6;
         }
 
