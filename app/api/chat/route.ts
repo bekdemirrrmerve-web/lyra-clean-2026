@@ -10,12 +10,8 @@ type ClientMessage = {
   content?: string;
 };
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-// Bunu özellikle daha stabil yaptım.
-// Vercel'de OPENAI_MODEL yazmana gerek yok.
-// İstersen sonra değiştiririz ama şimdilik bu şekilde kalsın.
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 const LYRA_SYSTEM_PROMPT = `
 Sen Lyra Clean 2026'sın.
@@ -36,7 +32,7 @@ Mutlaka:
 - İçerik üretimi, kozmetik, kimya, INCI, formül, cilt bakımı, ders çalışma, araştırma, uygulama geliştirme ve günlük planlama konularında yardımcı ol.
 - Kullanıcı teknik sorun anlatırsa sakin, net ve adım adım çöz.
 - Kullanıcı içerik fikri isterse hook, video akışı, başlık, CTA ve fikir üret.
-- Cevapların ChatGPT gibi akıcı, fikir veren ve toparlayıcı olsun.
+- Cevapların akıcı, fikir veren ve toparlayıcı olsun.
 
 Cevap dili:
 - Daima Türkçe.
@@ -63,7 +59,7 @@ function normalizeMessages(body: any): Array<{ role: SafeRole; content: string }
       content: cleanText(msg?.content),
     }))
     .filter((msg: { role: SafeRole; content: string }) => msg.content.length > 0)
-    .slice(-20);
+    .slice(-18);
 
   const directMessage =
     cleanText(body?.message) ||
@@ -88,13 +84,43 @@ function normalizeMessages(body: any): Array<{ role: SafeRole; content: string }
   return normalized;
 }
 
+function toGeminiText(messages: Array<{ role: SafeRole; content: string }>) {
+  const conversation = messages
+    .map((m) => {
+      const who = m.role === "user" ? "Kullanıcı" : "Lyra";
+      return `${who}: ${m.content}`;
+    })
+    .join("\n\n");
+
+  return `${LYRA_SYSTEM_PROMPT}
+
+Aşağıdaki konuşmaya göre cevap ver. Sadece Lyra'nın son cevabını yaz. Kullanıcının mesajını tekrar etme.
+
+${conversation}
+
+Lyra:`;
+}
+
+function extractGeminiText(data: any): string {
+  const parts = data?.candidates?.[0]?.content?.parts;
+
+  if (Array.isArray(parts)) {
+    return parts
+      .map((part) => part?.text || "")
+      .join("")
+      .trim();
+  }
+
+  return "";
+}
+
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    name: "Lyra Clean 2026 API",
+    name: "Lyra Clean 2026 Gemini API",
     status: "Route çalışıyor.",
-    model: OPENAI_MODEL,
-    hasApiKey: Boolean(OPENAI_API_KEY),
+    model: GEMINI_MODEL,
+    hasGeminiKey: Boolean(GEMINI_API_KEY),
   });
 }
 
@@ -106,7 +132,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
-          message: "Kanka mesaj JSON formatında gelmedi. Frontend isteğini kontrol etmemiz lazım.",
+          message:
+            "Kanka mesaj JSON formatında gelmedi. Frontend isteğini kontrol etmemiz lazım.",
         },
         { status: 400 }
       );
@@ -124,66 +151,74 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!OPENAI_API_KEY) {
+    if (!GEMINI_API_KEY) {
       return NextResponse.json(
         {
           ok: false,
           message:
-            "Kanka OPENAI_API_KEY eksik. Vercel > Project Settings > Environment Variables kısmına OPENAI_API_KEY ekleyip redeploy yapman lazım.",
+            "Kanka GEMINI_API_KEY eksik. Vercel > Project Settings > Environment Variables kısmına GEMINI_API_KEY ekleyip redeploy yapman lazım.",
         },
         { status: 500 }
       );
     }
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        temperature: 0.75,
-        max_tokens: 1000,
-        messages: [
-          {
-            role: "system",
-            content: LYRA_SYSTEM_PROMPT,
+    const promptText = toGeminiText(userMessages);
+
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: promptText,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.75,
+            maxOutputTokens: 1200,
           },
-          ...userMessages,
-        ],
-      }),
-    });
+        }),
+      }
+    );
 
-    const data = await openaiResponse.json().catch(() => null);
+    const data = await geminiResponse.json().catch(() => null);
 
-    if (!openaiResponse.ok) {
+    if (!geminiResponse.ok) {
       const realError =
         data?.error?.message ||
         data?.message ||
-        `OpenAI API hata kodu: ${openaiResponse.status}`;
+        `Gemini API hata kodu: ${geminiResponse.status}`;
 
-      console.error("Lyra OpenAI API error:", realError);
+      console.error("Lyra Gemini API error:", realError);
 
       return NextResponse.json(
         {
           ok: false,
-          message:
-            "Kanka OpenAI bağlantısı takıldı. Gerçek hata şu: " + realError,
+          message: "Kanka Gemini bağlantısı takıldı. Gerçek hata şu: " + realError,
           error: realError,
         },
         { status: 500 }
       );
     }
 
-    const answer = cleanText(data?.choices?.[0]?.message?.content);
+    const answer = extractGeminiText(data);
 
     if (!answer) {
       return NextResponse.json(
         {
           ok: false,
           message:
-            "Kanka OpenAI boş cevap döndürdü. Model cevap verdi ama içerik alanı boş geldi.",
+            "Kanka Gemini boş cevap döndürdü. Model cevap verdi ama içerik alanı boş geldi.",
         },
         { status: 500 }
       );
@@ -198,7 +233,7 @@ export async function POST(req: NextRequest) {
       reply: answer,
     });
   } catch (error: any) {
-    console.error("Lyra route fatal error:", error);
+    console.error("Lyra Gemini route fatal error:", error);
 
     return NextResponse.json(
       {
