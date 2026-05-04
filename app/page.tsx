@@ -22,7 +22,7 @@ const initialMessages: ChatMessage[] = [
     id: "welcome",
     role: "assistant",
     content:
-      "Kanka geldim. Ne sorarsan direkt cevaplayacağım; içerik, kimya, kozmetik, ders, plan, araştırma, uygulama hatası… ne varsa birlikte toparlarız.",
+      "Kanka geldim. Artık cevapları direkt vereceğim; istersen yaz, istersen sesle konuş. Ses açıkken cevaplarımı da okumaya çalışacağım.",
   },
 ];
 
@@ -31,10 +31,10 @@ export default function Page() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const [status, setStatus] = useState("Hazır");
   const [speechRate, setSpeechRate] = useState(1.02);
-  const [voiceMode, setVoiceMode] = useState<"phone" | "realistic">("phone");
+  const [voiceMode, setVoiceMode] = useState<"phone" | "realistic">("realistic");
   const [memory, setMemory] = useState<string[]>([
     "kozmetik / formül / cilt bakımı",
     "içerik üretimi",
@@ -42,6 +42,7 @@ export default function Page() {
 
   const recognitionRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -55,6 +56,13 @@ export default function Page() {
   }, []);
 
   const stopSpeaking = () => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      } catch {}
+    }
+
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -84,8 +92,7 @@ export default function Page() {
     });
   };
 
-  const speak = (text: string) => {
-    if (isMuted) return;
+  const fallbackBrowserVoice = (text: string) => {
     if (typeof window === "undefined") return;
     if (!("speechSynthesis" in window)) return;
 
@@ -104,11 +111,65 @@ export default function Page() {
       voices.find((v) => v.name?.toLowerCase().includes("turkish")) ||
       voices[0];
 
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
+    if (selectedVoice) utterance.voice = selectedVoice;
 
     window.speechSynthesis.speak(utterance);
+  };
+
+  const speak = async (text: string, force = false) => {
+    if (!force && isMuted) return;
+    if (!text.trim()) return;
+
+    try {
+      stopSpeaking();
+      setStatus("Ses hazırlanıyor...");
+
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+          voiceName: "Kore",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error("Gemini TTS hata:", errorData);
+        setStatus("Tarayıcı sesi deneniyor...");
+        fallbackBrowserVoice(text);
+        setStatus("Hazır");
+        return;
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        setStatus("Hazır");
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        setStatus("Tarayıcı sesi deneniyor...");
+        fallbackBrowserVoice(text);
+        setStatus("Hazır");
+      };
+
+      await audio.play();
+      setStatus("Konuşuyor...");
+    } catch (error) {
+      console.error("Ses oynatma hatası:", error);
+      setStatus("Tarayıcı sesi deneniyor...");
+      fallbackBrowserVoice(text);
+      setStatus("Hazır");
+    }
   };
 
   const getLyraReply = async (userText: string, history: ChatMessage[]) => {
@@ -136,7 +197,7 @@ export default function Page() {
       return (
         data?.message ||
         data?.error ||
-        "Kanka Lyra cevap motoruna bağlanırken takıldı. API key, model adı veya Vercel environment ayarında sorun olabilir."
+        "Kanka Lyra cevap motoruna bağlanırken takıldı. API key, model adı veya Vercel ayarını kontrol edelim."
       );
     }
 
@@ -144,7 +205,7 @@ export default function Page() {
       data?.message ||
       data?.content ||
       data?.reply ||
-      "Kanka cevap geldi ama ekrana düzgün aktarılamadı. Response alanını yakalayamadım."
+      "Kanka cevap geldi ama ekrana düzgün aktarılamadı."
     );
   };
 
@@ -188,7 +249,7 @@ export default function Page() {
           id: `error-${Date.now()}`,
           role: "assistant",
           content:
-            "Kanka bağlantıda bir kopma oldu. Şu an frontend /api/chat route’una ulaşamıyor olabilir. Vercel redeploy ve OPENAI_API_KEY ayarını kontrol edelim.",
+            "Kanka bağlantıda bir kopma oldu. Frontend /api/chat route’una ulaşamıyor olabilir. Vercel redeploy ve API key ayarını kontrol edelim.",
         },
       ]);
 
@@ -211,7 +272,7 @@ export default function Page() {
           id: `speech-error-${Date.now()}`,
           role: "assistant",
           content:
-            "Kanka bu tarayıcı ses algılamayı desteklemiyor gibi. Chrome’da açarsan genelde çalışıyor.",
+            "Kanka bu tarayıcı ses algılamayı desteklemiyor gibi. Chrome’da denersen daha iyi çalışabilir.",
         },
       ]);
       return;
@@ -292,9 +353,17 @@ export default function Page() {
   const toggleMute = () => {
     if (!isMuted) {
       stopSpeaking();
+      setIsMuted(true);
+      setStatus("Sessiz mod");
+      return;
     }
 
-    setIsMuted((prev) => !prev);
+    setIsMuted(false);
+    setStatus("Ses açılıyor...");
+
+    setTimeout(() => {
+      speak("Ses açıldı kanka. Artık cevapları sesli okumayı deneyeceğim.", true);
+    }, 150);
   };
 
   const quickPrompts = [
@@ -402,6 +471,9 @@ export default function Page() {
                   <button onClick={() => startListening("write")}>Sesle Yaz</button>
                   <button onClick={clearChat}>Sohbeti Temizle</button>
                   <button onClick={clearMemory}>Hafızayı Temizle</button>
+                  <button onClick={() => speak("Ses testi kanka. Duyuyorsan sistem çalışıyor.", true)}>
+                    Ses Testi
+                  </button>
                 </div>
               </div>
             </div>
@@ -420,9 +492,15 @@ export default function Page() {
                     return (
                       <div
                         key={message.id}
-                        className={`message-line ${isUser ? "user-line" : "assistant-line"}`}
+                        className={`message-line ${
+                          isUser ? "user-line" : "assistant-line"
+                        }`}
                       >
-                        <div className={`message-bubble ${isUser ? "user" : "assistant"}`}>
+                        <div
+                          className={`message-bubble ${
+                            isUser ? "user" : "assistant"
+                          }`}
+                        >
                           <strong>{isUser ? "Sen" : "Lyra"}</strong>
                           <p>{message.content}</p>
                         </div>
@@ -779,7 +857,6 @@ export default function Page() {
           font-size: 15px;
           font-weight: 600;
           line-height: 1.45;
-          transition: border 0.2s ease, box-shadow 0.2s ease;
         }
 
         textarea:focus {
