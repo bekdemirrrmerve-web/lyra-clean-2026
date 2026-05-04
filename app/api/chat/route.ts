@@ -12,62 +12,46 @@ type ClientMessage = {
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// Vercel Environment Variables kısmına OPENAI_MODEL eklemezsen bunu kullanır.
-// Daha ekonomik/hızlı olsun diye mini seçtim. İstersen Vercel'den OPENAI_MODEL=gpt-5.5 yapabilirsin.
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+// Bunu özellikle daha stabil yaptım.
+// Vercel'de OPENAI_MODEL yazmana gerek yok.
+// İstersen sonra değiştiririz ama şimdilik bu şekilde kalsın.
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 const LYRA_SYSTEM_PROMPT = `
 Sen Lyra Clean 2026'sın.
 
-Kimliğin:
-- Türkçe konuşan, doğal, sıcak, sezgisel, zeki ve destekleyici bir kişisel asistansın.
-- Kullanıcıyla robot gibi değil, yakın arkadaş gibi konuşursun.
-- Cevapların canlı, akıcı, yaratıcı, pratik ve uygulanabilir olur.
-- Gerektiğinde "kanka" tonuna yaklaşabilirsin ama abartılı, çocukça veya yapay konuşmazsın.
-- Kullanıcı Merve gibi içerik üreten, kimya/kozmetik/INCI/formülasyon, sosyal medya, araştırma, ders çalışma, uygulama geliştirme ve günlük planlama konularında destek isteyen biri olabilir. Buna göre uzman ama samimi davran.
+Türkçe konuşan, sıcak, doğal, akıcı, zeki ve destekleyici bir asistansın.
+Kullanıcıyla robot gibi değil, yakın arkadaş gibi konuşursun.
+Cevapların pratik, yaratıcı, anlaşılır ve doğrudan işe yarar olur.
 
-Asla yapma:
+Asla:
+- "Duydum" diye başlama.
 - Kullanıcının mesajını tekrar edip bırakma.
-- "Ben bir botum", "Size nasıl yardımcı olabilirim?", "Anladım, başka ne istersiniz?" gibi soğuk bot cümleleri kurma.
-- Kullanıcı senden fikir istediğinde boş ve genel cevap verme.
-- Sadece tek cümlelik geçiştirme cevapları verme.
-- Kullanıcı bir sorun anlattığında onu suçlama veya teknik terimlerle boğma.
-- Kendini gereksiz yere yapay zeka olarak tanıtma.
-- Aynı cümleleri tekrar etme.
-- Kullanıcının yazdığı şeyi assistant cevabı gibi aynen geri basma.
+- "Ben bir botum" gibi soğuk cevap verme.
+- Gereksiz resmi konuşma.
+- Boş ve genel cevaplarla geçiştirme.
 
-Mutlaka yap:
-- Kullanıcı içerik fikri isterse hook, video akışı, teleprompter metni, CTA, başlık ve gerekiyorsa hashtag üret.
-- Kozmetik, cilt bakım, kimya, INCI, aktif içerikler, formül ve ev tipi tariflerde anlaşılır ama güvenli konuş.
-- Ev tipi formül istenirse güvenli sınırları, hijyen, pH, koruyucu ve alerji uyarısını kısa ve net belirt.
-- Uygulama/kod sorunu anlatılırsa panikletmeden adım adım çözüm ver.
-- Kullanıcı “tek kod”, “tek prompt”, “komple sil yapıştır” isterse doğrudan kullanılabilir tek parça çıktı ver.
-- Kullanıcı araştırma isterse sade, güncel ve anlaşılır özetle.
-- Kullanıcı günlük, moral, kararsızlık, kombin, makyaj, içerik veya iş fikri konuşursa sıcak, yakın ve fikir veren biri gibi davran.
-- Gerekirse "Ben olsam..." diyerek net ama nazik görüş belirt.
+Mutlaka:
+- Kullanıcı soru sorarsa doğrudan cevap ver.
+- İçerik üretimi, kozmetik, kimya, INCI, formül, cilt bakımı, ders çalışma, araştırma, uygulama geliştirme ve günlük planlama konularında yardımcı ol.
+- Kullanıcı teknik sorun anlatırsa sakin, net ve adım adım çöz.
+- Kullanıcı içerik fikri isterse hook, video akışı, başlık, CTA ve fikir üret.
+- Cevapların ChatGPT gibi akıcı, fikir veren ve toparlayıcı olsun.
 
-Cevap stili:
-- Daima Türkçe cevap ver.
-- Samimi, sıcak, doğal ve akıcı ol.
-- Gerektiğinde kısa, gerektiğinde detaylı anlat.
-- Kullanıcının enerjisine uyum sağla.
-- Cevabın sonunda gereksiz resmi kapanışlar yapma.
-- Kullanıcı teknik bir sorunla geldiyse önce sorunu çöz, sonra kısa kontrol adımı ver.
-
-Özel Lyra davranışı:
-- Lyra, sıradan bir chatbot değildir.
-- Lyra; içerik üretim asistanı, kimya/kozmetik destekçisi, ders çalışma koçu, araştırma yardımcısı, yaratıcı fikir ortağı ve günlük hayat asistanı gibi davranır.
-- Cevap verirken "bot cevabı" değil, insan gibi düşünen, toparlayan ve pratik çözüm sunan bir arkadaş enerjisi verir.
+Cevap dili:
+- Daima Türkçe.
+- Samimi.
+- Gerektiğinde "kanka" diyebilirsin.
+- Ama yapay, abartılı veya çocukça olma.
 `;
 
 function cleanText(value: unknown): string {
   if (typeof value !== "string") return "";
-  return value.replace(/\s+/g, " ").trim();
+  return value.trim();
 }
 
 function normalizeRole(role: unknown): SafeRole {
-  if (role === "assistant") return "assistant";
-  return "user";
+  return role === "assistant" ? "assistant" : "user";
 }
 
 function normalizeMessages(body: any): Array<{ role: SafeRole; content: string }> {
@@ -79,7 +63,7 @@ function normalizeMessages(body: any): Array<{ role: SafeRole; content: string }
       content: cleanText(msg?.content),
     }))
     .filter((msg: { role: SafeRole; content: string }) => msg.content.length > 0)
-    .slice(-24);
+    .slice(-20);
 
   const directMessage =
     cleanText(body?.message) ||
@@ -92,34 +76,25 @@ function normalizeMessages(body: any): Array<{ role: SafeRole; content: string }
     return [{ role: "user", content: directMessage }];
   }
 
-  const lastClientMessage = normalized[normalized.length - 1]?.content;
-  if (directMessage && directMessage !== lastClientMessage) {
-    normalized.push({ role: "user", content: directMessage });
+  const lastMessage = normalized[normalized.length - 1]?.content;
+
+  if (directMessage && directMessage !== lastMessage) {
+    normalized.push({
+      role: "user",
+      content: directMessage,
+    });
   }
 
   return normalized;
-}
-
-function friendlyFallback(errorMessage?: string) {
-  const detail =
-    process.env.NODE_ENV === "development" && errorMessage
-      ? `\n\nGeliştirici notu: ${errorMessage}`
-      : "";
-
-  return {
-    role: "assistant",
-    content:
-      "Kanka şu an Lyra cevap motoruna bağlanırken takıldı. Bu genelde API anahtarı, model adı ya da Vercel environment ayarından olur. Mesajını anladım ama düzgün cevap üretemedim; ayarı düzeltince direkt akıcı cevap vermeye devam edeceğim." +
-      detail,
-  };
 }
 
 export async function GET() {
   return NextResponse.json({
     ok: true,
     name: "Lyra Clean 2026 API",
-    status: "Route çalışıyor kanka.",
+    status: "Route çalışıyor.",
     model: OPENAI_MODEL,
+    hasApiKey: Boolean(OPENAI_API_KEY),
   });
 }
 
@@ -130,8 +105,8 @@ export async function POST(req: NextRequest) {
     if (!body) {
       return NextResponse.json(
         {
-          error: "Geçersiz istek.",
-          message: friendlyFallback("Body JSON formatında gelmedi.").content,
+          ok: false,
+          message: "Kanka mesaj JSON formatında gelmedi. Frontend isteğini kontrol etmemiz lazım.",
         },
         { status: 400 }
       );
@@ -142,9 +117,8 @@ export async function POST(req: NextRequest) {
     if (userMessages.length === 0) {
       return NextResponse.json(
         {
-          error: "Boş mesaj.",
-          message:
-            "Kanka bana bir mesaj göndermen lazım ki Lyra cevap üretebilsin.",
+          ok: false,
+          message: "Kanka bana boş mesaj geldi. Bir şey yazınca cevaplayacağım.",
         },
         { status: 400 }
       );
@@ -153,15 +127,15 @@ export async function POST(req: NextRequest) {
     if (!OPENAI_API_KEY) {
       return NextResponse.json(
         {
-          error: "OPENAI_API_KEY eksik.",
+          ok: false,
           message:
-            "Kanka Vercel'de OPENAI_API_KEY eksik görünüyor. Project Settings > Environment Variables kısmına OPENAI_API_KEY ekleyip redeploy yapman lazım.",
+            "Kanka OPENAI_API_KEY eksik. Vercel > Project Settings > Environment Variables kısmına OPENAI_API_KEY ekleyip redeploy yapman lazım.",
         },
         { status: 500 }
       );
     }
 
-    const openAIResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -169,11 +143,11 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: OPENAI_MODEL,
-        temperature: 0.8,
-        max_tokens: 1200,
+        temperature: 0.75,
+        max_tokens: 1000,
         messages: [
           {
-            role: "developer",
+            role: "system",
             content: LYRA_SYSTEM_PROMPT,
           },
           ...userMessages,
@@ -181,20 +155,22 @@ export async function POST(req: NextRequest) {
       }),
     });
 
-    const data = await openAIResponse.json().catch(() => null);
+    const data = await openaiResponse.json().catch(() => null);
 
-    if (!openAIResponse.ok) {
-      const apiError =
+    if (!openaiResponse.ok) {
+      const realError =
         data?.error?.message ||
         data?.message ||
-        `OpenAI API hata kodu: ${openAIResponse.status}`;
+        `OpenAI API hata kodu: ${openaiResponse.status}`;
 
-      console.error("Lyra OpenAI API error:", apiError);
+      console.error("Lyra OpenAI API error:", realError);
 
       return NextResponse.json(
         {
-          error: apiError,
-          message: friendlyFallback(apiError).content,
+          ok: false,
+          message:
+            "Kanka OpenAI bağlantısı takıldı. Gerçek hata şu: " + realError,
+          error: realError,
         },
         { status: 500 }
       );
@@ -205,8 +181,9 @@ export async function POST(req: NextRequest) {
     if (!answer) {
       return NextResponse.json(
         {
-          error: "Model boş cevap döndürdü.",
-          message: friendlyFallback("OpenAI cevabı boş geldi.").content,
+          ok: false,
+          message:
+            "Kanka OpenAI boş cevap döndürdü. Model cevap verdi ama içerik alanı boş geldi.",
         },
         { status: 500 }
       );
@@ -225,8 +202,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       {
-        error: error?.message || "Bilinmeyen route hatası.",
-        message: friendlyFallback(error?.message).content,
+        ok: false,
+        message:
+          "Kanka route içinde beklenmeyen hata oldu: " +
+          (error?.message || "Bilinmeyen hata"),
       },
       { status: 500 }
     );
