@@ -35,10 +35,24 @@ export default function Page() {
   const [status, setStatus] = useState("Hazır");
   const [speechRate, setSpeechRate] = useState(1.02);
   const [voiceMode, setVoiceMode] = useState<"phone" | "realistic">("realistic");
+  const [avatarMode, setAvatarMode] = useState<"video" | "image" | "fallback">("video");
+
   const [memory, setMemory] = useState<string[]>([
     "kozmetik / formül / cilt bakımı",
     "içerik üretimi",
   ]);
+
+  const [lessonTopic, setLessonTopic] = useState("");
+  const [lessonQuestion, setLessonQuestion] = useState("");
+
+  const [ideaPrompt, setIdeaPrompt] = useState("");
+  const [imageLoading, setImageLoading] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState("");
+
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfQuestion, setPdfQuestion] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfResult, setPdfResult] = useState("");
 
   const recognitionRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -366,6 +380,208 @@ export default function Page() {
     }, 150);
   };
 
+  const sendLessonRequest = (
+    type: "long" | "summary" | "tips" | "solved" | "questions"
+  ) => {
+    const topic = lessonTopic.trim();
+    const question = lessonQuestion.trim();
+
+    if (!topic && !question) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `lesson-empty-${Date.now()}`,
+          role: "assistant",
+          content:
+            "Kanka ders alanına en azından konu başlığı ya da soru yazman lazım. Mesela: 'Sayı basamakları' veya 'Bu problemi nasıl çözerim?' gibi.",
+        },
+      ]);
+      return;
+    }
+
+    const modeText =
+      type === "long"
+        ? "uzun konu anlatımı"
+        : type === "summary"
+        ? "özet"
+        : type === "tips"
+        ? "ipuçları ve akılda kalıcı kodlama"
+        : type === "solved"
+        ? "çözümlü sorular"
+        : "sadece çoktan seçmeli sorular ve cevap anahtarı";
+
+    const prompt = `
+Ders çalışma alanı isteği.
+
+Konu başlığı:
+${topic || "Belirtilmedi"}
+
+Kullanıcının sorusu:
+${question || "Belirtilmedi"}
+
+İstenen çıktı türü:
+${modeText}
+
+Cevabı Türkçe ver. DGS/ÖSYM mantığına uygun, anlaşılır, düzenli ve çalışmaya hazır formatta hazırla.
+`;
+
+    sendMessage(prompt);
+  };
+
+  const improveIdeaPrompt = () => {
+    const prompt = ideaPrompt.trim();
+
+    if (!prompt) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `prompt-empty-${Date.now()}`,
+          role: "assistant",
+          content:
+            "Kanka önce fikir alanına ham promptunu yaz, ben onu görsel üretime daha uygun hale getireyim.",
+        },
+      ]);
+      return;
+    }
+
+    sendMessage(`
+Bu görsel promptunu profesyonel hale getir.
+
+Ham prompt:
+${prompt}
+
+Bana:
+1. Daha iyi görsel üretim promptu
+2. Renk/stil önerisi
+3. Kompozisyon önerisi
+4. Negatif prompt
+5. 3 farklı varyasyon
+
+şeklinde hazırla.
+`);
+  };
+
+  const createIdeaImage = async () => {
+    const prompt = ideaPrompt.trim();
+
+    if (!prompt) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `idea-empty-${Date.now()}`,
+          role: "assistant",
+          content:
+            "Kanka fikir/görsel alanına bir prompt yazman lazım. Mesela: 'mistik beyaz AI asistan uygulaması ana ekran tasarımı' gibi.",
+        },
+      ]);
+      return;
+    }
+
+    setImageLoading(true);
+    setGeneratedImage("");
+    setStatus("Görsel üretiliyor...");
+
+    try {
+      const response = await fetch("/api/image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `image-error-${Date.now()}`,
+            role: "assistant",
+            content:
+              data?.message ||
+              "Kanka görsel üretimi takıldı. Gemini image model veya kota tarafını kontrol etmemiz lazım.",
+          },
+        ]);
+        return;
+      }
+
+      setGeneratedImage(data?.imageUrl || "");
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `image-ok-${Date.now()}`,
+          role: "assistant",
+          content:
+            "Görsel hazır kanka. Fikir alanında önizlemeyi açtım. Beğenmezsen promptu biraz daha netleştirip tekrar üretiriz.",
+        },
+      ]);
+    } catch (error) {
+      console.error("Görsel üretim hatası:", error);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `image-fatal-${Date.now()}`,
+          role: "assistant",
+          content:
+            "Kanka görsel route’una bağlanırken hata oldu. /api/image dosyasını ve GEMINI_API_KEY ayarını kontrol edelim.",
+        },
+      ]);
+    } finally {
+      setImageLoading(false);
+      setStatus("Hazır");
+    }
+  };
+
+  const summarizePdf = async (
+    mode: "summary" | "long" | "short" | "questions" | "solved"
+  ) => {
+    if (!pdfFile) {
+      setPdfResult("Kanka önce PDF / dosya yüklemen lazım.");
+      return;
+    }
+
+    setPdfLoading(true);
+    setPdfResult("");
+    setStatus("PDF okunuyor...");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", pdfFile);
+      formData.append("mode", mode);
+      formData.append("question", pdfQuestion);
+
+      const response = await fetch("/api/pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setPdfResult(
+          data?.message ||
+            "PDF özetleme takıldı. Gemini API key, model veya dosya boyutunu kontrol edelim."
+        );
+        return;
+      }
+
+      setPdfResult(data?.result || "PDF işlendi ama sonuç boş geldi.");
+    } catch (error) {
+      console.error("PDF özetleme hatası:", error);
+      setPdfResult(
+        "Kanka PDF route’una bağlanırken hata oldu. /api/pdf dosyasını ve Vercel redeploy’u kontrol edelim."
+      );
+    } finally {
+      setPdfLoading(false);
+      setStatus("Hazır");
+    }
+  };
+
   const quickPrompts = [
     "Cilt bakımında dünyada şu ara ilgi çeken alanlar neler?",
     "Bana keşfete düşecek 10 kozmetik içerik fikri ver.",
@@ -419,27 +635,43 @@ export default function Page() {
           <section className="main-grid">
             <div className="left-panel">
               <div className="avatar-zone">
-               <div className={`avatar-video-frame ${isListening ? "pulse" : ""}`}>
-  <video
-    className="avatar-video"
-    src="/avatar/lyra-avatar.mp4"
-    poster="/avatar/lyra-avatar.jpg"
-    autoPlay
-    loop
-    muted
-    playsInline
-  />
+                <div className={`avatar-video-frame ${isListening ? "pulse" : ""}`}>
+                  {avatarMode === "video" && (
+                    <video
+                      className="avatar-video"
+                      src="/avatar/lyra-avatar.mp4"
+                      poster="/avatar/lyra-avatar.jpg"
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      onError={() => setAvatarMode("image")}
+                    />
+                  )}
 
-  <div className="avatar-glow"></div>
+                  {avatarMode === "image" && (
+                    <img
+                      className="avatar-video"
+                      src="/avatar/lyra-avatar.jpg"
+                      alt="Lyra avatar"
+                      onError={() => setAvatarMode("fallback")}
+                    />
+                  )}
 
-  <div className="avatar-badge">
-    {isListening
-      ? "Dinliyorum"
-      : status === "Konuşuyor..."
-      ? "Konuşuyorum"
-      : "Hazırım"}
-  </div>
-</div>
+                  {avatarMode === "fallback" && (
+                    <div className="avatar-fallback">L</div>
+                  )}
+
+                  <div className="avatar-glow"></div>
+
+                  <div className="avatar-badge">
+                    {isListening
+                      ? "Dinliyorum"
+                      : status === "Konuşuyor..."
+                      ? "Konuşuyorum"
+                      : "Hazırım"}
+                  </div>
+                </div>
 
                 <p className="status-text">{status}</p>
 
@@ -488,7 +720,11 @@ export default function Page() {
                   <button onClick={() => startListening("write")}>Sesle Yaz</button>
                   <button onClick={clearChat}>Sohbeti Temizle</button>
                   <button onClick={clearMemory}>Hafızayı Temizle</button>
-                  <button onClick={() => speak("Ses testi kanka. Duyuyorsan sistem çalışıyor.", true)}>
+                  <button
+                    onClick={() =>
+                      speak("Ses testi kanka. Duyuyorsan sistem çalışıyor.", true)
+                    }
+                  >
                     Ses Testi
                   </button>
                 </div>
@@ -535,6 +771,161 @@ export default function Page() {
                   )}
 
                   <div ref={chatEndRef} />
+                </div>
+              </div>
+
+              <div className="tools-stack">
+                <div className="tool-card">
+                  <div className="tool-head">
+                    <div>
+                      <h2>Ders Alanı</h2>
+                      <p>
+                        Konu başlığı yaz, soru sor; Lyra sana anlatım, özet,
+                        ipucu ve soru hazırlasın.
+                      </p>
+                    </div>
+                    <span>DGS / Ders</span>
+                  </div>
+
+                  <div className="tool-grid">
+                    <input
+                      className="tool-input"
+                      value={lessonTopic}
+                      onChange={(e) => setLessonTopic(e.target.value)}
+                      placeholder="Konu başlığı: Sayı basamakları, OBEB-OKEK, paragraf..."
+                    />
+
+                    <textarea
+                      className="tool-textarea"
+                      value={lessonQuestion}
+                      onChange={(e) => setLessonQuestion(e.target.value)}
+                      placeholder="Sorunu yaz: Bu konuyu anlamıyorum / şu soruyu çöz / bana örnek hazırla..."
+                    />
+                  </div>
+
+                  <div className="tool-buttons">
+                    <button onClick={() => sendLessonRequest("long")}>
+                      Uzun Konu Anlatımı
+                    </button>
+                    <button onClick={() => sendLessonRequest("summary")}>
+                      Özet
+                    </button>
+                    <button onClick={() => sendLessonRequest("tips")}>
+                      İpuçları
+                    </button>
+                    <button onClick={() => sendLessonRequest("solved")}>
+                      Çözümlü Sorular
+                    </button>
+                    <button onClick={() => sendLessonRequest("questions")}>
+                      Sadece Sorular + Şıklar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="tool-card">
+                  <div className="tool-head">
+                    <div>
+                      <h2>Fikir & Görsel Alanı</h2>
+                      <p>
+                        Tasarım, içerik veya prompt yaz; Lyra promptu
+                        iyileştirsin ya da görsel üretsin.
+                      </p>
+                    </div>
+                    <span>Prompt / Görsel</span>
+                  </div>
+
+                  <textarea
+                    className="tool-textarea"
+                    value={ideaPrompt}
+                    onChange={(e) => setIdeaPrompt(e.target.value)}
+                    placeholder="Örnek: beyaz, mistik, güneş tonları olan 4D avatar asistan uygulaması ana ekran tasarımı..."
+                  />
+
+                  <div className="tool-buttons">
+                    <button onClick={improveIdeaPrompt}>Promptu Güzelleştir</button>
+                    <button onClick={createIdeaImage} disabled={imageLoading}>
+                      {imageLoading ? "Görsel Üretiliyor..." : "Görsel Oluştur"}
+                    </button>
+                  </div>
+
+                  {generatedImage && (
+                    <div className="image-preview">
+                      <img
+                        src={generatedImage}
+                        alt="Lyra tarafından oluşturulan görsel"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="tool-card">
+                  <div className="tool-head">
+                    <div>
+                      <h2>Kitap / PDF Alanı</h2>
+                      <p>
+                        PDF yükle; özet, uzun anlatım, soru veya çözümlü test
+                        hazırlasın.
+                      </p>
+                    </div>
+                    <span>PDF Özet</span>
+                  </div>
+
+                  <input
+                    className="tool-file"
+                    type="file"
+                    accept=".pdf,.txt,.md,.html,application/pdf,text/plain,text/markdown,text/html"
+                    onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+                  />
+
+                  <input
+                    className="tool-input"
+                    value={pdfQuestion}
+                    onChange={(e) => setPdfQuestion(e.target.value)}
+                    placeholder="PDF hakkında özel sorun varsa yaz: Bu kitaptan sınavlık yerleri çıkar..."
+                  />
+
+                  <div className="tool-buttons">
+                    <button
+                      onClick={() => summarizePdf("summary")}
+                      disabled={pdfLoading}
+                    >
+                      Özet Oluştur
+                    </button>
+                    <button
+                      onClick={() => summarizePdf("long")}
+                      disabled={pdfLoading}
+                    >
+                      Uzun Anlat
+                    </button>
+                    <button
+                      onClick={() => summarizePdf("short")}
+                      disabled={pdfLoading}
+                    >
+                      Kısa Tekrar
+                    </button>
+                    <button
+                      onClick={() => summarizePdf("questions")}
+                      disabled={pdfLoading}
+                    >
+                      Soru Üret
+                    </button>
+                    <button
+                      onClick={() => summarizePdf("solved")}
+                      disabled={pdfLoading}
+                    >
+                      Çözümlü Sorular
+                    </button>
+                  </div>
+
+                  {pdfLoading && (
+                    <p className="tool-result">PDF okunuyor kanka, biraz bekle...</p>
+                  )}
+
+                  {pdfResult && (
+                    <div className="tool-result">
+                      <pre>{pdfResult}</pre>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -589,8 +980,8 @@ export default function Page() {
           padding: 0;
           min-height: 100%;
           font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          background: #fff7fb;
-          color: #2b2238;
+          background: #131316;
+          color: #f4efff;
         }
 
         button,
@@ -613,7 +1004,10 @@ export default function Page() {
           min-height: 100vh;
           padding: 32px 20px;
           background:
-            radial-gradient(circle at top left, #ffeaf4 0, #fff7fb 32%, #eef7ff 72%, #f9fbff 100%);
+            radial-gradient(circle at top left, rgba(192, 132, 252, 0.24), transparent 28%),
+            radial-gradient(circle at bottom right, rgba(255, 178, 185, 0.18), transparent 34%),
+            linear-gradient(135deg, #131316 0%, #191720 45%, #111116 100%);
+          color: #f4efff;
         }
 
         .lyra-shell {
@@ -628,10 +1022,12 @@ export default function Page() {
           gap: 20px;
           padding: 22px 26px;
           border-radius: 30px;
-          border: 1px solid rgba(255, 255, 255, 0.8);
-          background: rgba(255, 255, 255, 0.74);
-          box-shadow: 0 24px 80px rgba(119, 91, 140, 0.13);
-          backdrop-filter: blur(18px);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background:
+            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)),
+            rgba(19, 19, 22, 0.74);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+          backdrop-filter: blur(20px);
         }
 
         .brand-area {
@@ -646,11 +1042,13 @@ export default function Page() {
           display: grid;
           place-items: center;
           border-radius: 20px;
-          background: linear-gradient(135deg, #ffe1ef, #e7ddff, #dff5ff);
-          color: #8a4fff;
+          background: linear-gradient(135deg, #ddb8ff, #ffb2b9, #9dd8ff);
+          color: #2c0051;
           font-size: 28px;
           font-weight: 950;
-          box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.75);
+          box-shadow:
+            0 0 26px rgba(221, 184, 255, 0.24),
+            inset 0 0 24px rgba(255, 255, 255, 0.55);
         }
 
         h1,
@@ -664,11 +1062,13 @@ export default function Page() {
           line-height: 1.05;
           letter-spacing: -0.05em;
           font-weight: 950;
+          color: #ffffff;
+          text-shadow: 0 0 18px rgba(221, 184, 255, 0.22);
         }
 
         .brand-area p {
           margin-top: 6px;
-          color: #6e627c;
+          color: #cec3d3;
           font-size: 14px;
         }
 
@@ -687,29 +1087,32 @@ export default function Page() {
           min-height: 42px;
           padding: 0 18px;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.86);
-          color: #30243d;
+          background: rgba(255, 255, 255, 0.08);
+          color: #f4efff;
+          border: 1px solid rgba(255, 255, 255, 0.12);
           font-size: 14px;
           font-weight: 850;
-          box-shadow: 0 10px 28px rgba(119, 91, 140, 0.08);
-          transition: transform 0.18s ease, background 0.18s ease;
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+          transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
         }
 
         .top-actions button:hover,
         .small-actions button:hover,
         .quick-list button:hover {
           transform: translateY(-1px);
-          background: #ffffff;
+          background: rgba(255, 255, 255, 0.13);
+          border-color: rgba(221, 184, 255, 0.45);
         }
 
         .top-actions span,
         .top-actions .active {
-          background: linear-gradient(90deg, #f4b6ff, #9dd8ff);
+          background: linear-gradient(90deg, rgba(221,184,255,0.72), rgba(255,178,185,0.58));
+          color: #210033;
         }
 
         .main-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
           gap: 24px;
           margin-top: 24px;
         }
@@ -726,10 +1129,12 @@ export default function Page() {
         .memory-card,
         .quick-card {
           border-radius: 34px;
-          border: 1px solid rgba(255, 255, 255, 0.8);
-          background: rgba(255, 255, 255, 0.64);
-          box-shadow: 0 24px 80px rgba(119, 91, 140, 0.12);
-          backdrop-filter: blur(18px);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background:
+            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)),
+            rgba(19, 19, 22, 0.62);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+          backdrop-filter: blur(20px);
         }
 
         .left-panel {
@@ -745,109 +1150,77 @@ export default function Page() {
           text-align: center;
         }
 
-        .avatar-orb {
+        .avatar-video-frame {
           position: relative;
           width: 286px;
           height: 286px;
+          border-radius: 999px;
+          padding: 6px;
+          background: conic-gradient(from 140deg, #ddb8ff, #ffb2b9, #9dd8ff, #ffe086, #ddb8ff);
+          box-shadow:
+            0 28px 95px rgba(162, 111, 214, 0.34),
+            0 0 42px rgba(221, 184, 255, 0.22);
+          overflow: hidden;
+        }
+
+        .avatar-video-frame.pulse {
+          animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        .avatar-video {
+          position: relative;
+          z-index: 2;
+          width: 100%;
+          height: 100%;
+          border-radius: 999px;
+          object-fit: cover;
+          display: block;
+          background: rgba(14, 14, 17, 0.92);
+        }
+
+        .avatar-glow {
+          position: absolute;
+          inset: -24px;
+          z-index: 1;
+          border-radius: 999px;
+          background:
+            radial-gradient(circle at 35% 25%, rgba(255,255,255,0.55), transparent 18%),
+            radial-gradient(circle at 70% 70%, rgba(255,178,185,0.35), transparent 34%),
+            radial-gradient(circle at 25% 80%, rgba(157,216,255,0.38), transparent 34%);
+          filter: blur(14px);
+          opacity: 0.85;
+        }
+
+        .avatar-badge {
+          position: absolute;
+          left: 50%;
+          bottom: 16px;
+          z-index: 3;
+          transform: translateX(-50%);
+          padding: 8px 13px;
+          border-radius: 999px;
+          background: rgba(14, 14, 17, 0.72);
+          color: #f4efff;
+          font-size: 12px;
+          font-weight: 900;
+          border: 1px solid rgba(255,255,255,0.14);
+          backdrop-filter: blur(12px);
+        }
+
+        .avatar-fallback {
+          position: relative;
+          z-index: 2;
+          width: 100%;
+          height: 100%;
           display: grid;
           place-items: center;
           border-radius: 999px;
           background:
             radial-gradient(circle at 38% 34%, rgba(255, 255, 255, 0.95), transparent 10%),
             linear-gradient(135deg, #a6f4d6, #9dd8ff, #d7b7ff, #ff9fce, #ffe6ad);
-          box-shadow: 0 26px 90px rgba(162, 111, 214, 0.24);
-        }
-.avatar-video-frame {
-  position: relative;
-  width: 286px;
-  height: 286px;
-  border-radius: 999px;
-  padding: 6px;
-  background: conic-gradient(from 140deg, #ddb8ff, #ffb2b9, #9dd8ff, #ffe086, #ddb8ff);
-  box-shadow:
-    0 28px 95px rgba(162, 111, 214, 0.34),
-    0 0 42px rgba(221, 184, 255, 0.22);
-  overflow: hidden;
-}
-
-.avatar-video-frame.pulse {
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-.avatar-video {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
-  border-radius: 999px;
-  object-fit: cover;
-  display: block;
-  background: rgba(14, 14, 17, 0.92);
-}
-
-.avatar-glow {
-  position: absolute;
-  inset: -24px;
-  z-index: 1;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 35% 25%, rgba(255,255,255,0.55), transparent 18%),
-    radial-gradient(circle at 70% 70%, rgba(255,178,185,0.35), transparent 34%),
-    radial-gradient(circle at 25% 80%, rgba(157,216,255,0.38), transparent 34%);
-  filter: blur(14px);
-  opacity: 0.85;
-}
-
-.avatar-badge {
-  position: absolute;
-  left: 50%;
-  bottom: 16px;
-  z-index: 3;
-  transform: translateX(-50%);
-  padding: 8px 13px;
-  border-radius: 999px;
-  background: rgba(14, 14, 17, 0.72);
-  color: #f4efff;
-  font-size: 12px;
-  font-weight: 900;
-  border: 1px solid rgba(255,255,255,0.14);
-  backdrop-filter: blur(12px);
-}
-        .avatar-orb::before {
-          content: "";
-          position: absolute;
-          inset: -18px;
-          border-radius: inherit;
-          background: conic-gradient(from 140deg, #ffe7f1, #dff7ff, #e9dcff, #fff2d0, #ffe7f1);
-          opacity: 0.55;
-          filter: blur(4px);
-          z-index: -1;
-        }
-
-        .avatar-orb.pulse {
-          animation: pulse 1.2s ease-in-out infinite;
-        }
-
-        .orb-blur {
-          position: absolute;
-          inset: 50px;
-          border-radius: inherit;
-          background: rgba(255, 255, 255, 0.22);
-          filter: blur(10px);
-        }
-
-        .orb-core {
-          position: relative;
-          width: 132px;
-          height: 132px;
-          display: grid;
-          place-items: center;
-          border-radius: 999px;
-          background: linear-gradient(135deg, #a6f4d6, #77cbff, #ed74c7);
           color: white;
-          font-size: 64px;
+          font-size: 72px;
           font-weight: 950;
-          box-shadow: inset 0 0 30px rgba(255, 255, 255, 0.25);
         }
 
         @keyframes pulse {
@@ -863,6 +1236,7 @@ export default function Page() {
           margin-top: 42px;
           font-weight: 950;
           font-size: 18px;
+          color: #ffffff;
         }
 
         .speed-box {
@@ -875,18 +1249,20 @@ export default function Page() {
           margin-bottom: 12px;
           font-size: 14px;
           font-weight: 900;
+          color: #f4efff;
         }
 
         .speed-box input {
           width: 100%;
-          accent-color: #ff6b1a;
+          accent-color: #ddb8ff;
         }
 
         .input-card {
           padding: 20px;
           border-radius: 26px;
-          background: rgba(255, 255, 255, 0.9);
-          box-shadow: 0 14px 44px rgba(119, 91, 140, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(14, 14, 17, 0.76);
+          box-shadow: 0 14px 44px rgba(0, 0, 0, 0.18);
         }
 
         .input-head,
@@ -903,11 +1279,12 @@ export default function Page() {
         .quick-card h2 {
           font-size: 18px;
           font-weight: 950;
+          color: #ffffff;
         }
 
         .input-head span,
         .section-head span {
-          color: #6e627c;
+          color: #cec3d3;
           font-size: 14px;
         }
 
@@ -921,29 +1298,35 @@ export default function Page() {
           min-height: 58px;
           resize: none;
           border-radius: 18px;
-          border: 1px solid #e7dceb;
+          border: 1px solid rgba(255, 255, 255, 0.12);
           outline: none;
           padding: 16px 16px;
-          background: #ffffff;
-          color: #30243d;
+          background: rgba(14, 14, 17, 0.86);
+          color: #f4efff;
           font-size: 15px;
           font-weight: 600;
           line-height: 1.45;
         }
 
-        textarea:focus {
-          border-color: #c59cff;
-          box-shadow: 0 0 0 5px rgba(197, 156, 255, 0.17);
+        textarea::placeholder,
+        input::placeholder {
+          color: rgba(244, 239, 255, 0.46);
+        }
+
+        textarea:focus,
+        input:focus {
+          border-color: rgba(221, 184, 255, 0.75);
+          box-shadow: 0 0 0 5px rgba(221, 184, 255, 0.12);
         }
 
         .send-button {
           min-width: 108px;
           border-radius: 18px;
-          background: linear-gradient(90deg, #f4b6ff, #9dd8ff);
-          color: #241a2f;
+          background: linear-gradient(90deg, #ddb8ff, #ffb2b9);
+          color: #210033;
           font-size: 15px;
           font-weight: 950;
-          box-shadow: 0 12px 28px rgba(119, 91, 140, 0.12);
+          box-shadow: 0 12px 28px rgba(221, 184, 255, 0.14);
         }
 
         .small-actions {
@@ -954,7 +1337,7 @@ export default function Page() {
         }
 
         .small-actions button {
-          background: #fff0f7;
+          background: rgba(255, 255, 255, 0.08);
         }
 
         .chat-card,
@@ -968,7 +1351,8 @@ export default function Page() {
           overflow-y: auto;
           padding: 18px;
           border-radius: 28px;
-          background: rgba(255, 255, 255, 0.56);
+          background: rgba(14, 14, 17, 0.44);
+          border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .message-line {
@@ -989,7 +1373,8 @@ export default function Page() {
           max-width: 84%;
           padding: 16px 18px;
           border-radius: 24px;
-          box-shadow: 0 10px 34px rgba(119, 91, 140, 0.09);
+          box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .message-bubble strong {
@@ -1001,17 +1386,213 @@ export default function Page() {
 
         .message-bubble p {
           white-space: pre-wrap;
-          color: #3d3448;
+          color: #f4efff;
           font-size: 15px;
           line-height: 1.65;
         }
 
         .message-bubble.assistant {
-          background: #ffffff;
+          background: rgba(255, 255, 255, 0.08);
         }
 
         .message-bubble.user {
-          background: linear-gradient(90deg, #ffe2f0, #eee2ff);
+          background: linear-gradient(90deg, rgba(221,184,255,0.28), rgba(255,178,185,0.22));
+        }
+
+        .tools-stack {
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+
+        .tool-card {
+          position: relative;
+          overflow: hidden;
+          padding: 22px;
+          border-radius: 28px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background:
+            linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)),
+            rgba(20, 18, 28, 0.82);
+          box-shadow:
+            0 24px 80px rgba(119, 91, 140, 0.16),
+            inset 0 0 22px rgba(221, 184, 255, 0.05);
+          color: #f4efff;
+        }
+
+        .tool-card::before {
+          content: "";
+          position: absolute;
+          width: 220px;
+          height: 220px;
+          border-radius: 999px;
+          background: rgba(192, 132, 252, 0.18);
+          filter: blur(70px);
+          top: -90px;
+          right: -80px;
+          pointer-events: none;
+        }
+
+        .tool-card::after {
+          content: "";
+          position: absolute;
+          width: 180px;
+          height: 180px;
+          border-radius: 999px;
+          background: rgba(255, 178, 185, 0.13);
+          filter: blur(70px);
+          bottom: -90px;
+          left: -70px;
+          pointer-events: none;
+        }
+
+        .tool-head {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 16px;
+        }
+
+        .tool-head h2 {
+          font-size: 20px;
+          font-weight: 950;
+          letter-spacing: -0.03em;
+          color: #ffffff;
+        }
+
+        .tool-head p {
+          margin-top: 6px;
+          color: #cfc3df;
+          font-size: 14px;
+          line-height: 1.55;
+        }
+
+        .tool-head span {
+          flex-shrink: 0;
+          border-radius: 999px;
+          padding: 8px 12px;
+          background: linear-gradient(90deg, rgba(221,184,255,0.28), rgba(255,178,185,0.22));
+          color: #f0dbff;
+          font-size: 12px;
+          font-weight: 900;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tool-grid {
+          position: relative;
+          z-index: 1;
+          display: grid;
+          gap: 12px;
+        }
+
+        .tool-input,
+        .tool-textarea,
+        .tool-file {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          border-radius: 18px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(14, 14, 17, 0.82);
+          color: #f4efff;
+          padding: 14px 16px;
+          outline: none;
+          font-size: 14px;
+          font-weight: 650;
+          box-shadow: inset 0 0 20px rgba(0,0,0,0.16);
+        }
+
+        .tool-textarea {
+          min-height: 104px;
+          resize: vertical;
+        }
+
+        .tool-input::placeholder,
+        .tool-textarea::placeholder {
+          color: rgba(244, 239, 255, 0.48);
+        }
+
+        .tool-input:focus,
+        .tool-textarea:focus,
+        .tool-file:focus {
+          border-color: rgba(221, 184, 255, 0.75);
+          box-shadow:
+            0 0 0 4px rgba(221, 184, 255, 0.12),
+            inset 0 0 20px rgba(0,0,0,0.16);
+        }
+
+        .tool-buttons {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 14px;
+        }
+
+        .tool-buttons button {
+          min-height: 42px;
+          border-radius: 999px;
+          padding: 0 15px;
+          background: rgba(255, 255, 255, 0.08);
+          color: #f4efff;
+          border: 1px solid rgba(255, 255, 255, 0.13);
+          font-size: 13px;
+          font-weight: 900;
+          transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+        }
+
+        .tool-buttons button:hover {
+          transform: translateY(-1px);
+          background: rgba(255, 255, 255, 0.13);
+          border-color: rgba(221, 184, 255, 0.55);
+        }
+
+        .tool-buttons button:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .image-preview {
+          position: relative;
+          z-index: 1;
+          margin-top: 16px;
+          overflow: hidden;
+          border-radius: 22px;
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(255,255,255,0.05);
+        }
+
+        .image-preview img {
+          display: block;
+          width: 100%;
+          height: auto;
+        }
+
+        .tool-result {
+          position: relative;
+          z-index: 1;
+          margin-top: 16px;
+          border-radius: 20px;
+          border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.06);
+          color: #f4efff;
+          padding: 16px;
+          line-height: 1.65;
+          font-size: 14px;
+          white-space: pre-wrap;
+        }
+
+        .tool-result pre {
+          margin: 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-family: inherit;
+          color: inherit;
         }
 
         .memory-list {
@@ -1023,15 +1604,16 @@ export default function Page() {
         .empty-memory {
           padding: 14px 16px;
           border-radius: 18px;
-          background: rgba(255, 255, 255, 0.82);
-          color: #3d3448;
+          background: rgba(255, 255, 255, 0.08);
+          color: #f4efff;
           font-size: 14px;
           font-weight: 850;
-          box-shadow: 0 8px 22px rgba(119, 91, 140, 0.06);
+          box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+          border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .empty-memory {
-          color: #6e627c;
+          color: #cec3d3;
           font-weight: 600;
         }
 
@@ -1047,10 +1629,7 @@ export default function Page() {
           text-align: left;
         }
 
-        @media (max-width: 980px) {.avatar-video-frame {
-  width: 220px;
-  height: 220px;
-}
+        @media (max-width: 980px) {
           .top-card {
             align-items: flex-start;
             flex-direction: column;
@@ -1078,7 +1657,8 @@ export default function Page() {
           .left-panel,
           .chat-card,
           .memory-card,
-          .quick-card {
+          .quick-card,
+          .tool-card {
             border-radius: 24px;
           }
 
@@ -1098,15 +1678,9 @@ export default function Page() {
             min-height: 410px;
           }
 
-          .avatar-orb {
+          .avatar-video-frame {
             width: 220px;
             height: 220px;
-          }
-
-          .orb-core {
-            width: 102px;
-            height: 102px;
-            font-size: 50px;
           }
 
           .input-row {
@@ -1119,6 +1693,10 @@ export default function Page() {
 
           .message-bubble {
             max-width: 94%;
+          }
+
+          .tool-head {
+            flex-direction: column;
           }
         }
       `}</style>
