@@ -22,7 +22,7 @@ const initialMessages: ChatMessage[] = [
     id: "welcome",
     role: "assistant",
     content:
-      "Kanka geldim. Artık cevapları direkt vereceğim; istersen yaz, istersen sesle konuş. Ses açıkken cevaplarımı da okumaya çalışacağım.",
+      "Kanka geldim. Yaz, konuş, ders çalış, fikir üret, PDF özetlet. Ben burada direkt cevap vereceğim.",
   },
 ];
 
@@ -35,9 +35,10 @@ export default function Page() {
   const [status, setStatus] = useState("Hazır");
   const [speechRate, setSpeechRate] = useState(1.02);
   const [voiceMode, setVoiceMode] = useState<"phone" | "realistic">("realistic");
+
+  const [avatarImageError, setAvatarImageError] = useState(false);
   const [avatarVideoReady, setAvatarVideoReady] = useState(false);
   const [avatarVideoError, setAvatarVideoError] = useState(false);
-  const [avatarImageError, setAvatarImageError] = useState(false);
 
   const [memory, setMemory] = useState<string[]>([
     "kozmetik / formül / cilt bakımı",
@@ -78,10 +79,6 @@ export default function Page() {
         audioRef.current.currentTime = 0;
       } catch {}
     }
-
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
   };
 
   const stopListening = () => {
@@ -109,36 +106,13 @@ export default function Page() {
     });
   };
 
-  const fallbackBrowserVoice = (text: string) => {
-    if (typeof window === "undefined") return;
-    if (!("speechSynthesis" in window)) return;
-
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "tr-TR";
-    utterance.rate = speechRate;
-    utterance.pitch = voiceMode === "realistic" ? 1.08 : 1;
-    utterance.volume = 1;
-
-    const voices = window.speechSynthesis.getVoices();
-
-    const selectedVoice =
-      voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
-      voices.find((v) => v.name?.toLowerCase().includes("turkish")) ||
-      voices[0];
-
-    if (selectedVoice) utterance.voice = selectedVoice;
-
-    window.speechSynthesis.speak(utterance);
-  };
-
   const speak = async (text: string, force = false) => {
     if (!force && isMuted) return;
     if (!text.trim()) return;
 
     try {
       stopSpeaking();
+      setStatus("Gemini sesi hazırlanıyor...");
 
       const response = await fetch("/api/tts", {
         method: "POST",
@@ -154,7 +128,17 @@ export default function Page() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
         console.error("Gemini TTS hata:", errorData);
-        fallbackBrowserVoice(text);
+        setStatus("Gemini ses hatası");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `tts-error-${Date.now()}`,
+            role: "assistant",
+            content:
+              errorData?.message ||
+              "Kanka Gemini ses üretemedi. Tarayıcı sesine düşürmedim; gerçek Gemini sesi için /api/tts ve GEMINI_API_KEY ayarını kontrol edelim.",
+          },
+        ]);
         return;
       }
 
@@ -172,15 +156,13 @@ export default function Page() {
 
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
-        fallbackBrowserVoice(text);
-        setStatus("Hazır");
+        setStatus("Gemini ses oynatma hatası");
       };
 
       await audio.play();
     } catch (error) {
       console.error("Ses oynatma hatası:", error);
-      fallbackBrowserVoice(text);
-      setStatus("Hazır");
+      setStatus("Gemini ses oynatma hatası");
     }
   };
 
@@ -371,10 +353,10 @@ export default function Page() {
     }
 
     setIsMuted(false);
-    setStatus("Ses açılıyor...");
+    setStatus("Gemini sesi açılıyor...");
 
     setTimeout(() => {
-      speak("Ses açıldı kanka. Artık cevapları sesli okumayı deneyeceğim.", true);
+      speak("Ses açıldı kanka. Şimdi Gemini sesiyle konuşmayı deniyorum.", true);
     }, 150);
   };
 
@@ -607,7 +589,9 @@ Bana:
                 Sustur
               </button>
               <span>AI Mod Açık</span>
-              <button onClick={toggleMute}>{isMuted ? "Sessiz" : "Ses Açık"}</button>
+              <button onClick={toggleMute}>
+                {isMuted ? "Sessiz" : "Ses Açık"}
+              </button>
               <button
                 className={voiceMode === "phone" ? "active" : ""}
                 onClick={() => setVoiceMode("phone")}
@@ -618,7 +602,7 @@ Bana:
                 className={voiceMode === "realistic" ? "active" : ""}
                 onClick={() => setVoiceMode("realistic")}
               >
-                Gerçekçi Ses
+                Gemini Ses
               </button>
             </div>
           </header>
@@ -632,7 +616,7 @@ Bana:
                   {!avatarImageError && (
                     <img
                       className="avatar-photo"
-                      src="/avatar/lyra-avatar.jpg"
+                      src="/lyra-avatar.png"
                       alt="Lyra avatar fotoğraf"
                       onError={() => setAvatarImageError(true)}
                     />
@@ -644,7 +628,6 @@ Bana:
                         avatarVideoReady ? "avatar-video-ready" : ""
                       }`}
                       src="/avatar/lyra-avatar.mp4"
-                      poster="/avatar/lyra-avatar.jpg"
                       autoPlay
                       loop
                       muted
@@ -718,10 +701,10 @@ Bana:
                   <button onClick={clearMemory}>Hafızayı Temizle</button>
                   <button
                     onClick={() =>
-                      speak("Ses testi kanka. Duyuyorsan sistem çalışıyor.", true)
+                      speak("Ses testi kanka. Duyuyorsan Gemini ses sistemi çalışıyor.", true)
                     }
                   >
-                    Ses Testi
+                    Gemini Ses Testi
                   </button>
                 </div>
               </div>
@@ -1000,6 +983,18 @@ Bana:
           margin: 0 auto;
         }
 
+        .top-card,
+        .left-panel,
+        .chat-card,
+        .memory-card {
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background:
+            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)),
+            rgba(19, 19, 22, 0.68);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
+          backdrop-filter: blur(20px);
+        }
+
         .top-card {
           display: flex;
           align-items: center;
@@ -1007,12 +1002,6 @@ Bana:
           gap: 20px;
           padding: 22px 26px;
           border-radius: 30px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background:
-            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)),
-            rgba(19, 19, 22, 0.74);
-          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
-          backdrop-filter: blur(20px);
         }
 
         .brand-area {
@@ -1057,17 +1046,23 @@ Bana:
           font-size: 14px;
         }
 
-        .top-actions {
+        .top-actions,
+        .small-actions,
+        .tool-buttons {
           display: flex;
           align-items: center;
-          justify-content: flex-end;
           flex-wrap: wrap;
           gap: 10px;
         }
 
+        .top-actions {
+          justify-content: flex-end;
+        }
+
         .top-actions button,
         .top-actions span,
-        .small-actions button {
+        .small-actions button,
+        .tool-buttons button {
           min-height: 42px;
           padding: 0 18px;
           border-radius: 999px;
@@ -1081,7 +1076,8 @@ Bana:
         }
 
         .top-actions button:hover,
-        .small-actions button:hover {
+        .small-actions button:hover,
+        .tool-buttons button:hover {
           transform: translateY(-1px);
           background: rgba(255, 255, 255, 0.13);
           border-color: rgba(221, 184, 255, 0.45);
@@ -1111,12 +1107,6 @@ Bana:
         .chat-card,
         .memory-card {
           border-radius: 34px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background:
-            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)),
-            rgba(19, 19, 22, 0.62);
-          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
-          backdrop-filter: blur(20px);
         }
 
         .left-panel {
@@ -1292,19 +1282,23 @@ Bana:
           gap: 12px;
         }
 
-        textarea {
+        textarea,
+        input {
           width: 100%;
-          min-height: 58px;
-          resize: none;
           border-radius: 18px;
           border: 1px solid rgba(255, 255, 255, 0.12);
           outline: none;
-          padding: 16px 16px;
+          padding: 14px 16px;
           background: rgba(14, 14, 17, 0.86);
           color: #f4efff;
           font-size: 15px;
           font-weight: 600;
           line-height: 1.45;
+        }
+
+        textarea {
+          min-height: 58px;
+          resize: none;
         }
 
         textarea::placeholder,
@@ -1329,14 +1323,7 @@ Bana:
         }
 
         .small-actions {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
           margin-top: 14px;
-        }
-
-        .small-actions button {
-          background: rgba(255, 255, 255, 0.08);
         }
 
         .chat-card,
@@ -1525,73 +1512,23 @@ Bana:
           gap: 12px;
         }
 
-        .tool-input,
-        .tool-textarea,
-        .tool-file {
-          position: relative;
-          z-index: 1;
-          width: 100%;
-          border-radius: 18px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: rgba(14, 14, 17, 0.82);
-          color: #f4efff;
-          padding: 14px 16px;
-          outline: none;
-          font-size: 14px;
-          font-weight: 650;
-          box-shadow: inset 0 0 20px rgba(0,0,0,0.16);
-        }
-
         .tool-textarea {
           min-height: 104px;
           resize: vertical;
         }
 
-        .tool-input::placeholder,
-        .tool-textarea::placeholder {
-          color: rgba(244, 239, 255, 0.48);
-        }
-
-        .tool-input:focus,
-        .tool-textarea:focus,
-        .tool-file:focus {
-          border-color: rgba(221, 184, 255, 0.75);
-          box-shadow:
-            0 0 0 4px rgba(221, 184, 255, 0.12),
-            inset 0 0 20px rgba(0,0,0,0.16);
+        .tool-file {
+          cursor: pointer;
         }
 
         .tool-buttons {
           position: relative;
           z-index: 1;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
           margin-top: 14px;
         }
 
         .tool-buttons button {
-          min-height: 42px;
-          border-radius: 999px;
-          padding: 0 15px;
-          background: rgba(255, 255, 255, 0.08);
-          color: #f4efff;
-          border: 1px solid rgba(255, 255, 255, 0.13);
           font-size: 13px;
-          font-weight: 900;
-          transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
-        }
-
-        .tool-buttons button:hover {
-          transform: translateY(-1px);
-          background: rgba(255, 255, 255, 0.13);
-          border-color: rgba(221, 184, 255, 0.55);
-        }
-
-        .tool-buttons button:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-          transform: none;
         }
 
         .image-preview {
