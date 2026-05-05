@@ -419,10 +419,27 @@ export default function Page() {
           <section className="main-grid">
             <div className="left-panel">
               <div className="avatar-zone">
-                <div className={`avatar-orb ${isListening ? "pulse" : ""}`}>
-                  <div className="orb-blur"></div>
-                  <div className="orb-core">L</div>
-                </div>
+               <div className={`avatar-video-frame ${isListening ? "pulse" : ""}`}>
+  <video
+    className="avatar-video"
+    src="/avatar/lyra-avatar.mp4"
+    poster="/avatar/lyra-avatar.jpg"
+    autoPlay
+    loop
+    muted
+    playsInline
+  />
+
+  <div className="avatar-glow"></div>
+
+  <div className="avatar-badge">
+    {isListening
+      ? "Dinliyorum"
+      : status === "Konuşuyor..."
+      ? "Konuşuyorum"
+      : "Hazırım"}
+  </div>
+</div>
 
                 <p className="status-text">{status}</p>
 
