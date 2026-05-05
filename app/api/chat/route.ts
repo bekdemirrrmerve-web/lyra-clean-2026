@@ -2,23 +2,112 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "edge";
 
-function cleanText(value: any): string {
-  if (!value) return "";
+function jsonReply(text: string, success = true, extra: any = {}) {
+  return NextResponse.json(
+    {
+      reply: text,
+      answer: text,
+      text: text,
+      message: text,
+      content: text,
+      success,
+      ...extra,
+    },
+    { status: 200 }
+  );
+}
 
-  if (typeof value === "string") return value.trim();
+function extractText(data: any): string {
+  const parts = data?.candidates?.[0]?.content?.parts;
 
-  if (typeof value === "object") {
-    return (
-      value.reply ||
-      value.answer ||
-      value.text ||
-      value.message ||
-      value.content ||
-      ""
-    ).toString().trim();
+  if (Array.isArray(parts)) {
+    return parts
+      .map((part: any) => part?.text || "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
   }
 
   return "";
+}
+
+async function getWorkingGeminiModels(apiKey: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok || !Array.isArray(data?.models)) {
+      return [];
+    }
+
+    const usableModels = data.models
+      .filter((model: any) => {
+        const methods = model?.supportedGenerationMethods || [];
+        return methods.includes("generateContent");
+      })
+      .map((model: any) => model?.name)
+      .filter(Boolean);
+
+    const preferred = usableModels.filter((name: string) =>
+      name.toLowerCase().includes("flash")
+    );
+
+    const others = usableModels.filter(
+      (name: string) => !name.toLowerCase().includes("flash")
+    );
+
+    return [...preferred, ...others];
+  } catch {
+    return [];
+  }
+}
+
+async function callGemini(modelName: string, apiKey: string, prompt: string) {
+  const cleanModelName = modelName.startsWith("models/")
+    ? modelName
+    : `models/${modelName}`;
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/${cleanModelName}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.85,
+          topP: 0.95,
+          maxOutputTokens: 1600,
+        },
+      }),
+    }
+  );
+
+  const data = await res.json();
+
+  return {
+    ok: res.ok,
+    data,
+    error: data?.error?.message || "",
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -30,150 +119,134 @@ export async function POST(req: NextRequest) {
       body?.text ||
       body?.prompt ||
       body?.content ||
+      body?.input ||
       "";
 
     const memory = Array.isArray(body?.memory) ? body.memory : [];
 
     if (!userMessage || typeof userMessage !== "string") {
-      return NextResponse.json(
-        {
-          reply: "Kanka mesajı alamadım, bir daha yazar mısın?",
-          answer: "Kanka mesajı alamadım, bir daha yazar mısın?",
-          text: "Kanka mesajı alamadım, bir daha yazar mısın?",
-          message: "Kanka mesajı alamadım, bir daha yazar mısın?",
-        },
-        { status: 200 }
-      );
+      return jsonReply("Kanka mesajı alamadım, bir daha yazar mısın?", false);
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      const fallback =
-        "Kanka GEMINI_API_KEY eksik görünüyor. Vercel > Project Settings > Environment Variables kısmına GEMINI_API_KEY ekleyip redeploy yapman lazım.";
-
-      return NextResponse.json(
-        {
-          reply: fallback,
-          answer: fallback,
-          text: fallback,
-          message: fallback,
-        },
-        { status: 200 }
+      return jsonReply(
+        "Kanka GEMINI_API_KEY eksik. Vercel > Project Settings > Environment Variables kısmına GEMINI_API_KEY ekleyip tekrar deploy yapman lazım.",
+        false
       );
     }
 
     const systemPrompt = `
-Sen Lyra'sın. Türkçe konuşan, sıcak, akıllı, doğal ve yardımcı bir yapay zeka asistansın.
-Kullanıcıya gerçek bir sohbet gibi cevap ver.
+Sen Lyra'sın.
+
+Türkçe konuşan, sıcak, doğal, samimi ve akıllı bir yapay zeka asistansın.
+Kullanıcıya yakın arkadaş gibi ama bilgili ve net cevap ver.
 Kullanıcının mesajını tekrar etme.
+"Duydum" deme.
+"Cevap geldi ama ekrana aktarılamadı" deme.
+Teknik hata yoksa teknik açıklama yapma.
 Kısa soruya kısa, detay isteyen soruya detaylı cevap ver.
-İçerik üretimi, kozmetik, formül, DGS, araştırma, fikir üretme, günlük sohbet ve teknik yardım konularında destek ol.
-Cevapların doğal, net, samimi ve işe yarar olsun.
-Asla "duydum" deme.
-Asla "cevap geldi ama ekrana aktarılamadı" gibi teknik fallback cümleleri söyleme.
+İçerik üretimi, kozmetik, formül, cilt bakımı, DGS, araştırma, uygulama geliştirme, günlük sohbet ve fikir üretimi konularında destek ol.
+Cevapların işe yarar, akıcı, gerçek sohbet gibi ve anlaşılır olsun.
 `;
 
     const memoryText =
       memory.length > 0
-        ? `Kullanıcının kısa hafızasında şunlar var: ${memory.join(", ")}`
-        : "";
+        ? `Kullanıcının kısa hafızası: ${memory.join(", ")}`
+        : "Kısa hafıza boş.";
 
-    const geminiBody = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `${systemPrompt}\n\n${memoryText}\n\nKullanıcı: ${userMessage}\n\nLyra:`,
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.8,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 1200,
-      },
-    };
+    const finalPrompt = `
+${systemPrompt}
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(geminiBody),
+${memoryText}
+
+Kullanıcının mesajı:
+${userMessage}
+
+Lyra'nın cevabı:
+`;
+
+    const envModel = process.env.GEMINI_MODEL;
+
+    const fallbackModels = [
+      "models/gemini-2.0-flash",
+      "models/gemini-2.5-flash",
+      "models/gemini-2.5-flash-lite",
+      "models/gemini-flash-latest",
+    ];
+
+    const listedModels = await getWorkingGeminiModels(apiKey);
+
+    const modelsToTry = [
+      ...(envModel ? [envModel] : []),
+      ...listedModels,
+      ...fallbackModels,
+    ];
+
+    const uniqueModels = Array.from(new Set(modelsToTry));
+
+    let lastError = "";
+    let triedModels: string[] = [];
+
+    for (const model of uniqueModels) {
+      triedModels.push(model);
+
+      const result = await callGemini(model, apiKey, finalPrompt);
+
+      if (result.ok) {
+        const answer = extractText(result.data);
+
+        if (answer) {
+          return jsonReply(answer, true, {
+            usedModel: model,
+          });
+        }
+
+        lastError = `${model}: cevap geldi ama metin boştu.`;
+      } else {
+        lastError = `${model}: ${result.error}`;
       }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      const errorText =
-        data?.error?.message ||
-        "Gemini tarafında geçici bir sorun oldu. Birazdan tekrar deneyelim.";
-
-      return NextResponse.json(
-        {
-          reply: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
-          answer: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
-          text: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
-          message: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
-        },
-        { status: 200 }
-      );
     }
 
-    const rawAnswer =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      data?.candidates?.[0]?.content?.parts
-        ?.map((p: any) => p?.text)
-        ?.filter(Boolean)
-        ?.join("\n") ||
-      "";
-
-    const finalAnswer =
-      cleanText(rawAnswer) ||
-      "Kanka cevap üretildi ama metin kısmı boş geldi. Aynı soruyu bir daha dener misin?";
-
-    return NextResponse.json(
+    return jsonReply(
+      `Kanka Gemini bağlantısı takıldı. Çalışan model bulunamadı. Son hata: ${lastError}`,
+      false,
       {
-        reply: finalAnswer,
-        answer: finalAnswer,
-        text: finalAnswer,
-        message: finalAnswer,
-        content: finalAnswer,
-        success: true,
-      },
-      { status: 200 }
+        triedModels,
+      }
     );
   } catch (error: any) {
-    const errorMessage =
-      error?.message ||
-      "Beklenmeyen bir hata oldu ama sistem tamamen kopmadı.";
-
-    const fallback = `Kanka sistem takıldı: ${errorMessage}`;
-
-    return NextResponse.json(
-      {
-        reply: fallback,
-        answer: fallback,
-        text: fallback,
-        message: fallback,
-        content: fallback,
-        success: false,
-      },
-      { status: 200 }
+    return jsonReply(
+      `Kanka sistem takıldı: ${error?.message || "Bilinmeyen hata"}`,
+      false
     );
   }
 }
 
 export async function GET() {
-  return NextResponse.json({
-    status: "Lyra API çalışıyor.",
-    ok: true,
-  });
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return NextResponse.json({
+        ok: false,
+        status: "GEMINI_API_KEY eksik.",
+      });
+    }
+
+    const models = await getWorkingGeminiModels(apiKey);
+
+    return NextResponse.json({
+      ok: true,
+      status: "Lyra API çalışıyor.",
+      availableModels: models,
+    });
+  } catch (error: any) {
+    return NextResponse.json({
+      ok: false,
+      status: "Lyra API test edilirken hata oldu.",
+      error: error?.message || "Bilinmeyen hata",
+    });
+  }
 }
