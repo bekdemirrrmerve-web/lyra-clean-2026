@@ -1,188 +1,179 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = "edge";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_TTS_MODEL =
-  process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
+function cleanText(value: any): string {
+  if (!value) return "";
 
-function cleanText(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return value.trim();
-}
+  if (typeof value === "string") return value.trim();
 
-function createWavFromPcm(
-  pcmBuffer: Buffer,
-  sampleRate = 24000,
-  channels = 1,
-  bitsPerSample = 16
-) {
-  const byteRate = (sampleRate * channels * bitsPerSample) / 8;
-  const blockAlign = (channels * bitsPerSample) / 8;
-  const header = Buffer.alloc(44);
+  if (typeof value === "object") {
+    return (
+      value.reply ||
+      value.answer ||
+      value.text ||
+      value.message ||
+      value.content ||
+      ""
+    ).toString().trim();
+  }
 
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + pcmBuffer.length, 4);
-  header.write("WAVE", 8);
-
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(channels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-
-  header.write("data", 36);
-  header.writeUInt32LE(pcmBuffer.length, 40);
-
-  return Buffer.concat([header, pcmBuffer]);
-}
-
-function extractAudioBase64(data: any): string {
-  const parts = data?.candidates?.[0]?.content?.parts;
-
-  if (!Array.isArray(parts)) return "";
-
-  const audioPart =
-    parts.find((part) => part?.inlineData?.data) ||
-    parts.find((part) => part?.inline_data?.data);
-
-  return audioPart?.inlineData?.data || audioPart?.inline_data?.data || "";
-}
-
-export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    name: "Lyra Gemini TTS",
-    hasGeminiKey: Boolean(GEMINI_API_KEY),
-    model: GEMINI_TTS_MODEL,
-  });
+  return "";
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => null);
+    const body = await req.json();
 
-    const text = cleanText(body?.text || body?.message || body?.content);
-    const voiceName = cleanText(body?.voiceName) || "Kore";
+    const userMessage =
+      body?.message ||
+      body?.text ||
+      body?.prompt ||
+      body?.content ||
+      "";
 
-    if (!GEMINI_API_KEY) {
+    const memory = Array.isArray(body?.memory) ? body.memory : [];
+
+    if (!userMessage || typeof userMessage !== "string") {
       return NextResponse.json(
         {
-          ok: false,
-          message:
-            "GEMINI_API_KEY eksik. Vercel Environment Variables kısmına ekleyip redeploy yapmalısın.",
+          reply: "Kanka mesajı alamadım, bir daha yazar mısın?",
+          answer: "Kanka mesajı alamadım, bir daha yazar mısın?",
+          text: "Kanka mesajı alamadım, bir daha yazar mısın?",
+          message: "Kanka mesajı alamadım, bir daha yazar mısın?",
         },
-        { status: 500 }
+        { status: 200 }
       );
     }
 
-    if (!text) {
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      const fallback =
+        "Kanka GEMINI_API_KEY eksik görünüyor. Vercel > Project Settings > Environment Variables kısmına GEMINI_API_KEY ekleyip redeploy yapman lazım.";
+
       return NextResponse.json(
         {
-          ok: false,
-          message: "Seslendirmek için metin gelmedi.",
+          reply: fallback,
+          answer: fallback,
+          text: fallback,
+          message: fallback,
         },
-        { status: 400 }
+        { status: 200 }
       );
     }
 
-    const safeText = text.length > 2500 ? text.slice(0, 2500) : text;
-
-    const prompt = `
-Read this Turkish text aloud with a warm, natural, friendly female assistant voice.
-Tone: sincere, calm, close friend energy, not robotic.
-Pace: natural conversational Turkish.
-Do not add extra words. Only speak the transcript.
-
-Transcript:
-${safeText}
+    const systemPrompt = `
+Sen Lyra'sın. Türkçe konuşan, sıcak, akıllı, doğal ve yardımcı bir yapay zeka asistansın.
+Kullanıcıya gerçek bir sohbet gibi cevap ver.
+Kullanıcının mesajını tekrar etme.
+Kısa soruya kısa, detay isteyen soruya detaylı cevap ver.
+İçerik üretimi, kozmetik, formül, DGS, araştırma, fikir üretme, günlük sohbet ve teknik yardım konularında destek ol.
+Cevapların doğal, net, samimi ve işe yarar olsun.
+Asla "duydum" deme.
+Asla "cevap geldi ama ekrana aktarılamadı" gibi teknik fallback cümleleri söyleme.
 `;
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent`,
+    const memoryText =
+      memory.length > 0
+        ? `Kullanıcının kısa hafızasında şunlar var: ${memory.join(", ")}`
+        : "";
+
+    const geminiBody = {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `${systemPrompt}\n\n${memoryText}\n\nKullanıcı: ${userMessage}\n\nLyra:`,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.8,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1200,
+      },
+    };
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": GEMINI_API_KEY,
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName,
-                },
-              },
-            },
-          },
-        }),
+        body: JSON.stringify(geminiBody),
       }
     );
 
-    const data = await geminiResponse.json().catch(() => null);
+    const data = await response.json();
 
-    if (!geminiResponse.ok) {
-      const error =
+    if (!response.ok) {
+      const errorText =
         data?.error?.message ||
-        data?.message ||
-        `Gemini TTS hata kodu: ${geminiResponse.status}`;
+        "Gemini tarafında geçici bir sorun oldu. Birazdan tekrar deneyelim.";
 
       return NextResponse.json(
         {
-          ok: false,
-          message: "Gemini ses üretirken takıldı. Gerçek hata: " + error,
-          error,
+          reply: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
+          answer: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
+          text: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
+          message: `Kanka Gemini bağlantısı takıldı: ${errorText}`,
         },
-        { status: 500 }
+        { status: 200 }
       );
     }
 
-    const audioBase64 = extractAudioBase64(data);
+    const rawAnswer =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      data?.candidates?.[0]?.content?.parts
+        ?.map((p: any) => p?.text)
+        ?.filter(Boolean)
+        ?.join("\n") ||
+      "";
 
-    if (!audioBase64) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: "Gemini ses üretti gibi görünüyor ama audio alanı boş geldi.",
-        },
-        { status: 500 }
-      );
-    }
+    const finalAnswer =
+      cleanText(rawAnswer) ||
+      "Kanka cevap üretildi ama metin kısmı boş geldi. Aynı soruyu bir daha dener misin?";
 
-    const pcmBuffer = Buffer.from(audioBase64, "base64");
-    const wavBuffer = createWavFromPcm(pcmBuffer);
-
-    return new NextResponse(wavBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "audio/wav",
-        "Cache-Control": "no-store",
-      },
-    });
-  } catch (error: any) {
     return NextResponse.json(
       {
-        ok: false,
-        message:
-          "TTS route içinde beklenmeyen hata oldu: " +
-          (error?.message || "Bilinmeyen hata"),
+        reply: finalAnswer,
+        answer: finalAnswer,
+        text: finalAnswer,
+        message: finalAnswer,
+        content: finalAnswer,
+        success: true,
       },
-      { status: 500 }
+      { status: 200 }
+    );
+  } catch (error: any) {
+    const errorMessage =
+      error?.message ||
+      "Beklenmeyen bir hata oldu ama sistem tamamen kopmadı.";
+
+    const fallback = `Kanka sistem takıldı: ${errorMessage}`;
+
+    return NextResponse.json(
+      {
+        reply: fallback,
+        answer: fallback,
+        text: fallback,
+        message: fallback,
+        content: fallback,
+        success: false,
+      },
+      { status: 200 }
     );
   }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    status: "Lyra API çalışıyor.",
+    ok: true,
+  });
 }
