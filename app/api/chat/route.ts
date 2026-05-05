@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 function jsonReply(text: string, success = true, extra: any = {}) {
   return NextResponse.json(
@@ -58,15 +58,15 @@ async function getWorkingGeminiModels(apiKey: string): Promise<string[]> {
       .map((model: any) => model?.name)
       .filter(Boolean);
 
-    const preferred = usableModels.filter((name: string) =>
+    const flashModels = usableModels.filter((name: string) =>
       name.toLowerCase().includes("flash")
     );
 
-    const others = usableModels.filter(
+    const otherModels = usableModels.filter(
       (name: string) => !name.toLowerCase().includes("flash")
     );
 
-    return [...preferred, ...others];
+    return [...flashModels, ...otherModels];
   } catch {
     return [];
   }
@@ -89,7 +89,11 @@ async function callGemini(modelName: string, apiKey: string, prompt: string) {
         contents: [
           {
             role: "user",
-            parts: [{ text: prompt }],
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
           },
         ],
         generationConfig: {
@@ -173,7 +177,7 @@ Lyra'nın cevabı:
       "models/gemini-2.0-flash",
       "models/gemini-2.5-flash",
       "models/gemini-2.5-flash-lite",
-      "models/gemini-flash-latest",
+      "models/gemini-flash-latest"
     ];
 
     const listedModels = await getWorkingGeminiModels(apiKey);
@@ -187,7 +191,7 @@ Lyra'nın cevabı:
     const uniqueModels = Array.from(new Set(modelsToTry));
 
     let lastError = "";
-    let triedModels: string[] = [];
+    const triedModels: string[] = [];
 
     for (const model of uniqueModels) {
       triedModels.push(model);
