@@ -757,7 +757,62 @@ export default function Page() {
             linear-gradient(135deg, #a6f4d6, #9dd8ff, #d7b7ff, #ff9fce, #ffe6ad);
           box-shadow: 0 26px 90px rgba(162, 111, 214, 0.24);
         }
+.avatar-video-frame {
+  position: relative;
+  width: 286px;
+  height: 286px;
+  border-radius: 999px;
+  padding: 6px;
+  background: conic-gradient(from 140deg, #ddb8ff, #ffb2b9, #9dd8ff, #ffe086, #ddb8ff);
+  box-shadow:
+    0 28px 95px rgba(162, 111, 214, 0.34),
+    0 0 42px rgba(221, 184, 255, 0.22);
+  overflow: hidden;
+}
 
+.avatar-video-frame.pulse {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.avatar-video {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  object-fit: cover;
+  display: block;
+  background: rgba(14, 14, 17, 0.92);
+}
+
+.avatar-glow {
+  position: absolute;
+  inset: -24px;
+  z-index: 1;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255,255,255,0.55), transparent 18%),
+    radial-gradient(circle at 70% 70%, rgba(255,178,185,0.35), transparent 34%),
+    radial-gradient(circle at 25% 80%, rgba(157,216,255,0.38), transparent 34%);
+  filter: blur(14px);
+  opacity: 0.85;
+}
+
+.avatar-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: rgba(14, 14, 17, 0.72);
+  color: #f4efff;
+  font-size: 12px;
+  font-weight: 900;
+  border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(12px);
+}
         .avatar-orb::before {
           content: "";
           position: absolute;
