@@ -35,7 +35,9 @@ export default function Page() {
   const [status, setStatus] = useState("Hazır");
   const [speechRate, setSpeechRate] = useState(1.02);
   const [voiceMode, setVoiceMode] = useState<"phone" | "realistic">("realistic");
-  const [avatarMode, setAvatarMode] = useState<"video" | "image" | "fallback">("video");
+  const [avatarVideoReady, setAvatarVideoReady] = useState(false);
+  const [avatarVideoError, setAvatarVideoError] = useState(false);
+  const [avatarImageError, setAvatarImageError] = useState(false);
 
   const [memory, setMemory] = useState<string[]>([
     "kozmetik / formül / cilt bakımı",
@@ -86,6 +88,7 @@ export default function Page() {
     try {
       recognitionRef.current?.stop?.();
     } catch {}
+
     recognitionRef.current = null;
     setIsListening(false);
     setStatus("Hazır");
@@ -136,7 +139,6 @@ export default function Page() {
 
     try {
       stopSpeaking();
-      setStatus("Ses hazırlanıyor...");
 
       const response = await fetch("/api/tts", {
         method: "POST",
@@ -152,9 +154,7 @@ export default function Page() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
         console.error("Gemini TTS hata:", errorData);
-        setStatus("Tarayıcı sesi deneniyor...");
         fallbackBrowserVoice(text);
-        setStatus("Hazır");
         return;
       }
 
@@ -164,6 +164,7 @@ export default function Page() {
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
 
+      audio.onplay = () => setStatus("Konuşuyor...");
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         setStatus("Hazır");
@@ -171,16 +172,13 @@ export default function Page() {
 
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
-        setStatus("Tarayıcı sesi deneniyor...");
         fallbackBrowserVoice(text);
         setStatus("Hazır");
       };
 
       await audio.play();
-      setStatus("Konuşuyor...");
     } catch (error) {
       console.error("Ses oynatma hatası:", error);
-      setStatus("Tarayıcı sesi deneniyor...");
       fallbackBrowserVoice(text);
       setStatus("Hazır");
     }
@@ -229,7 +227,7 @@ export default function Page() {
 
     setInput("");
     setIsLoading(true);
-    setStatus("Düşünüyor...");
+    setStatus("Yanıt geliyor...");
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -582,13 +580,6 @@ Bana:
     }
   };
 
-  const quickPrompts = [
-    "Cilt bakımında dünyada şu ara ilgi çeken alanlar neler?",
-    "Bana keşfete düşecek 10 kozmetik içerik fikri ver.",
-    "Ev tipi bariyer onarıcı krem mantığını anlat.",
-    "DGS için bugünlük çalışma planı çıkar.",
-  ];
-
   return (
     <>
       <main className="lyra-page">
@@ -636,30 +627,35 @@ Bana:
             <div className="left-panel">
               <div className="avatar-zone">
                 <div className={`avatar-video-frame ${isListening ? "pulse" : ""}`}>
-                  {avatarMode === "video" && (
+                  <div className="avatar-fallback">L</div>
+
+                  {!avatarImageError && (
+                    <img
+                      className="avatar-photo"
+                      src="/avatar/lyra-avatar.jpg"
+                      alt="Lyra avatar fotoğraf"
+                      onError={() => setAvatarImageError(true)}
+                    />
+                  )}
+
+                  {!avatarVideoError && (
                     <video
-                      className="avatar-video"
+                      className={`avatar-video ${
+                        avatarVideoReady ? "avatar-video-ready" : ""
+                      }`}
                       src="/avatar/lyra-avatar.mp4"
                       poster="/avatar/lyra-avatar.jpg"
                       autoPlay
                       loop
                       muted
                       playsInline
-                      onError={() => setAvatarMode("image")}
+                      onCanPlay={() => setAvatarVideoReady(true)}
+                      onLoadedData={() => setAvatarVideoReady(true)}
+                      onError={() => {
+                        setAvatarVideoError(true);
+                        setAvatarVideoReady(false);
+                      }}
                     />
-                  )}
-
-                  {avatarMode === "image" && (
-                    <img
-                      className="avatar-video"
-                      src="/avatar/lyra-avatar.jpg"
-                      alt="Lyra avatar"
-                      onError={() => setAvatarMode("fallback")}
-                    />
-                  )}
-
-                  {avatarMode === "fallback" && (
-                    <div className="avatar-fallback">L</div>
                   )}
 
                   <div className="avatar-glow"></div>
@@ -763,9 +759,13 @@ Bana:
 
                   {isLoading && (
                     <div className="message-line assistant-line">
-                      <div className="message-bubble assistant">
+                      <div className="message-bubble assistant typing-bubble">
                         <strong>Lyra</strong>
-                        <p>Düşünüyorum kanka, cevabı toparlıyorum...</p>
+                        <div className="typing-dots">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -949,21 +949,6 @@ Bana:
                   </div>
                 )}
               </div>
-
-              <div className="quick-card">
-                <h2>Hızlı Test</h2>
-                <div className="quick-list">
-                  {quickPrompts.map((prompt) => (
-                    <button
-                      key={prompt}
-                      onClick={() => sendMessage(prompt)}
-                      disabled={isLoading}
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           </section>
         </div>
@@ -1082,8 +1067,7 @@ Bana:
 
         .top-actions button,
         .top-actions span,
-        .small-actions button,
-        .quick-list button {
+        .small-actions button {
           min-height: 42px;
           padding: 0 18px;
           border-radius: 999px;
@@ -1097,8 +1081,7 @@ Bana:
         }
 
         .top-actions button:hover,
-        .small-actions button:hover,
-        .quick-list button:hover {
+        .small-actions button:hover {
           transform: translateY(-1px);
           background: rgba(255, 255, 255, 0.13);
           border-color: rgba(221, 184, 255, 0.45);
@@ -1126,8 +1109,7 @@ Bana:
 
         .left-panel,
         .chat-card,
-        .memory-card,
-        .quick-card {
+        .memory-card {
           border-radius: 34px;
           border: 1px solid rgba(255, 255, 255, 0.08);
           background:
@@ -1167,21 +1149,55 @@ Bana:
           animation: pulse 1.2s ease-in-out infinite;
         }
 
-        .avatar-video {
-          position: relative;
+        .avatar-fallback {
+          position: absolute;
+          inset: 6px;
+          z-index: 1;
+          display: grid;
+          place-items: center;
+          border-radius: 999px;
+          background:
+            radial-gradient(circle at 38% 34%, rgba(255, 255, 255, 0.95), transparent 10%),
+            linear-gradient(135deg, #a6f4d6, #9dd8ff, #d7b7ff, #ff9fce, #ffe6ad);
+          color: white;
+          font-size: 72px;
+          font-weight: 950;
+        }
+
+        .avatar-photo {
+          position: absolute;
+          inset: 6px;
           z-index: 2;
-          width: 100%;
-          height: 100%;
+          width: calc(100% - 12px);
+          height: calc(100% - 12px);
           border-radius: 999px;
           object-fit: cover;
           display: block;
           background: rgba(14, 14, 17, 0.92);
         }
 
+        .avatar-video {
+          position: absolute;
+          inset: 6px;
+          z-index: 3;
+          width: calc(100% - 12px);
+          height: calc(100% - 12px);
+          border-radius: 999px;
+          object-fit: cover;
+          display: block;
+          background: transparent;
+          opacity: 0;
+          transition: opacity 0.25s ease;
+        }
+
+        .avatar-video-ready {
+          opacity: 1;
+        }
+
         .avatar-glow {
           position: absolute;
           inset: -24px;
-          z-index: 1;
+          z-index: 0;
           border-radius: 999px;
           background:
             radial-gradient(circle at 35% 25%, rgba(255,255,255,0.55), transparent 18%),
@@ -1195,7 +1211,7 @@ Bana:
           position: absolute;
           left: 50%;
           bottom: 16px;
-          z-index: 3;
+          z-index: 4;
           transform: translateX(-50%);
           padding: 8px 13px;
           border-radius: 999px;
@@ -1205,22 +1221,6 @@ Bana:
           font-weight: 900;
           border: 1px solid rgba(255,255,255,0.14);
           backdrop-filter: blur(12px);
-        }
-
-        .avatar-fallback {
-          position: relative;
-          z-index: 2;
-          width: 100%;
-          height: 100%;
-          display: grid;
-          place-items: center;
-          border-radius: 999px;
-          background:
-            radial-gradient(circle at 38% 34%, rgba(255, 255, 255, 0.95), transparent 10%),
-            linear-gradient(135deg, #a6f4d6, #9dd8ff, #d7b7ff, #ff9fce, #ffe6ad);
-          color: white;
-          font-size: 72px;
-          font-weight: 950;
         }
 
         @keyframes pulse {
@@ -1275,8 +1275,7 @@ Bana:
         }
 
         .input-head strong,
-        .section-head h2,
-        .quick-card h2 {
+        .section-head h2 {
           font-size: 18px;
           font-weight: 950;
           color: #ffffff;
@@ -1341,8 +1340,7 @@ Bana:
         }
 
         .chat-card,
-        .memory-card,
-        .quick-card {
+        .memory-card {
           padding: 22px;
         }
 
@@ -1397,6 +1395,45 @@ Bana:
 
         .message-bubble.user {
           background: linear-gradient(90deg, rgba(221,184,255,0.28), rgba(255,178,185,0.22));
+        }
+
+        .typing-bubble {
+          min-width: 92px;
+        }
+
+        .typing-dots {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          height: 18px;
+        }
+
+        .typing-dots span {
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: #ddb8ff;
+          opacity: 0.45;
+          animation: dotPulse 1s infinite ease-in-out;
+        }
+
+        .typing-dots span:nth-child(2) {
+          animation-delay: 0.15s;
+        }
+
+        .typing-dots span:nth-child(3) {
+          animation-delay: 0.3s;
+        }
+
+        @keyframes dotPulse {
+          0%, 100% {
+            transform: translateY(0);
+            opacity: 0.35;
+          }
+          50% {
+            transform: translateY(-4px);
+            opacity: 1;
+          }
         }
 
         .tools-stack {
@@ -1617,18 +1654,6 @@ Bana:
           font-weight: 600;
         }
 
-        .quick-list {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin-top: 14px;
-        }
-
-        .quick-list button {
-          min-height: 44px;
-          text-align: left;
-        }
-
         @media (max-width: 980px) {
           .top-card {
             align-items: flex-start;
@@ -1657,7 +1682,6 @@ Bana:
           .left-panel,
           .chat-card,
           .memory-card,
-          .quick-card,
           .tool-card {
             border-radius: 24px;
           }
@@ -1668,8 +1692,7 @@ Bana:
 
           .top-actions button,
           .top-actions span,
-          .small-actions button,
-          .quick-list button {
+          .small-actions button {
             padding: 0 13px;
             font-size: 13px;
           }
