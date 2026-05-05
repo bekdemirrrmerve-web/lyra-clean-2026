@@ -1047,7 +1047,10 @@ export default function Page() {
           text-align: left;
         }
 
-        @media (max-width: 980px) {
+        @media (max-width: 980px) {.avatar-video-frame {
+  width: 220px;
+  height: 220px;
+}
           .top-card {
             align-items: flex-start;
             flex-direction: column;
