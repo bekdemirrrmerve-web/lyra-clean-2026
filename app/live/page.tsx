@@ -16,9 +16,11 @@ const WS_ENDPOINT =
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   let binary = "";
   const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
 
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
   }
 
   return btoa(binary);
@@ -155,6 +157,15 @@ export default function LiveGeminiPage() {
     return outputAudioContextRef.current;
   };
 
+  const clearPlayback = async () => {
+    try {
+      await outputAudioContextRef.current?.close();
+      outputAudioContextRef.current = null;
+      nextPlayTimeRef.current = 0;
+      addLog("Ses kuyruğu temizlendi.");
+    } catch {}
+  };
+
   const playPcm24k = async (base64Pcm: string) => {
     const audioContext = await ensureOutputContext();
     const arrayBuffer = base64ToArrayBuffer(base64Pcm);
@@ -224,8 +235,14 @@ export default function LiveGeminiPage() {
               responseModalities: ["AUDIO"],
               temperature: 0.7,
             },
-            systemInstruction:
-              "Sen Lyra Clean 2026'sın. Türkçe konuşan, sıcak, doğal, hızlı, samimi ve zeki bir kadın asistan gibi cevap ver. Kullanıcıyla yakın arkadaş enerjisinde konuş. Kısa, akıcı ve canlı cevap ver. Kullanıcının mesajını tekrar etme. Gereksiz resmi konuşma.",
+            systemInstruction: {
+              parts: [
+                {
+                  text:
+                    "Sen Lyra Clean 2026'sın. Türkçe konuşan, sıcak, doğal, hızlı, samimi ve zeki bir kadın asistan gibi cevap ver. Kullanıcıyla yakın arkadaş enerjisinde konuş. Kısa, akıcı ve canlı cevap ver. Kullanıcının mesajını tekrar etme. Gereksiz resmi konuşma.",
+                },
+              ],
+            },
             outputAudioTranscription: {},
             inputAudioTranscription: {},
           },
@@ -239,7 +256,9 @@ export default function LiveGeminiPage() {
           const message = JSON.parse(event.data);
 
           if (message?.setupComplete || message?.setup_complete) {
-            addLog("Kurulum tamamlandı. Mikrofonu açabilir veya yazı gönderebilirsin.");
+            addLog(
+              "Kurulum tamamlandı. Mikrofonu açabilir veya yazı gönderebilirsin."
+            );
           }
 
           if (
@@ -451,15 +470,6 @@ export default function LiveGeminiPage() {
 
     addLog(`Sen: ${text}`);
     setTextInput("");
-  };
-
-  const clearPlayback = async () => {
-    try {
-      await outputAudioContextRef.current?.close();
-      outputAudioContextRef.current = null;
-      nextPlayTimeRef.current = 0;
-      addLog("Ses kuyruğu temizlendi.");
-    } catch {}
   };
 
   return (
