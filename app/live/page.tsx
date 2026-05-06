@@ -139,7 +139,7 @@ export default function LiveGeminiPage() {
   const nextPlayTimeRef = useRef(0);
 
   const addLog = (text: string) => {
-    setLog((prev) => [text, ...prev].slice(0, 14));
+    setLog((prev) => [text, ...prev].slice(0, 16));
   };
 
   const ensureOutputContext = async () => {
@@ -166,9 +166,8 @@ export default function LiveGeminiPage() {
     } catch {}
   };
 
-  const playPcm24k = async (base64Pcm: string) => {
+  const playPcm24kFromArrayBuffer = async (arrayBuffer: ArrayBuffer) => {
     const audioContext = await ensureOutputContext();
-    const arrayBuffer = base64ToArrayBuffer(base64Pcm);
     const int16 = new Int16Array(arrayBuffer);
 
     if (!int16.length) return;
@@ -189,6 +188,82 @@ export default function LiveGeminiPage() {
 
     source.start(startAt);
     nextPlayTimeRef.current = startAt + audioBuffer.duration;
+  };
+
+  const playPcm24kFromBase64 = async (base64Pcm: string) => {
+    const arrayBuffer = base64ToArrayBuffer(base64Pcm);
+    await playPcm24kFromArrayBuffer(arrayBuffer);
+  };
+
+  const handleLiveJsonMessage = async (message: any) => {
+    if (message?.setupComplete || message?.setup_complete) {
+      addLog("Kurulum tamamlandı. Mikrofonu açabilir veya yazı gönderebilirsin.");
+      setStatus("Bağlandı");
+    }
+
+    if (
+      message?.serverContent?.interrupted ||
+      message?.server_content?.interrupted
+    ) {
+      await clearPlayback();
+      addLog("Lyra kesildi, yeni konuşmanı dinliyor.");
+    }
+
+    const { outputText, inputText } = extractTextFromLiveMessage(message);
+
+    if (inputText) {
+      addLog(`Senin sesin: ${inputText}`);
+    }
+
+    if (outputText) {
+      addLog(`Lyra: ${outputText}`);
+    }
+
+    const audioChunks = extractAudioFromLiveMessage(message);
+
+    for (const audioBase64 of audioChunks) {
+      await playPcm24kFromBase64(audioBase64);
+    }
+
+    if (
+      message?.serverContent?.turnComplete ||
+      message?.server_content?.turn_complete
+    ) {
+      addLog("Lyra cevabı tamamladı.");
+    }
+  };
+
+  const handleIncomingData = async (data: any) => {
+    try {
+      if (typeof data === "string") {
+        const message = JSON.parse(data);
+        await handleLiveJsonMessage(message);
+        return;
+      }
+
+      if (data instanceof ArrayBuffer) {
+        await playPcm24kFromArrayBuffer(data);
+        return;
+      }
+
+      if (data instanceof Blob) {
+        const text = await data.text();
+
+        if (text.trim().startsWith("{")) {
+          const message = JSON.parse(text);
+          await handleLiveJsonMessage(message);
+          return;
+        }
+
+        const arrayBuffer = await data.arrayBuffer();
+        await playPcm24kFromArrayBuffer(arrayBuffer);
+        return;
+      }
+
+      addLog("Bilinmeyen veri tipi geldi, atlandı.");
+    } catch (error: any) {
+      addLog("Gelen mesaj işlenemedi: " + (error?.message || "hata"));
+    }
   };
 
   const connectLive = async () => {
@@ -219,6 +294,7 @@ export default function LiveGeminiPage() {
       )}`;
 
       const websocket = new WebSocket(wsUrl);
+      websocket.binaryType = "arraybuffer";
       wsRef.current = websocket;
 
       websocket.onopen = () => {
@@ -252,48 +328,7 @@ export default function LiveGeminiPage() {
       };
 
       websocket.onmessage = async (event) => {
-        try {
-          const message = JSON.parse(event.data);
-
-          if (message?.setupComplete || message?.setup_complete) {
-            addLog(
-              "Kurulum tamamlandı. Mikrofonu açabilir veya yazı gönderebilirsin."
-            );
-          }
-
-          if (
-            message?.serverContent?.interrupted ||
-            message?.server_content?.interrupted
-          ) {
-            await clearPlayback();
-            addLog("Lyra kesildi, yeni konuşmanı dinliyor.");
-          }
-
-          const { outputText, inputText } = extractTextFromLiveMessage(message);
-
-          if (inputText) {
-            addLog(`Senin sesin: ${inputText}`);
-          }
-
-          if (outputText) {
-            addLog(`Lyra: ${outputText}`);
-          }
-
-          const audioChunks = extractAudioFromLiveMessage(message);
-
-          for (const audioBase64 of audioChunks) {
-            await playPcm24k(audioBase64);
-          }
-
-          if (
-            message?.serverContent?.turnComplete ||
-            message?.server_content?.turn_complete
-          ) {
-            addLog("Lyra cevabı tamamladı.");
-          }
-        } catch (error: any) {
-          addLog("Gelen mesaj işlenemedi: " + (error?.message || "hata"));
-        }
+        await handleIncomingData(event.data);
       };
 
       websocket.onerror = () => {
@@ -304,7 +339,12 @@ export default function LiveGeminiPage() {
       websocket.onclose = (event) => {
         setIsConnected(false);
         setIsMicOn(false);
-        setStatus("Kapalı");
+
+        if (event.code === 1000) {
+          setStatus("Kapalı");
+        } else {
+          setStatus("Hata");
+        }
 
         const reason = event.reason ? ` ${event.reason}` : "";
         addLog(`Bağlantı kapandı.${reason}`);
@@ -312,6 +352,44 @@ export default function LiveGeminiPage() {
     } catch (error: any) {
       setStatus("Hata");
       addLog(error?.message || "Canlı bağlantı hatası.");
+    }
+  };
+
+  const stopMic = () => {
+    try {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            realtimeInput: {
+              audioStreamEnd: true,
+            },
+          })
+        );
+      }
+
+      processorRef.current?.disconnect();
+      sourceRef.current?.disconnect();
+      silenceRef.current?.disconnect();
+
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+
+      inputAudioContextRef.current?.close();
+
+      processorRef.current = null;
+      sourceRef.current = null;
+      silenceRef.current = null;
+      mediaStreamRef.current = null;
+      inputAudioContextRef.current = null;
+
+      setIsMicOn(false);
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        setStatus("Bağlandı");
+      }
+
+      addLog("Mikrofon kapatıldı.");
+    } catch {
+      setIsMicOn(false);
     }
   };
 
@@ -401,42 +479,17 @@ export default function LiveGeminiPage() {
       setStatus("Mikrofon açık");
       addLog("Mikrofon başladı. Konuşabilirsin.");
     } catch (error: any) {
-      setStatus("Hata");
-      addLog("Mikrofon açılamadı: " + (error?.message || "hata"));
-    }
-  };
+      setStatus(wsRef.current?.readyState === WebSocket.OPEN ? "Bağlandı" : "Hata");
 
-  const stopMic = () => {
-    try {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            realtimeInput: {
-              audioStreamEnd: true,
-            },
-          })
+      const msg = error?.message || "hata";
+
+      if (msg.includes("Requested device not found")) {
+        addLog(
+          "Mikrofon bulunamadı. Bilgisayarda mikrofon takılı mı ve tarayıcı izni açık mı kontrol et."
         );
+      } else {
+        addLog("Mikrofon açılamadı: " + msg);
       }
-
-      processorRef.current?.disconnect();
-      sourceRef.current?.disconnect();
-      silenceRef.current?.disconnect();
-
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-
-      inputAudioContextRef.current?.close();
-
-      processorRef.current = null;
-      sourceRef.current = null;
-      silenceRef.current = null;
-      mediaStreamRef.current = null;
-      inputAudioContextRef.current = null;
-
-      setIsMicOn(false);
-      if (isConnected) setStatus("Bağlandı");
-      addLog("Mikrofon kapatıldı.");
-    } catch {
-      setIsMicOn(false);
     }
   };
 
