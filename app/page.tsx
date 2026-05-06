@@ -1,6 +1,23 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import {
+  Bell,
+  BookOpen,
+  Bot,
+  FileText,
+  ImageIcon,
+  Lightbulb,
+  MessageCircle,
+  Mic,
+  Play,
+  Settings,
+  Sparkles,
+  Trash2,
+  Upload,
+  Wand2,
+  Zap,
+} from "lucide-react";
 
 type Role = "user" | "assistant";
 
@@ -8,57 +25,40 @@ type ChatMessage = {
   id: string;
   role: Role;
   content: string;
+  time?: string;
 };
-
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
 
 const initialMessages: ChatMessage[] = [
   {
     id: "welcome",
     role: "assistant",
     content:
-      "Kanka geldim. Yaz, konuş, ders çalış, fikir üret, PDF özetlet. Canlı Gemini için üstteki butona basabilirsin.",
+      "Merhaba kanka, ben Lyra. Cilt bakımı, içerik fikri, ders planı, PDF özeti ve canlı Gemini konuşma için hazırım.",
+    time: "şimdi",
   },
 ];
+
+function getTime() {
+  return new Date().toLocaleTimeString("tr-TR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function Page() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
+  const [status, setStatus] = useState("Lyra hazır");
   const [isLoading, setIsLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [status, setStatus] = useState("Hazır");
-  const [speechRate, setSpeechRate] = useState(1.02);
-  const [voiceMode, setVoiceMode] = useState<"phone" | "gemini">("gemini");
-
-  const [avatarImageSrc, setAvatarImageSrc] = useState("/lyra-avatar.jpg");
-  const [avatarImageError, setAvatarImageError] = useState(false);
-  const [avatarVideoReady, setAvatarVideoReady] = useState(false);
-  const [avatarVideoError, setAvatarVideoError] = useState(false);
+  const [avatarSrc, setAvatarSrc] = useState("/lyra-avatar.jpg");
+  const [avatarError, setAvatarError] = useState(false);
 
   const [memory, setMemory] = useState<string[]>([
-    "kozmetik / formül / cilt bakımı",
-    "içerik üretimi",
+    "Cilt bariyeri onarımlı krem mantığını anlat",
+    "Akne için etkili içerikler listesi",
   ]);
 
-  const [lessonTopic, setLessonTopic] = useState("");
-  const [lessonQuestion, setLessonQuestion] = useState("");
-
-  const [ideaPrompt, setIdeaPrompt] = useState("");
-  const [imageLoading, setImageLoading] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState("");
-
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [pdfQuestion, setPdfQuestion] = useState("");
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfResult, setPdfResult] = useState("");
-
-  const recognitionRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -66,54 +66,20 @@ export default function Page() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  useEffect(() => {
-    return () => {
-      stopSpeaking();
-      stopListening();
-    };
-  }, []);
-
-  const stopSpeaking = () => {
-    if (audioRef.current) {
-      try {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      } catch {}
-    }
-  };
-
-  const stopListening = () => {
+  const stopAudio = () => {
     try {
-      recognitionRef.current?.stop?.();
+      audioRef.current?.pause();
+      if (audioRef.current) audioRef.current.currentTime = 0;
     } catch {}
-
-    recognitionRef.current = null;
-    setIsListening(false);
-    setStatus("Hazır");
+    setStatus("Lyra hazır");
   };
 
-  const addMemory = (text: string) => {
-    const clean = text.trim();
-    if (!clean) return;
-
-    const short = clean.length > 56 ? clean.slice(0, 56) + "..." : clean;
-
-    setMemory((prev) => {
-      const exists = prev.some(
-        (item) => item.toLowerCase() === short.toLowerCase()
-      );
-      if (exists) return prev;
-      return [short, ...prev].slice(0, 6);
-    });
-  };
-
-  const speak = async (text: string, force = false) => {
-    if (!force && isMuted) return;
-    if (!text.trim()) return;
+  const speak = async (text: string) => {
+    if (isMuted || !text.trim()) return;
 
     try {
-      stopSpeaking();
-      setStatus("Gemini sesi hazırlanıyor...");
+      stopAudio();
+      setStatus("Ses hazırlanıyor...");
 
       const response = await fetch("/api/tts", {
         method: "POST",
@@ -127,838 +93,380 @@ export default function Page() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        console.error("Gemini TTS hata:", errorData);
-
-        setStatus("Gemini ses hatası");
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `tts-error-${Date.now()}`,
-            role: "assistant",
-            content:
-              errorData?.message ||
-              "Kanka Gemini ses üretemedi. /api/tts ve GEMINI_API_KEY tarafını kontrol etmek lazım.",
-          },
-        ]);
+        setStatus("Ses üretilemedi");
         return;
       }
 
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      const audio = new Audio(audioUrl);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
       audioRef.current = audio;
 
-      audio.onplay = () => setStatus("Konuşuyor...");
+      audio.onplay = () => setStatus("Lyra konuşuyor...");
       audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        setStatus("Hazır");
+        URL.revokeObjectURL(url);
+        setStatus("Lyra hazır");
       };
-
       audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        setStatus("Gemini ses oynatma hatası");
+        URL.revokeObjectURL(url);
+        setStatus("Ses oynatılamadı");
       };
 
       await audio.play();
-    } catch (error) {
-      console.error("Ses oynatma hatası:", error);
-      setStatus("Gemini ses oynatma hatası");
+    } catch {
+      setStatus("Ses oynatılamadı");
     }
   };
 
-  const getLyraReply = async (userText: string, history: ChatMessage[]) => {
-    const cleanHistory = history
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+  const addMemory = (text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
 
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: userText,
-        messages: cleanHistory,
-      }),
-    });
+    const short = clean.length > 58 ? clean.slice(0, 58) + "..." : clean;
 
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      return (
-        data?.message ||
-        data?.error ||
-        "Kanka Lyra cevap motoruna bağlanırken takıldı. API key, model adı veya Vercel ayarını kontrol edelim."
+    setMemory((prev) => {
+      const exists = prev.some(
+        (item) => item.toLowerCase() === short.toLowerCase()
       );
-    }
 
-    return (
-      data?.message ||
-      data?.content ||
-      data?.reply ||
-      "Kanka cevap geldi ama ekrana düzgün aktarılamadı."
-    );
+      if (exists) return prev;
+      return [short, ...prev].slice(0, 4);
+    });
   };
 
   const sendMessage = async (forcedText?: string) => {
-    const userText = (forcedText ?? input).trim();
-    if (!userText || isLoading) return;
+    const text = (forcedText ?? input).trim();
+    if (!text || isLoading) return;
 
     setInput("");
     setIsLoading(true);
-    setStatus("Yanıt geliyor...");
+    setStatus("Lyra düşünüyor...");
+    addMemory(text);
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: userText,
+      content: text,
+      time: getTime(),
     };
 
     const nextMessages = [...messages, userMessage];
-
     setMessages(nextMessages);
-    addMemory(userText);
 
     try {
-      const replyText = await getLyraReply(userText, nextMessages);
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text,
+          messages: nextMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      const reply =
+        data?.message ||
+        data?.reply ||
+        data?.content ||
+        "Kanka cevap geldi ama ekrana düzgün aktarılamadı.";
 
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content: replyText,
+        content: reply,
+        time: getTime(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-      setStatus("Hazır");
-      speak(replyText);
-    } catch (error) {
-      console.error("Lyra mesaj hatası:", error);
-
+      setStatus("Lyra hazır");
+      speak(reply);
+    } catch {
       setMessages((prev) => [
         ...prev,
         {
           id: `error-${Date.now()}`,
           role: "assistant",
           content:
-            "Kanka bağlantıda bir kopma oldu. /api/chat route’una ulaşamıyor olabilir.",
+            "Kanka bağlantı takıldı. /api/chat veya Gemini ayarını kontrol etmek lazım.",
+          time: getTime(),
         },
       ]);
-
       setStatus("Bağlantı hatası");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const startListening = (mode: "send" | "write") => {
-    if (typeof window === "undefined") return;
-
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `speech-error-${Date.now()}`,
-          role: "assistant",
-          content:
-            "Kanka bu tarayıcı ses algılamayı desteklemiyor gibi. Chrome’da denersen daha iyi çalışabilir.",
-        },
-      ]);
-      return;
-    }
-
-    stopSpeaking();
-    stopListening();
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = "tr-TR";
-    recognition.continuous = false;
-    recognition.interimResults = true;
-
-    recognitionRef.current = recognition;
-    setIsListening(true);
-    setStatus(mode === "send" ? "Dinliyorum..." : "Sesini yazıya çeviriyorum...");
-
-    let finalTranscript = "";
-
-    recognition.onresult = (event: any) => {
-      let interim = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        } else {
-          interim += transcript;
-        }
-      }
-
-      const currentText = (finalTranscript || interim).trim();
-
-      if (mode === "write") {
-        setInput(currentText);
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error("Ses algılama hatası:", event);
-      setIsListening(false);
-      setStatus("Ses algılama hatası");
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      setStatus("Hazır");
-
-      const cleanText = finalTranscript.trim();
-
-      if (!cleanText) return;
-
-      if (mode === "write") {
-        setInput(cleanText);
-      }
-
-      if (mode === "send") {
-        sendMessage(cleanText);
-      }
-    };
-
-    recognition.start();
-  };
-
   const clearChat = () => {
-    stopSpeaking();
-    stopListening();
+    stopAudio();
     setMessages(initialMessages);
-    setInput("");
-    setStatus("Hazır");
+    setStatus("Lyra hazır");
   };
 
-  const clearMemory = () => {
-    setMemory([]);
+  const quickSend = (text: string) => {
+    sendMessage(text);
   };
 
-  const toggleMute = () => {
-    if (!isMuted) {
-      stopSpeaking();
-      setIsMuted(true);
-      setStatus("Sessiz mod");
-      return;
-    }
-
-    setIsMuted(false);
-    setStatus("Gemini sesi açılıyor...");
-
-    setTimeout(() => {
-      speak("Ses açıldı kanka. Şimdi Gemini sesiyle konuşmayı deniyorum.", true);
-    }, 150);
-  };
-
-  const sendLessonRequest = (
-    type: "long" | "summary" | "tips" | "solved" | "questions"
-  ) => {
-    const topic = lessonTopic.trim();
-    const question = lessonQuestion.trim();
-
-    if (!topic && !question) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `lesson-empty-${Date.now()}`,
-          role: "assistant",
-          content:
-            "Kanka ders alanına en azından konu başlığı ya da soru yazman lazım. Mesela: 'Sayı basamakları' veya 'Bu problemi nasıl çözerim?' gibi.",
-        },
-      ]);
-      return;
-    }
-
-    const modeText =
-      type === "long"
-        ? "uzun konu anlatımı"
-        : type === "summary"
-        ? "özet"
-        : type === "tips"
-        ? "ipuçları ve akılda kalıcı kodlama"
-        : type === "solved"
-        ? "çözümlü sorular"
-        : "sadece çoktan seçmeli sorular ve cevap anahtarı";
-
-    const prompt = `
-Ders çalışma alanı isteği.
-
-Konu başlığı:
-${topic || "Belirtilmedi"}
-
-Kullanıcının sorusu:
-${question || "Belirtilmedi"}
-
-İstenen çıktı türü:
-${modeText}
-
-Cevabı Türkçe ver. DGS/ÖSYM mantığına uygun, anlaşılır, düzenli ve çalışmaya hazır formatta hazırla.
-`;
-
-    sendMessage(prompt);
-  };
-
-  const improveIdeaPrompt = () => {
-    const prompt = ideaPrompt.trim();
-
-    if (!prompt) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `prompt-empty-${Date.now()}`,
-          role: "assistant",
-          content:
-            "Kanka önce fikir alanına ham promptunu yaz, ben onu görsel üretime daha uygun hale getireyim.",
-        },
-      ]);
-      return;
-    }
-
-    sendMessage(`
-Bu görsel promptunu profesyonel hale getir.
-
-Ham prompt:
-${prompt}
-
-Bana:
-1. Daha iyi görsel üretim promptu
-2. Renk/stil önerisi
-3. Kompozisyon önerisi
-4. Negatif prompt
-5. 3 farklı varyasyon
-
-şeklinde hazırla.
-`);
-  };
-
-  const createIdeaImage = async () => {
-    const prompt = ideaPrompt.trim();
-
-    if (!prompt) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `idea-empty-${Date.now()}`,
-          role: "assistant",
-          content:
-            "Kanka fikir/görsel alanına bir prompt yazman lazım. Mesela: 'mistik beyaz AI asistan uygulaması ana ekran tasarımı' gibi.",
-        },
-      ]);
-      return;
-    }
-
-    setImageLoading(true);
-    setGeneratedImage("");
-    setStatus("Görsel üretiliyor...");
-
-    try {
-      const response = await fetch("/api/image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt,
-        }),
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `image-error-${Date.now()}`,
-            role: "assistant",
-            content:
-              data?.message ||
-              "Kanka görsel üretimi takıldı. Gemini image model veya kota tarafını kontrol etmemiz lazım.",
-          },
-        ]);
-        return;
-      }
-
-      setGeneratedImage(data?.imageUrl || "");
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `image-ok-${Date.now()}`,
-          role: "assistant",
-          content:
-            "Görsel hazır kanka. Fikir alanında önizlemeyi açtım.",
-        },
-      ]);
-    } catch (error) {
-      console.error("Görsel üretim hatası:", error);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `image-fatal-${Date.now()}`,
-          role: "assistant",
-          content:
-            "Kanka görsel route’una bağlanırken hata oldu. /api/image dosyasını ve GEMINI_API_KEY ayarını kontrol edelim.",
-        },
-      ]);
-    } finally {
-      setImageLoading(false);
-      setStatus("Hazır");
-    }
-  };
-
-  const summarizePdf = async (
-    mode: "summary" | "long" | "short" | "questions" | "solved"
-  ) => {
-    if (!pdfFile) {
-      setPdfResult("Kanka önce PDF / dosya yüklemen lazım.");
-      return;
-    }
-
-    setPdfLoading(true);
-    setPdfResult("");
-    setStatus("PDF okunuyor...");
-
-    try {
-      const formData = new FormData();
-      formData.append("file", pdfFile);
-      formData.append("mode", mode);
-      formData.append("question", pdfQuestion);
-
-      const response = await fetch("/api/pdf", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        setPdfResult(
-          data?.message ||
-            "PDF özetleme takıldı. Gemini API key, model veya dosya boyutunu kontrol edelim."
-        );
-        return;
-      }
-
-      setPdfResult(data?.result || "PDF işlendi ama sonuç boş geldi.");
-    } catch (error) {
-      console.error("PDF özetleme hatası:", error);
-      setPdfResult(
-        "Kanka PDF route’una bağlanırken hata oldu. /api/pdf dosyasını ve Vercel redeploy’u kontrol edelim."
-      );
-    } finally {
-      setPdfLoading(false);
-      setStatus("Hazır");
-    }
-  };
+  const cards = [
+    {
+      icon: <FileText size={22} />,
+      title: "PDF Özeti",
+      text: "PDF dosyalarını yükle, Lyra özetlesin.",
+      tag: "PDF Yükle",
+    },
+    {
+      icon: <Wand2 size={22} />,
+      title: "İçerik Üret",
+      text: "Blog, sosyal medya, e-posta ve daha fazlasını üret.",
+      tag: "Yeni İçerik Oluştur",
+    },
+    {
+      icon: <BookOpen size={22} />,
+      title: "Ders Modu",
+      text: "Konu anlatımı, not çıkarma ve çalışma planı.",
+      tag: "Ders Başlat",
+    },
+    {
+      icon: <ImageIcon size={22} />,
+      title: "Görsel Üret",
+      text: "Metinlerden ilham verici görseller oluştur.",
+      tag: "Görsel Oluştur",
+    },
+    {
+      icon: <Zap size={22} />,
+      title: "Hızlı Başlangıç",
+      text: "Tek tıkla fikir, plan veya içerik üret.",
+      tag: "Test Başlat",
+    },
+  ];
 
   return (
-    <>
-      <main className="lyra-page">
-        <div className="lyra-shell">
-          <header className="top-card">
-            <div className="brand-area">
-              <div className="brand-icon">L</div>
+    <main className="app">
+      <aside className="sidebar">
+        <div className="logo-row">
+          <div className="logo-badge">05</div>
+          <div>
+            <h2>Lyra</h2>
+            <span>CLEAN 2026</span>
+          </div>
+        </div>
+
+        <nav className="nav">
+          <a href="/live" className="nav-item active">
+            <Mic size={18} />
+            Canlı Konuş
+          </a>
+          <button className="nav-item" onClick={() => quickSend("Bana bugün için içerik fikri üret.")}>
+            <MessageCircle size={18} />
+            Yazışma
+          </button>
+          <button className="nav-item" onClick={() => quickSend("Kısa hafızamda neler var?")}>
+            <BookOpen size={18} />
+            Kısa Hafıza
+          </button>
+          <button className="nav-item" onClick={() => quickSend("PDF özetleme alanını nasıl kullanacağımı anlat.")}>
+            <FileText size={18} />
+            PDF Özeti
+          </button>
+          <button className="nav-item" onClick={() => quickSend("Bana keşfete düşecek 10 içerik fikri ver.")}>
+            <Lightbulb size={18} />
+            İçerik Üret
+          </button>
+          <button className="nav-item" onClick={() => quickSend("DGS için bugünlük çalışma planı çıkar.")}>
+            <BookOpen size={18} />
+            Ders Modu
+          </button>
+          <button className="nav-item" onClick={() => quickSend("Bu promptu görsel üretime uygun hale getir.")}>
+            <ImageIcon size={18} />
+            Görsel Üret
+          </button>
+          <button className="nav-item" onClick={() => quickSend("Cilt bakımında dünyada şu ara ilgi çeken alanlar neler?")}>
+            <Zap size={18} />
+            Hızlı Test
+          </button>
+        </nav>
+
+        <div className="premium-card">
+          <Sparkles size={18} />
+          <h3>Lyra Premium</h3>
+          <p>Tüm özellikleri sınırsız kullan, üretkenliğini katla.</p>
+          <button>Yükselt</button>
+        </div>
+
+        <p className="copyright">© 2026 Lyra Clean</p>
+      </aside>
+
+      <section className="content">
+        <header className="header">
+          <div>
+            <div className="title-row">
+              <h1>Lyra Clean 2026</h1>
+              <span>AI Asistanın</span>
+            </div>
+            <p>Lyra ile konuş, üret, planla, araştır, hatırla.</p>
+          </div>
+
+          <div className="header-actions">
+            <button>
+              <Settings size={18} />
+              Ayarlar
+            </button>
+            <button className="circle">
+              <Bell size={18} />
+            </button>
+            <div className="profile">
               <div>
-                <h1>Lyra Clean 2026</h1>
-                <p>Lyra ile konuş, üret, planla, araştır, hatırla.</p>
+                <strong>Merve</strong>
+                <span>Premium</span>
               </div>
+              <div className="profile-img"></div>
             </div>
+          </div>
+        </header>
 
-            <div className="top-actions">
-              <a href="/live" className="live-gemini-link">
-                Canlı Gemini
-              </a>
-
-              <button onClick={() => startListening("send")}>
-                {isListening ? "Dinliyor" : "Canlı Konuş"}
-              </button>
-
-              <button onClick={() => startListening("write")}>Sesle Yaz</button>
-
-              <button
-                onClick={() => {
-                  stopSpeaking();
-                  stopListening();
-                }}
-              >
-                Sustur
-              </button>
-
-              <span>AI Mod Açık</span>
-
-              <button onClick={toggleMute}>
-                {isMuted ? "Sessiz" : "Ses Açık"}
-              </button>
-
-              <button
-                className={voiceMode === "phone" ? "active" : ""}
-                onClick={() => setVoiceMode("phone")}
-              >
-                Telefon Sesi
-              </button>
-
-              <button
-                className={voiceMode === "gemini" ? "active" : ""}
-                onClick={() => setVoiceMode("gemini")}
-              >
-                Gemini Ses
-              </button>
-            </div>
-          </header>
-
-          <section className="main-grid">
-            <div className="left-panel">
-              <div className="avatar-zone">
-                <div className={`avatar-video-frame ${isListening ? "pulse" : ""}`}>
-                  <div className="avatar-fallback">L</div>
-
-                  {!avatarImageError && (
-                    <img
-                      className="avatar-photo"
-                      src={avatarImageSrc}
-                      alt="Lyra avatar fotoğraf"
-                      onError={() => {
-                        if (avatarImageSrc === "/lyra-avatar.jpg") {
-                          setAvatarImageSrc("/lyra-avatar.png");
-                          return;
-                        }
-
-                        setAvatarImageError(true);
-                      }}
-                    />
-                  )}
-
-                  {!avatarVideoError && (
-                    <video
-                      className={`avatar-video ${
-                        avatarVideoReady ? "avatar-video-ready" : ""
-                      }`}
-                      src="/avatar/lyra-avatar.mp4"
-                      autoPlay
-                      loop
-                      muted
-                      playsInline
-                      onCanPlay={() => setAvatarVideoReady(true)}
-                      onLoadedData={() => setAvatarVideoReady(true)}
-                      onError={() => {
-                        setAvatarVideoError(true);
-                        setAvatarVideoReady(false);
-                      }}
-                    />
-                  )}
-
-                  <div className="avatar-glow"></div>
-
-                  <div className="avatar-badge">
-                    {isListening
-                      ? "Dinliyorum"
-                      : status === "Konuşuyor..."
-                      ? "Konuşuyorum"
-                      : "Hazırım"}
-                  </div>
+        <div className="body-grid">
+          <section className="main-column">
+            <div className="voice-card">
+              <div className="voice-top">
+                <div className="live-pill">
+                  <span></span>
+                  Canlı
                 </div>
-
-                <p className="status-text">{status}</p>
-
-                <div className="speed-box">
-                  <label>Ses hızı: {speechRate.toFixed(2)}</label>
-                  <input
-                    type="range"
-                    min="0.75"
-                    max="1.35"
-                    step="0.01"
-                    value={speechRate}
-                    onChange={(e) => setSpeechRate(Number(e.target.value))}
-                  />
-                </div>
+                <em>~Ses dalgası</em>
+                <small>{status}</small>
               </div>
 
-              <div className="input-card">
-                <div className="input-head">
-                  <strong>Lyra ile sohbet et</strong>
-                  <span>{status}</span>
-                </div>
+              <div className="avatar-wrap">
+                <div className="avatar-glow"></div>
 
-                <div className="input-row">
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        sendMessage();
+                {!avatarError ? (
+                  <img
+                    src={avatarSrc}
+                    alt="Lyra avatar"
+                    onError={() => {
+                      if (avatarSrc === "/lyra-avatar.jpg") {
+                        setAvatarSrc("/lyra-avatar.png");
+                        return;
                       }
+
+                      setAvatarError(true);
                     }}
-                    placeholder="Bana normal mesaj yaz..."
                   />
-
-                  <button
-                    onClick={() => sendMessage()}
-                    disabled={isLoading || !input.trim()}
-                    className="send-button"
-                  >
-                    Gönder
-                  </button>
-                </div>
-
-                <div className="small-actions">
-                  <button onClick={() => startListening("write")}>Sesle Yaz</button>
-                  <button onClick={clearChat}>Sohbeti Temizle</button>
-                  <button onClick={clearMemory}>Hafızayı Temizle</button>
-                  <button
-                    onClick={() =>
-                      speak(
-                        "Ses testi kanka. Duyuyorsan Gemini ses sistemi çalışıyor.",
-                        true
-                      )
-                    }
-                  >
-                    Gemini Ses Testi
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="right-panel">
-              <div className="chat-card">
-                <div className="section-head">
-                  <h2>Sohbet</h2>
-                  <span>{messages.length} mesaj</span>
-                </div>
-
-                <div className="chat-window">
-                  {messages.map((message) => {
-                    const isUser = message.role === "user";
-
-                    return (
-                      <div
-                        key={message.id}
-                        className={`message-line ${
-                          isUser ? "user-line" : "assistant-line"
-                        }`}
-                      >
-                        <div
-                          className={`message-bubble ${
-                            isUser ? "user" : "assistant"
-                          }`}
-                        >
-                          <strong>{isUser ? "Sen" : "Lyra"}</strong>
-                          <p>{message.content}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {isLoading && (
-                    <div className="message-line assistant-line">
-                      <div className="message-bubble assistant typing-bubble">
-                        <strong>Lyra</strong>
-                        <div className="typing-dots">
-                          <span></span>
-                          <span></span>
-                          <span></span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div ref={chatEndRef} />
-                </div>
-              </div>
-
-              <div className="tools-stack">
-                <div className="tool-card">
-                  <div className="tool-head">
-                    <div>
-                      <h2>Ders Alanı</h2>
-                      <p>
-                        Konu başlığı yaz, soru sor; Lyra sana anlatım, özet,
-                        ipucu ve soru hazırlasın.
-                      </p>
-                    </div>
-                    <span>DGS / Ders</span>
-                  </div>
-
-                  <div className="tool-grid">
-                    <input
-                      className="tool-input"
-                      value={lessonTopic}
-                      onChange={(e) => setLessonTopic(e.target.value)}
-                      placeholder="Konu başlığı: Sayı basamakları, OBEB-OKEK, paragraf..."
-                    />
-
-                    <textarea
-                      className="tool-textarea"
-                      value={lessonQuestion}
-                      onChange={(e) => setLessonQuestion(e.target.value)}
-                      placeholder="Sorunu yaz: Bu konuyu anlamıyorum / şu soruyu çöz / bana örnek hazırla..."
-                    />
-                  </div>
-
-                  <div className="tool-buttons">
-                    <button onClick={() => sendLessonRequest("long")}>
-                      Uzun Konu Anlatımı
-                    </button>
-                    <button onClick={() => sendLessonRequest("summary")}>
-                      Özet
-                    </button>
-                    <button onClick={() => sendLessonRequest("tips")}>
-                      İpuçları
-                    </button>
-                    <button onClick={() => sendLessonRequest("solved")}>
-                      Çözümlü Sorular
-                    </button>
-                    <button onClick={() => sendLessonRequest("questions")}>
-                      Sadece Sorular + Şıklar
-                    </button>
-                  </div>
-                </div>
-
-                <div className="tool-card">
-                  <div className="tool-head">
-                    <div>
-                      <h2>Fikir & Görsel Alanı</h2>
-                      <p>
-                        Tasarım, içerik veya prompt yaz; Lyra promptu
-                        iyileştirsin ya da görsel üretsin.
-                      </p>
-                    </div>
-                    <span>Prompt / Görsel</span>
-                  </div>
-
-                  <textarea
-                    className="tool-textarea"
-                    value={ideaPrompt}
-                    onChange={(e) => setIdeaPrompt(e.target.value)}
-                    placeholder="Örnek: beyaz, mistik, güneş tonları olan 4D avatar asistan uygulaması ana ekran tasarımı..."
-                  />
-
-                  <div className="tool-buttons">
-                    <button onClick={improveIdeaPrompt}>Promptu Güzelleştir</button>
-                    <button onClick={createIdeaImage} disabled={imageLoading}>
-                      {imageLoading ? "Görsel Üretiliyor..." : "Görsel Oluştur"}
-                    </button>
-                  </div>
-
-                  {generatedImage && (
-                    <div className="image-preview">
-                      <img
-                        src={generatedImage}
-                        alt="Lyra tarafından oluşturulan görsel"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="tool-card">
-                  <div className="tool-head">
-                    <div>
-                      <h2>Kitap / PDF Alanı</h2>
-                      <p>
-                        PDF yükle; özet, uzun anlatım, soru veya çözümlü test
-                        hazırlasın.
-                      </p>
-                    </div>
-                    <span>PDF Özet</span>
-                  </div>
-
-                  <input
-                    className="tool-file"
-                    type="file"
-                    accept=".pdf,.txt,.md,.html,application/pdf,text/plain,text/markdown,text/html"
-                    onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                  />
-
-                  <input
-                    className="tool-input"
-                    value={pdfQuestion}
-                    onChange={(e) => setPdfQuestion(e.target.value)}
-                    placeholder="PDF hakkında özel sorun varsa yaz: Bu kitaptan sınavlık yerleri çıkar..."
-                  />
-
-                  <div className="tool-buttons">
-                    <button
-                      onClick={() => summarizePdf("summary")}
-                      disabled={pdfLoading}
-                    >
-                      Özet Oluştur
-                    </button>
-                    <button
-                      onClick={() => summarizePdf("long")}
-                      disabled={pdfLoading}
-                    >
-                      Uzun Anlat
-                    </button>
-                    <button
-                      onClick={() => summarizePdf("short")}
-                      disabled={pdfLoading}
-                    >
-                      Kısa Tekrar
-                    </button>
-                    <button
-                      onClick={() => summarizePdf("questions")}
-                      disabled={pdfLoading}
-                    >
-                      Soru Üret
-                    </button>
-                    <button
-                      onClick={() => summarizePdf("solved")}
-                      disabled={pdfLoading}
-                    >
-                      Çözümlü Sorular
-                    </button>
-                  </div>
-
-                  {pdfLoading && (
-                    <p className="tool-result">PDF okunuyor kanka, biraz bekle...</p>
-                  )}
-
-                  {pdfResult && (
-                    <div className="tool-result">
-                      <pre>{pdfResult}</pre>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="memory-card">
-                <div className="section-head">
-                  <h2>Kısa Hafıza</h2>
-                  <span>{memory.length} kayıt</span>
-                </div>
-
-                {memory.length === 0 ? (
-                  <p className="empty-memory">
-                    Hafıza şu an boş. Konuştukça kısa notları burada tutacağım.
-                  </p>
                 ) : (
-                  <div className="memory-list">
-                    {memory.map((item, index) => (
-                      <div key={`${item}-${index}`} className="memory-item">
-                        {item}
-                      </div>
-                    ))}
+                  <div className="avatar-fallback">
+                    <Bot size={72} />
                   </div>
                 )}
               </div>
+
+              <div className="voice-actions">
+                <button className="voice-select">
+                  <Mic size={17} />
+                  Ses
+                  <strong>Kadın - Nazik</strong>
+                </button>
+
+                <a href="/live" className="primary-voice">
+                  <Mic size={18} />
+                  Ses ile Konuş
+                </a>
+
+                <button onClick={() => setIsMuted((prev) => !prev)}>
+                  <Play size={18} />
+                  {isMuted ? "Ses Aç" : "Sessiz AI"}
+                </button>
+
+                <button onClick={() => quickSend("Bana görsel üretim promptu hazırla.")}>
+                  <ImageIcon size={18} />
+                  Görsel Göster
+                </button>
+              </div>
+            </div>
+
+            <div className="chat-card">
+              <div className="chat-head">
+                <div>
+                  <MessageCircle size={22} />
+                  <h2>Yazışma</h2>
+                  <span>Lyra ile yazış ve üret</span>
+                </div>
+
+                <button onClick={clearChat}>
+                  <Trash2 size={16} />
+                  Sohbeti Temizle
+                </button>
+              </div>
+
+              <div className="chat-window">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`msg ${message.role === "user" ? "user" : "assistant"}`}
+                  >
+                    <p>{message.content}</p>
+                    <small>{message.time}</small>
+                  </div>
+                ))}
+
+                {isLoading && (
+                  <div className="msg assistant">
+                    <p>Lyra toparlıyor<span className="dots">...</span></p>
+                  </div>
+                )}
+
+                <div ref={chatEndRef} />
+              </div>
+
+              <div className="composer">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder="Lyra’ya yaz..."
+                />
+                <button onClick={() => sendMessage()} disabled={isLoading || !input.trim()}>
+                  Gönder
+                </button>
+              </div>
+
+              <div className="memory-strip">
+                <strong>Kısa Hafıza</strong>
+                {memory.map((item, index) => (
+                  <button key={`${item}-${index}`} onClick={() => quickSend(item)}>
+                    {item}
+                  </button>
+                ))}
+              </div>
             </div>
           </section>
+
+          <aside className="tools">
+            {cards.map((card) => (
+              <button
+                key={card.title}
+                className="tool-card"
+                onClick={() => quickSend(`${card.title} alanı için bana yardımcı ol: ${card.text}`)}
+              >
+                <div className="tool-icon">{card.icon}</div>
+                <span>{card.tag}</span>
+                <h3>{card.title}</h3>
+                <p>{card.text}</p>
+              </button>
+            ))}
+          </aside>
         </div>
-      </main>
+      </section>
 
       <style>{`
         * {
@@ -968,11 +476,10 @@ Bana:
         html,
         body {
           margin: 0;
-          padding: 0;
           min-height: 100%;
           font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          background: #131316;
-          color: #f4efff;
+          background: #fff6fa;
+          color: #111827;
         }
 
         button,
@@ -981,721 +488,671 @@ Bana:
           font-family: inherit;
         }
 
+        button,
+        a {
+          -webkit-tap-highlight-color: transparent;
+        }
+
         button {
+          border: 0;
           cursor: pointer;
-          border: none;
         }
 
         button:disabled {
-          cursor: not-allowed;
           opacity: 0.55;
+          cursor: not-allowed;
         }
 
-        .lyra-page {
+        .app {
           min-height: 100vh;
-          padding: 32px 20px;
+          display: grid;
+          grid-template-columns: 260px 1fr;
           background:
-            radial-gradient(circle at top left, rgba(192, 132, 252, 0.24), transparent 28%),
-            radial-gradient(circle at bottom right, rgba(255, 178, 185, 0.18), transparent 34%),
-            linear-gradient(135deg, #131316 0%, #191720 45%, #111116 100%);
-          color: #f4efff;
+            radial-gradient(circle at 54% 30%, rgba(255, 214, 235, 0.72), transparent 28%),
+            linear-gradient(135deg, #fff8fb 0%, #fff7f2 45%, #fff2f9 100%);
         }
 
-        .lyra-shell {
-          width: min(1480px, 100%);
-          margin: 0 auto;
+        .sidebar {
+          min-height: 100vh;
+          border-right: 1px solid #f9dce9;
+          background: rgba(255,255,255,0.76);
+          padding: 28px 22px;
+          display: flex;
+          flex-direction: column;
+          position: sticky;
+          top: 0;
         }
 
-        .top-card,
-        .left-panel,
-        .chat-card,
-        .memory-card {
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background:
-            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)),
-            rgba(19, 19, 22, 0.68);
-          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
-          backdrop-filter: blur(20px);
-        }
-
-        .top-card {
+        .logo-row {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 22px 26px;
-          border-radius: 30px;
+          gap: 12px;
+          margin-bottom: 42px;
         }
 
-        .brand-area {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .brand-icon {
-          width: 58px;
-          height: 58px;
+        .logo-badge {
+          width: 38px;
+          height: 38px;
           display: grid;
           place-items: center;
-          border-radius: 20px;
-          background: linear-gradient(135deg, #ddb8ff, #ffb2b9, #9dd8ff);
-          color: #2c0051;
-          font-size: 28px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #ff2d87, #ff6aa9);
+          color: white;
           font-weight: 950;
-          box-shadow:
-            0 0 26px rgba(221, 184, 255, 0.24),
-            inset 0 0 24px rgba(255, 255, 255, 0.55);
+          box-shadow: 0 12px 28px rgba(255, 45, 135, 0.22);
         }
 
-        h1,
-        h2,
-        p {
+        .logo-row h2 {
           margin: 0;
+          font-size: 24px;
+          line-height: 1;
         }
 
-        .brand-area h1 {
-          font-size: clamp(26px, 3vw, 38px);
-          line-height: 1.05;
-          letter-spacing: -0.05em;
-          font-weight: 950;
-          color: #ffffff;
-          text-shadow: 0 0 18px rgba(221, 184, 255, 0.22);
+        .logo-row span {
+          color: #ff2d87;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 0.08em;
         }
 
-        .brand-area p {
-          margin-top: 6px;
-          color: #cec3d3;
+        .nav {
+          display: grid;
+          gap: 8px;
+        }
+
+        .nav-item {
+          min-height: 44px;
+          padding: 0 16px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          border-radius: 999px;
+          background: transparent;
+          color: #667085;
+          text-decoration: none;
+          font-size: 14px;
+          font-weight: 760;
+          text-align: left;
+          transition: 0.18s ease;
+        }
+
+        .nav-item:hover,
+        .nav-item.active {
+          background: #ffe2f1;
+          color: #f00073;
+        }
+
+        .premium-card {
+          margin-top: auto;
+          border: 1px solid #fad7e6;
+          background: rgba(255,255,255,0.72);
+          border-radius: 22px;
+          padding: 18px;
+          color: #384152;
+          box-shadow: 0 18px 44px rgba(239, 90, 151, 0.08);
+        }
+
+        .premium-card svg {
+          color: #ff2d87;
+        }
+
+        .premium-card h3 {
+          margin: 8px 0 8px;
           font-size: 14px;
         }
 
-        .top-actions,
-        .small-actions,
-        .tool-buttons {
+        .premium-card p {
+          margin: 0;
+          font-size: 12px;
+          line-height: 1.5;
+          color: #667085;
+        }
+
+        .premium-card button {
+          margin-top: 18px;
+          width: 100%;
+          height: 42px;
+          border-radius: 14px;
+          background: linear-gradient(90deg, #f00073, #ff2d87);
+          color: white;
+          font-weight: 900;
+        }
+
+        .copyright {
+          margin: 26px 0 0;
+          text-align: center;
+          color: #98a2b3;
+          font-size: 11px;
+        }
+
+        .content {
+          min-width: 0;
+        }
+
+        .header {
+          height: 134px;
+          padding: 34px 30px 24px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 18px;
+          background: rgba(255,255,255,0.64);
+          border-bottom: 1px solid #f9dce9;
+        }
+
+        .title-row {
           display: flex;
           align-items: center;
-          flex-wrap: wrap;
-          gap: 10px;
+          gap: 12px;
         }
 
-        .top-actions {
-          justify-content: flex-end;
+        .title-row h1 {
+          margin: 0;
+          font-size: clamp(28px, 3vw, 36px);
+          letter-spacing: -0.055em;
+          line-height: 1;
         }
 
-        .top-actions button,
-        .top-actions span,
-        .small-actions button,
-        .tool-buttons button,
-        .live-gemini-link {
-          min-height: 42px;
+        .title-row span {
+          padding: 4px 12px;
+          border-radius: 999px;
+          background: #ffe2f1;
+          color: #f00073;
+          font-size: 12px;
+          font-weight: 900;
+        }
+
+        .header p {
+          margin: 6px 0 0;
+          color: #667085;
+        }
+
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .header-actions button {
+          height: 42px;
+          border-radius: 999px;
           display: inline-flex;
           align-items: center;
+          gap: 8px;
+          padding: 0 16px;
+          background: white;
+          color: #344054;
+          border: 1px solid #fad7e6;
+          font-weight: 800;
+        }
+
+        .header-actions .circle {
+          width: 42px;
+          padding: 0;
           justify-content: center;
-          padding: 0 18px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.08);
-          color: #f4efff;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          font-size: 14px;
-          font-weight: 850;
-          text-decoration: none;
-          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
-          transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, filter 0.18s ease;
         }
 
-        .top-actions button:hover,
-        .small-actions button:hover,
-        .tool-buttons button:hover,
-        .live-gemini-link:hover {
-          transform: translateY(-1px);
-          background: rgba(255, 255, 255, 0.13);
-          border-color: rgba(221, 184, 255, 0.45);
-        }
-
-        .live-gemini-link,
-        .top-actions span,
-        .top-actions .active {
-          background: linear-gradient(90deg, rgba(221,184,255,0.82), rgba(255,178,185,0.72), rgba(157,216,255,0.68));
-          color: #210033;
-          font-weight: 950;
-        }
-
-        .live-gemini-link:hover {
-          filter: brightness(1.05);
-        }
-
-        .main-grid {
-          display: grid;
-          grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-          gap: 24px;
-          margin-top: 24px;
-        }
-
-        .left-panel,
-        .right-panel {
+        .profile {
           display: flex;
-          flex-direction: column;
-          gap: 24px;
-        }
-
-        .left-panel,
-        .chat-card,
-        .memory-card {
-          border-radius: 34px;
-        }
-
-        .left-panel {
-          padding: 26px;
-        }
-
-        .avatar-zone {
-          min-height: 520px;
-          display: flex;
-          flex-direction: column;
           align-items: center;
-          justify-content: center;
-          text-align: center;
+          gap: 10px;
+          padding-left: 14px;
+          border-left: 1px solid #f9dce9;
         }
 
-        .avatar-video-frame {
-          position: relative;
-          width: 286px;
-          height: 286px;
-          border-radius: 999px;
-          padding: 6px;
-          background: conic-gradient(from 140deg, #ddb8ff, #ffb2b9, #9dd8ff, #ffe086, #ddb8ff);
-          box-shadow:
-            0 28px 95px rgba(162, 111, 214, 0.34),
-            0 0 42px rgba(221, 184, 255, 0.22);
-          overflow: hidden;
+        .profile strong {
+          display: block;
+          font-size: 14px;
         }
 
-        .avatar-video-frame.pulse {
-          animation: pulse 1.2s ease-in-out infinite;
+        .profile span {
+          display: block;
+          color: #f00073;
+          font-size: 11px;
+          font-weight: 800;
         }
 
-        .avatar-fallback {
-          position: absolute;
-          inset: 6px;
-          z-index: 1;
-          display: grid;
-          place-items: center;
+        .profile-img {
+          width: 42px;
+          height: 42px;
           border-radius: 999px;
           background:
-            radial-gradient(circle at 38% 34%, rgba(255, 255, 255, 0.95), transparent 10%),
-            linear-gradient(135deg, #a6f4d6, #9dd8ff, #d7b7ff, #ff9fce, #ffe6ad);
-          color: white;
-          font-size: 72px;
-          font-weight: 950;
+            radial-gradient(circle at 40% 28%, #ffe7ef, transparent 22%),
+            linear-gradient(135deg, #f8b2cb, #d7b7ff);
         }
 
-        .avatar-photo {
-          position: absolute;
-          inset: 6px;
-          z-index: 2;
-          width: calc(100% - 12px);
-          height: calc(100% - 12px);
+        .body-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 280px;
+          gap: 30px;
+          padding: 30px;
+        }
+
+        .main-column {
+          min-width: 0;
+          display: grid;
+          gap: 24px;
+        }
+
+        .voice-card,
+        .chat-card,
+        .tool-card {
+          border: 1px solid #f7d7e6;
+          background: rgba(255,255,255,0.84);
+          border-radius: 28px;
+          box-shadow:
+            0 24px 70px rgba(221, 83, 142, 0.09),
+            0 1px 0 rgba(255,255,255,0.9) inset;
+        }
+
+        .voice-card {
+          min-height: 410px;
+          padding: 32px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+
+        .voice-top {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #ff4fa2;
+          font-size: 13px;
+        }
+
+        .voice-top small {
+          margin-left: auto;
+          color: #98a2b3;
+          font-weight: 800;
+        }
+
+        .live-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
           border-radius: 999px;
-          object-fit: cover;
-          display: block;
-          background: rgba(14, 14, 17, 0.92);
+          background: #d9fff0;
+          color: #039855;
+          font-weight: 900;
         }
 
-        .avatar-video {
-          position: absolute;
-          inset: 6px;
-          z-index: 3;
-          width: calc(100% - 12px);
-          height: calc(100% - 12px);
+        .live-pill span {
+          width: 7px;
+          height: 7px;
           border-radius: 999px;
-          object-fit: cover;
-          display: block;
-          background: transparent;
-          opacity: 0;
-          transition: opacity 0.25s ease;
+          background: #12b76a;
         }
 
-        .avatar-video-ready {
-          opacity: 1;
+        .avatar-wrap {
+          position: relative;
+          width: 230px;
+          height: 230px;
+          margin: 10px auto 0;
+          display: grid;
+          place-items: center;
         }
 
         .avatar-glow {
           position: absolute;
-          inset: -24px;
-          z-index: 0;
+          inset: -22px;
           border-radius: 999px;
           background:
-            radial-gradient(circle at 35% 25%, rgba(255,255,255,0.55), transparent 18%),
-            radial-gradient(circle at 70% 70%, rgba(255,178,185,0.35), transparent 34%),
-            radial-gradient(circle at 25% 80%, rgba(157,216,255,0.38), transparent 34%);
-          filter: blur(14px);
-          opacity: 0.85;
+            radial-gradient(circle, rgba(255,45,135,0.26), transparent 64%),
+            linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,226,241,0.3));
+          filter: blur(2px);
         }
 
-        .avatar-badge {
-          position: absolute;
-          left: 50%;
-          bottom: 16px;
-          z-index: 4;
-          transform: translateX(-50%);
-          padding: 8px 13px;
+        .avatar-wrap img,
+        .avatar-fallback {
+          position: relative;
+          width: 204px;
+          height: 204px;
           border-radius: 999px;
-          background: rgba(14, 14, 17, 0.72);
-          color: #f4efff;
-          font-size: 12px;
-          font-weight: 900;
-          border: 1px solid rgba(255,255,255,0.14);
-          backdrop-filter: blur(12px);
+          object-fit: cover;
+          border: 10px solid white;
+          box-shadow:
+            0 24px 60px rgba(255, 45, 135, 0.22),
+            0 0 0 8px rgba(255, 226, 241, 0.75);
+          background: #ffe2f1;
         }
 
-        @keyframes pulse {
-          0%, 100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.035);
-          }
+        .avatar-fallback {
+          display: grid;
+          place-items: center;
+          color: #f00073;
         }
 
-        .status-text {
-          margin-top: 42px;
-          font-weight: 950;
-          font-size: 18px;
-          color: #ffffff;
+        .voice-actions {
+          display: flex;
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 14px;
         }
 
-        .speed-box {
-          width: min(330px, 100%);
-          margin-top: 32px;
+        .voice-actions button,
+        .voice-actions a {
+          height: 42px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 9px;
+          padding: 0 20px;
+          border-radius: 999px;
+          border: 1px solid #f8cfe0;
+          background: white;
+          color: #344054;
+          text-decoration: none;
+          font-weight: 850;
+          box-shadow: 0 10px 24px rgba(240, 0, 115, 0.07);
         }
 
-        .speed-box label {
-          display: block;
-          margin-bottom: 12px;
-          font-size: 14px;
-          font-weight: 900;
-          color: #f4efff;
+        .voice-select strong {
+          color: #f00073;
         }
 
-        .speed-box input {
-          width: 100%;
-          accent-color: #ddb8ff;
+        .primary-voice {
+          background: linear-gradient(90deg, #f00073, #ff2d87) !important;
+          color: white !important;
+          border: 0 !important;
+          box-shadow: 0 14px 32px rgba(240, 0, 115, 0.22) !important;
         }
 
-        .input-card {
-          padding: 20px;
-          border-radius: 26px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(14, 14, 17, 0.76);
-          box-shadow: 0 14px 44px rgba(0, 0, 0, 0.18);
+        .chat-card {
+          padding: 26px;
         }
 
-        .input-head,
-        .section-head {
+        .chat-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 18px;
+        }
+
+        .chat-head > div {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 14px;
-          margin-bottom: 14px;
+          gap: 9px;
         }
 
-        .input-head strong,
-        .section-head h2 {
-          font-size: 18px;
-          font-weight: 950;
-          color: #ffffff;
+        .chat-head h2 {
+          margin: 0;
+          font-size: 19px;
         }
 
-        .input-head span,
-        .section-head span {
-          color: #cec3d3;
-          font-size: 14px;
+        .chat-head span {
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: #ffe2f1;
+          color: #f00073;
+          font-size: 11px;
+          font-weight: 900;
         }
 
-        .input-row {
-          display: flex;
-          gap: 12px;
-        }
-
-        textarea,
-        input {
-          width: 100%;
-          border-radius: 18px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          outline: none;
-          padding: 14px 16px;
-          background: rgba(14, 14, 17, 0.86);
-          color: #f4efff;
-          font-size: 15px;
-          font-weight: 600;
-          line-height: 1.45;
-        }
-
-        textarea {
-          min-height: 58px;
-          resize: none;
-        }
-
-        textarea::placeholder,
-        input::placeholder {
-          color: rgba(244, 239, 255, 0.46);
-        }
-
-        textarea:focus,
-        input:focus {
-          border-color: rgba(221, 184, 255, 0.75);
-          box-shadow: 0 0 0 5px rgba(221, 184, 255, 0.12);
-        }
-
-        .send-button {
-          min-width: 108px;
-          border-radius: 18px;
-          background: linear-gradient(90deg, #ddb8ff, #ffb2b9);
-          color: #210033;
-          font-size: 15px;
-          font-weight: 950;
-          box-shadow: 0 12px 28px rgba(221, 184, 255, 0.14);
-        }
-
-        .small-actions {
-          margin-top: 14px;
-        }
-
-        .chat-card,
-        .memory-card {
-          padding: 22px;
+        .chat-head button {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          color: #ff2d87;
+          background: transparent;
+          font-weight: 800;
         }
 
         .chat-window {
-          height: 520px;
+          max-height: 360px;
           overflow-y: auto;
-          padding: 18px;
-          border-radius: 28px;
-          background: rgba(14, 14, 17, 0.44);
-          border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .message-line {
-          display: flex;
-          margin-bottom: 16px;
-        }
-
-        .assistant-line {
-          justify-content: flex-start;
-        }
-
-        .user-line {
-          justify-content: flex-end;
-        }
-
-        .message-bubble {
-          width: fit-content;
-          max-width: 84%;
-          padding: 16px 18px;
-          border-radius: 24px;
-          box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16);
-          border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .message-bubble strong {
-          display: block;
-          margin-bottom: 8px;
-          font-size: 14px;
-          font-weight: 950;
-        }
-
-        .message-bubble p {
-          white-space: pre-wrap;
-          color: #f4efff;
-          font-size: 15px;
-          line-height: 1.65;
-        }
-
-        .message-bubble.assistant {
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .message-bubble.user {
-          background: linear-gradient(90deg, rgba(221,184,255,0.28), rgba(255,178,185,0.22));
-        }
-
-        .typing-bubble {
-          min-width: 92px;
-        }
-
-        .typing-dots {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          height: 18px;
-        }
-
-        .typing-dots span {
-          width: 7px;
-          height: 7px;
-          border-radius: 999px;
-          background: #ddb8ff;
-          opacity: 0.45;
-          animation: dotPulse 1s infinite ease-in-out;
-        }
-
-        .typing-dots span:nth-child(2) {
-          animation-delay: 0.15s;
-        }
-
-        .typing-dots span:nth-child(3) {
-          animation-delay: 0.3s;
-        }
-
-        @keyframes dotPulse {
-          0%, 100% {
-            transform: translateY(0);
-            opacity: 0.35;
-          }
-          50% {
-            transform: translateY(-4px);
-            opacity: 1;
-          }
-        }
-
-        .tools-stack {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-        }
-
-        .tool-card {
-          position: relative;
-          overflow: hidden;
-          padding: 22px;
-          border-radius: 28px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          background:
-            linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)),
-            rgba(20, 18, 28, 0.82);
-          box-shadow:
-            0 24px 80px rgba(119, 91, 140, 0.16),
-            inset 0 0 22px rgba(221, 184, 255, 0.05);
-          color: #f4efff;
-        }
-
-        .tool-card::before {
-          content: "";
-          position: absolute;
-          width: 220px;
-          height: 220px;
-          border-radius: 999px;
-          background: rgba(192, 132, 252, 0.18);
-          filter: blur(70px);
-          top: -90px;
-          right: -80px;
-          pointer-events: none;
-        }
-
-        .tool-card::after {
-          content: "";
-          position: absolute;
-          width: 180px;
-          height: 180px;
-          border-radius: 999px;
-          background: rgba(255, 178, 185, 0.13);
-          filter: blur(70px);
-          bottom: -90px;
-          left: -70px;
-          pointer-events: none;
-        }
-
-        .tool-head {
-          position: relative;
-          z-index: 1;
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 14px;
-          margin-bottom: 16px;
-        }
-
-        .tool-head h2 {
-          font-size: 20px;
-          font-weight: 950;
-          letter-spacing: -0.03em;
-          color: #ffffff;
-        }
-
-        .tool-head p {
-          margin-top: 6px;
-          color: #cfc3df;
-          font-size: 14px;
-          line-height: 1.55;
-        }
-
-        .tool-head span {
-          flex-shrink: 0;
-          border-radius: 999px;
-          padding: 8px 12px;
-          background: linear-gradient(90deg, rgba(221,184,255,0.28), rgba(255,178,185,0.22));
-          color: #f0dbff;
-          font-size: 12px;
-          font-weight: 900;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .tool-grid {
-          position: relative;
-          z-index: 1;
+          padding-right: 8px;
           display: grid;
+          gap: 14px;
+        }
+
+        .msg {
+          max-width: 84%;
+          border-radius: 20px;
+          padding: 14px 18px;
+          position: relative;
+        }
+
+        .msg p {
+          margin: 0;
+          line-height: 1.6;
+          color: #344054;
+          font-size: 15px;
+        }
+
+        .msg small {
+          display: block;
+          margin-top: 6px;
+          color: #b4acb7;
+          text-align: right;
+          font-size: 11px;
+        }
+
+        .msg.user {
+          justify-self: start;
+          background: #fff0f7;
+        }
+
+        .msg.assistant {
+          justify-self: end;
+          background: #ffeaf4;
+          min-width: 240px;
+        }
+
+        .dots {
+          animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+          0%, 100% { opacity: 0.25; }
+          50% { opacity: 1; }
+        }
+
+        .composer {
+          margin-top: 18px;
+          display: flex;
           gap: 12px;
         }
 
-        .tool-textarea {
-          min-height: 104px;
-          resize: vertical;
+        .composer textarea {
+          width: 100%;
+          height: 54px;
+          resize: none;
+          border: 1px solid #f8cfe0;
+          border-radius: 18px;
+          padding: 14px 16px;
+          outline: none;
+          background: white;
+          color: #344054;
+          font-weight: 700;
         }
 
-        .tool-file {
-          cursor: pointer;
+        .composer button {
+          min-width: 110px;
+          border-radius: 18px;
+          background: linear-gradient(90deg, #f00073, #ff2d87);
+          color: white;
+          font-weight: 950;
         }
 
-        .tool-buttons {
-          position: relative;
-          z-index: 1;
+        .memory-strip {
           margin-top: 14px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          overflow-x: auto;
+          padding-bottom: 2px;
         }
 
-        .tool-buttons button {
+        .memory-strip strong {
+          color: #ff2d87;
+          white-space: nowrap;
           font-size: 13px;
         }
 
-        .image-preview {
-          position: relative;
-          z-index: 1;
-          margin-top: 16px;
-          overflow: hidden;
-          border-radius: 22px;
-          border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(255,255,255,0.05);
+        .memory-strip button {
+          white-space: nowrap;
+          height: 28px;
+          padding: 0 14px;
+          border-radius: 999px;
+          background: #fff0f7;
+          color: #667085;
+          border: 1px solid #f8cfe0;
+          font-weight: 700;
         }
 
-        .image-preview img {
-          display: block;
-          width: 100%;
-          height: auto;
-        }
-
-        .tool-result {
-          position: relative;
-          z-index: 1;
-          margin-top: 16px;
-          border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(255,255,255,0.06);
-          color: #f4efff;
-          padding: 16px;
-          line-height: 1.65;
-          font-size: 14px;
-          white-space: pre-wrap;
-        }
-
-        .tool-result pre {
-          margin: 0;
-          white-space: pre-wrap;
-          word-break: break-word;
-          font-family: inherit;
-          color: inherit;
-        }
-
-        .memory-list {
+        .tools {
           display: grid;
-          gap: 10px;
+          gap: 14px;
+          align-content: start;
         }
 
-        .memory-item,
-        .empty-memory {
-          padding: 14px 16px;
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.08);
-          color: #f4efff;
+        .tool-card {
+          min-height: 124px;
+          padding: 18px 20px;
+          text-align: left;
+          position: relative;
+          color: #344054;
+          transition: 0.18s ease;
+        }
+
+        .tool-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 28px 80px rgba(221, 83, 142, 0.15);
+        }
+
+        .tool-icon {
+          color: #ff2d87;
+        }
+
+        .tool-card span {
+          position: absolute;
+          top: 18px;
+          right: 18px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          background: #ffe2f1;
+          color: #ff2d87;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .tool-card h3 {
+          margin: 16px 0 7px;
+          font-size: 19px;
+          color: #111827;
+        }
+
+        .tool-card p {
+          margin: 0;
+          color: #667085;
           font-size: 14px;
-          font-weight: 850;
-          box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          line-height: 1.48;
         }
 
-        .empty-memory {
-          color: #cec3d3;
-          font-weight: 600;
+        @media (max-width: 1180px) {
+          .app {
+            grid-template-columns: 1fr;
+          }
+
+          .sidebar {
+            position: relative;
+            min-height: auto;
+            border-right: 0;
+            border-bottom: 1px solid #f9dce9;
+          }
+
+          .nav {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+          }
+
+          .premium-card,
+          .copyright {
+            display: none;
+          }
+
+          .body-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .tools {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
         }
 
-        @media (max-width: 980px) {
-          .top-card {
+        @media (max-width: 760px) {
+          .header {
+            height: auto;
+            flex-direction: column;
+            padding: 24px 18px;
+          }
+
+          .header-actions {
+            flex-wrap: wrap;
+          }
+
+          .body-grid {
+            padding: 18px;
+          }
+
+          .voice-card {
+            padding: 22px;
+          }
+
+          .tools {
+            grid-template-columns: 1fr;
+          }
+
+          .nav {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .composer {
+            flex-direction: column;
+          }
+
+          .composer button {
+            min-height: 48px;
+          }
+
+          .msg {
+            max-width: 100%;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .sidebar {
+            padding: 20px 14px;
+          }
+
+          .title-row {
             align-items: flex-start;
             flex-direction: column;
           }
 
-          .top-actions {
-            justify-content: flex-start;
+          .avatar-wrap {
+            width: 190px;
+            height: 190px;
           }
 
-          .main-grid {
-            grid-template-columns: 1fr;
+          .avatar-wrap img,
+          .avatar-fallback {
+            width: 166px;
+            height: 166px;
           }
 
-          .chat-window {
-            height: 460px;
-          }
-        }
-
-        @media (max-width: 620px) {
-          .lyra-page {
-            padding: 16px 10px;
-          }
-
-          .top-card,
-          .left-panel,
-          .chat-card,
-          .memory-card,
-          .tool-card {
-            border-radius: 24px;
-          }
-
-          .brand-area h1 {
-            font-size: 26px;
-          }
-
-          .top-actions button,
-          .top-actions span,
-          .small-actions button,
-          .live-gemini-link {
-            padding: 0 13px;
-            font-size: 13px;
-          }
-
-          .avatar-zone {
-            min-height: 410px;
-          }
-
-          .avatar-video-frame {
-            width: 220px;
-            height: 220px;
-          }
-
-          .input-row {
+          .voice-actions {
             flex-direction: column;
           }
 
-          .send-button {
-            min-height: 52px;
-          }
-
-          .message-bubble {
-            max-width: 94%;
-          }
-
-          .tool-head {
-            flex-direction: column;
+          .voice-actions button,
+          .voice-actions a {
+            width: 100%;
           }
         }
       `}</style>
-    </>
+    </main>
   );
 }
