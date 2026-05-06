@@ -154,12 +154,16 @@ export default function Page() {
             <div className="silver-orbit orbit-two" />
             <div className="silver-orbit orbit-three" />
 
-            <div className="avatar-placeholder">
-              <div className="orb-glow" />
-              <div className="orb-core">
-                <span>LYRA</span>
-                <small>Avatar alanı</small>
-              </div>
+            <div className="avatar-video-wrap">
+              <video
+                className="avatar-video"
+                src="/lyra-avatar.mp4"
+                poster="/lyra-avatar.jpg"
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
             </div>
           </section>
 
@@ -259,8 +263,16 @@ export default function Page() {
 
             <div className="phone-hero">
               <div className="phone-ring" />
-              <div className="phone-avatar-placeholder">
-                <span>LYRA</span>
+              <div className="phone-avatar-video-wrap">
+                <video
+                  className="phone-avatar-video"
+                  src="/lyra-avatar.mp4"
+                  poster="/lyra-avatar.jpg"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                />
               </div>
             </div>
 
@@ -299,14 +311,22 @@ export default function Page() {
               ×
             </button>
 
-            <div className="live-orb">
-              <span />
-              <span />
-              <div>LYRA</div>
+            <div className="live-avatar-video-wrap">
+              <span className="live-pulse one" />
+              <span className="live-pulse two" />
+              <video
+                className="live-avatar-video"
+                src="/lyra-avatar.mp4"
+                poster="/lyra-avatar.jpg"
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
             </div>
 
             <h2>Canlı Konuşma</h2>
-            <p>Avatar görselini sona bırakıyoruz. Bu alan şimdilik canlı mod tasarımı.</p>
+            <p>Lyra canlı mod alanı. Buradan sesli konuşma sistemine bağlanacak.</p>
 
             <div className="live-buttons">
               <button>🎙 Konuşmayı Başlat</button>
@@ -677,57 +697,45 @@ export default function Page() {
           animation: orbit 16s ease-in-out infinite;
         }
 
-        .avatar-placeholder {
+        .avatar-video-wrap {
           position: relative;
-          width: 240px;
-          height: 240px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
           z-index: 2;
-        }
-
-        .orb-glow {
-          position: absolute;
-          inset: -18px;
-          border-radius: 50%;
-          background:
-            radial-gradient(circle, rgba(255, 255, 255, 0.98), transparent 58%),
-            conic-gradient(from 120deg, rgba(255, 255, 255, 0.9), rgba(199, 205, 211, 0.38), rgba(255, 255, 255, 0.9));
-          filter: blur(2px);
-          box-shadow: 0 26px 60px rgba(18, 22, 26, 0.12);
-        }
-
-        .orb-core {
-          position: relative;
-          width: 190px;
-          height: 190px;
-          border-radius: 50%;
+          width: 260px;
+          height: 300px;
+          border-radius: 150px 150px 46px 46px;
+          overflow: hidden;
           display: grid;
           place-items: center;
           background:
-            radial-gradient(circle at 35% 25%, #ffffff 0 14%, transparent 28%),
-            linear-gradient(145deg, #ffffff, #e4e8eb 58%, #f9fafb);
+            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.95), transparent 36%),
+            linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(224, 228, 232, 0.72));
           border: 1px solid rgba(20, 24, 28, 0.12);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
-            inset 0 -12px 30px rgba(170, 178, 186, 0.18),
-            0 28px 60px rgba(18, 22, 26, 0.14);
-          text-align: center;
+            0 28px 70px rgba(18, 22, 26, 0.16);
         }
 
-        .orb-core span {
-          display: block;
-          font-size: 29px;
-          font-weight: 950;
-          letter-spacing: 0.16em;
+        .avatar-video-wrap::before {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          border-radius: inherit;
+          background:
+            linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(182, 188, 194, 0.34), rgba(255, 255, 255, 0.78));
+          z-index: 0;
         }
 
-        .orb-core small {
-          display: block;
-          margin-top: 7px;
-          color: var(--muted);
-          font-weight: 850;
+        .avatar-video {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          object-position: center top;
+          filter:
+            saturate(1.02)
+            contrast(1.02)
+            drop-shadow(0 18px 34px rgba(18, 22, 26, 0.14));
         }
 
         .controls {
@@ -976,7 +984,7 @@ export default function Page() {
 
         .phone-hero {
           position: relative;
-          height: 190px;
+          height: 205px;
           display: grid;
           place-items: center;
         }
@@ -990,20 +998,29 @@ export default function Page() {
           box-shadow: 0 0 24px rgba(255, 255, 255, 0.9);
         }
 
-        .phone-avatar-placeholder {
+        .phone-avatar-video-wrap {
           position: relative;
-          width: 132px;
-          height: 132px;
-          border-radius: 50%;
+          z-index: 2;
+          width: 150px;
+          height: 175px;
+          border-radius: 90px 90px 28px 28px;
+          overflow: hidden;
           display: grid;
           place-items: center;
           background:
-            radial-gradient(circle at 35% 25%, #fff, transparent 28%),
-            linear-gradient(145deg, #ffffff, #dfe4e8);
-          border: 1px solid var(--line);
-          box-shadow: var(--shadow-soft);
-          font-weight: 950;
-          letter-spacing: 0.14em;
+            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.96), transparent 40%),
+            linear-gradient(145deg, #ffffff, #e2e6e9);
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 18px 42px rgba(18, 22, 26, 0.14);
+        }
+
+        .phone-avatar-video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          object-position: center top;
         }
 
         .phone-controls {
@@ -1116,31 +1133,38 @@ export default function Page() {
           line-height: 1;
         }
 
-        .live-orb {
+        .live-avatar-video-wrap {
           position: relative;
           width: 230px;
-          height: 230px;
+          height: 250px;
           margin: 0 auto;
           display: grid;
           place-items: center;
-          border-radius: 50%;
+          border-radius: 130px 130px 42px 42px;
+          overflow: hidden;
           background: linear-gradient(145deg, #ffffff, #dfe4e8);
           box-shadow: var(--shadow);
-          overflow: hidden;
-          font-size: 30px;
-          font-weight: 950;
-          letter-spacing: 0.16em;
         }
 
-        .live-orb span {
+        .live-avatar-video {
+          position: relative;
+          z-index: 2;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          object-position: center top;
+        }
+
+        .live-pulse {
           position: absolute;
           inset: 22px;
+          z-index: 1;
           border-radius: 50%;
           border: 2px solid rgba(255, 255, 255, 0.98);
           animation: pulse 2.4s ease-out infinite;
         }
 
-        .live-orb span:nth-child(2) {
+        .live-pulse.two {
           animation-delay: 0.9s;
         }
 
@@ -1250,7 +1274,7 @@ export default function Page() {
           }
 
           .hero {
-            height: 250px;
+            height: 260px;
           }
 
           .orbit-one {
@@ -1268,14 +1292,9 @@ export default function Page() {
             height: 360px;
           }
 
-          .avatar-placeholder {
-            width: 200px;
-            height: 200px;
-          }
-
-          .orb-core {
-            width: 155px;
-            height: 155px;
+          .avatar-video-wrap {
+            width: 205px;
+            height: 240px;
           }
 
           .controls {
