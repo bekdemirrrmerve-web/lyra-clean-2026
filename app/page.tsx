@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'pdf' | 'live';
+type ModeKey = 'chat' | 'research' | 'content' | 'lesson' | 'image' | 'read' | 'pdf' | 'live';
 type Role = 'user' | 'assistant' | 'system';
 
 type ChatMessage = {
@@ -28,53 +28,60 @@ const modes: {
   starter: string;
 }[] = [
   {
+    key: 'chat',
+    title: 'Sohbet',
+    desc: 'Lyra ile doğal yazış.',
+    icon: '✦',
+    starter: 'Lyra’ya mesaj yaz...',
+  },
+  {
     key: 'research',
-    title: 'Araştırma Modu',
-    desc: 'Bilgi bul, analiz et ve net cevaplar üret.',
+    title: 'Araştırma',
+    desc: 'Bilgi bul ve özetle.',
     icon: '⌕',
     starter: 'Araştırılacak konuyu yaz.',
   },
   {
     key: 'content',
-    title: 'İçerik Üretme',
-    desc: 'Hook, başlık, video metni ve teleprompter hazırla.',
+    title: 'İçerik',
+    desc: 'Hook ve video metni.',
     icon: '✎',
-    starter: 'Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım.',
+    starter: 'Video konunu yaz.',
   },
   {
     key: 'lesson',
-    title: 'Ders Modu',
-    desc: 'Konu anlat, test üret, yanlış açıkla.',
+    title: 'Ders',
+    desc: 'Konu anlat, test üret.',
     icon: '▰',
-    starter: 'Çalışmak istediğin konuyu, soruyu ya da görseli gönder.',
+    starter: 'Çalışmak istediğin konuyu yaz.',
   },
   {
     key: 'image',
-    title: 'Görsel Üretme',
-    desc: 'Görsel promptu ve konsept hazırla.',
+    title: 'Görsel',
+    desc: 'Prompt ve konsept.',
     icon: '▧',
     starter: 'Nasıl bir görsel istediğini yaz.',
   },
   {
     key: 'read',
     title: 'Görselle Okut',
-    desc: 'Görsel, belge ve ekranları analiz et.',
+    desc: 'Görsel analiz et.',
     icon: '◌',
     starter: 'Görsel yükle veya ne okutmak istediğini yaz.',
   },
   {
     key: 'pdf',
-    title: 'PDF Özeti',
-    desc: 'PDF yükle, özetle ve not çıkar.',
+    title: 'PDF',
+    desc: 'PDF özetle.',
     icon: '▤',
-    starter: 'PDF yükle, sana özet ve önemli notlar çıkarayım.',
+    starter: 'PDF yükle veya ne istediğini yaz.',
   },
   {
     key: 'live',
-    title: 'Canlı Mod',
-    desc: 'Gerçek zamanlı konuşma alanı.',
+    title: 'Canlı',
+    desc: 'Sesli konuş.',
     icon: '≋',
-    starter: 'Canlı konuşma açık. Konuşmaya başlayabilirsin.',
+    starter: 'Canlı konuşma açık.',
   },
 ];
 
@@ -93,17 +100,18 @@ function AvatarVideo({
     const video = videoRef.current;
     if (!video) return;
 
-    const checkLoop = () => {
+    const loopBeforeBlackFrame = () => {
       if (video && Number.isFinite(video.duration) && video.duration > 0) {
         if (video.currentTime >= video.duration - 0.32) {
           video.currentTime = 0.04;
           video.play().catch(() => {});
         }
       }
-      rafRef.current = requestAnimationFrame(checkLoop);
+
+      rafRef.current = requestAnimationFrame(loopBeforeBlackFrame);
     };
 
-    rafRef.current = requestAnimationFrame(checkLoop);
+    rafRef.current = requestAnimationFrame(loopBeforeBlackFrame);
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -113,6 +121,7 @@ function AvatarVideo({
   return (
     <div className="avatar-media-root">
       <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
+
       <video
         ref={videoRef}
         className={className}
@@ -135,6 +144,7 @@ function AvatarVideo({
           event.currentTarget.style.display = 'none';
         }}
       />
+
       {!videoReady && <div className="video-loading">LYRA</div>}
     </div>
   );
@@ -221,6 +231,14 @@ async function postFileFast(endpoints: string[], file: File, extra: Record<strin
 }
 
 function buildPrompt(mode: ModeKey, input: string, action?: string) {
+  if (mode === 'chat') {
+    return `
+Sen Lyra'sın. Türkçe konuşan, sıcak, doğal, hızlı ve yardımcı bir AI asistansın.
+Kullanıcı mesajı: ${input}
+Kısa ama yeterli cevap ver. Gerekirse öneri sun.
+`;
+  }
+
   if (mode === 'content') {
     return `
 Sen Lyra'sın. Türkçe, akıcı ve sosyal medya odaklı içerik üret.
@@ -245,7 +263,7 @@ Konu/Soru: ${input}
 
 Şu formatta cevap ver:
 1) Konu Özeti
-2) Bilmen Gereken Formüller / Kurallar
+2) Formüller / Kurallar
 3) Sınav İpuçları
 4) Çözümlü Örnek Sorular
 5) Şıklı Mini Test
@@ -299,7 +317,7 @@ PDF yüklendiyse özetle; yüklenmediyse PDF yüklemesini iste.
 }
 
 export default function Page() {
-  const [activeMode, setActiveMode] = useState<ModeKey>('content');
+  const [activeMode, setActiveMode] = useState<ModeKey>('chat');
   const [muted, setMuted] = useState(false);
   const [gender, setGender] = useState<'Kadın' | 'Erkek'>('Kadın');
   const [liveOpen, setLiveOpen] = useState(false);
@@ -312,7 +330,7 @@ export default function Page() {
     {
       id: 1,
       role: 'assistant',
-      text: 'Merhaba, ben Lyra. Konu yaz; içerik, ders, araştırma, PDF veya görsel alanında hemen çalışayım.',
+      text: 'Selam, ben Lyra. Önce sohbet edelim; istersen alttaki modlardan içerik, ders, PDF, görsel veya canlı konuşmaya geçebilirsin.',
     },
   ]);
 
@@ -320,14 +338,19 @@ export default function Page() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const messageIdRef = useRef(2);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const voice = voices[voiceIndex];
   const active = useMemo(() => modes.find((item) => item.key === activeMode), [activeMode]);
-  const placeholderText = active?.starter || 'Lyra’ya bir şey sor veya yaz...';
+  const placeholderText = active?.starter || 'Lyra’ya mesaj yaz...';
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isThinking]);
 
   const addMessage = (role: Role, text: string) => {
     const id = messageIdRef.current++;
-    setMessages((prev) => [...prev, { id, role, text }].slice(-20));
+    setMessages((prev) => [...prev, { id, role, text }].slice(-40));
   };
 
   const speak = (text: string) => {
@@ -353,6 +376,10 @@ export default function Page() {
   };
 
   const fallbackAnswer = (input: string, mode: ModeKey) => {
+    if (mode === 'chat') {
+      return `Anladım kanka. “${input}” için hemen yardımcı olayım. İstersen bunu sohbet gibi açalım, istersen alttaki modlardan birine geçirip daha düzenli çalışayım.`;
+    }
+
     if (mode === 'content') {
       return `Video Konu Başlıkları:
 1. ${input} hakkında 5 farklı video fikri
@@ -437,7 +464,7 @@ Cevap: A`;
     speak(aiText);
   };
 
-  const handleTextareaKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
@@ -450,6 +477,10 @@ Cevap: A`;
 
   const openMode = (key: ModeKey) => {
     setActiveMode(key);
+
+    if (key === 'chat') {
+      return;
+    }
 
     if (key === 'live') {
       setLiveOpen(true);
@@ -608,23 +639,32 @@ Cevap: A`;
           </div>
 
           <nav className="menu">
-            <button className="menu-item active" onClick={() => setMessages([])}>
+            <button
+              className={`menu-item ${activeMode === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveMode('chat')}
+            >
+              <span>✦</span> Sohbet
+            </button>
+            <button className="menu-item" onClick={() => setMessages([])}>
               <span>＋</span> Yeni Sohbet
             </button>
-            <button className="menu-item">
-              <span>▢</span> Sohbetler
+            <button
+              className={`menu-item ${activeMode === 'content' ? 'active' : ''}`}
+              onClick={() => setActiveMode('content')}
+            >
+              <span>✎</span> İçerik
             </button>
-            <button className="menu-item" onClick={() => setActiveMode('content')}>
-              <span>⌘</span> Modlar
+            <button
+              className={`menu-item ${activeMode === 'lesson' ? 'active' : ''}`}
+              onClick={() => setActiveMode('lesson')}
+            >
+              <span>▰</span> Ders
             </button>
-            <button className="menu-item">
-              <span>▤</span> Araçlar
+            <button className="menu-item" onClick={() => imageInputRef.current?.click()}>
+              <span>▧</span> Görsel Yükle
             </button>
-            <button className="menu-item">
-              <span>♢</span> Hatırlatıcılar
-            </button>
-            <button className="menu-item">
-              <span>⚙</span> Ayarlar
+            <button className="menu-item" onClick={() => pdfInputRef.current?.click()}>
+              <span>PDF</span> PDF Yükle
             </button>
           </nav>
 
@@ -644,247 +684,153 @@ Cevap: A`;
               </div>
               <span>⌄</span>
             </div>
-
-            <div className="usage-box">
-              <div>
-                <strong>Aylık Kullanım</strong>
-                <b>%68</b>
-              </div>
-              <span className="usage-line">
-                <i />
-              </span>
-              <small>6.8 / 10 saat</small>
-            </div>
           </div>
         </aside>
 
         <section className="main-panel glass">
           <header className="main-head">
-            <h1>LYRA AI ASİSTANINIZ</h1>
+            <div className="assistant-mini">
+              <div className="mini-avatar">
+                <AvatarVideo className="mini-avatar-video" imageClassName="mini-avatar-poster" />
+              </div>
 
-            <div className="head-actions">
-              <button
-                onClick={() =>
-                  addMessage(
-                    'assistant',
-                    'Ben Lyra. Gemini destekli konuşma, içerik, ders, PDF ve görsel analiz modlarıyla çalışırım.'
-                  )
-                }
-              >
-                Lyra Hakkında
-              </button>
-              <button onClick={cycleVoice}>⌄</button>
-            </div>
-          </header>
-
-          <section className="top-zone">
-            <div className="avatar-block">
-              <div className="silver-orbit orbit-one" />
-              <div className="silver-orbit orbit-two" />
-
-              <div className="avatar-video-wrap">
-                <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
+              <div>
+                <h1>LYRA</h1>
+                <p>{active?.title || 'Sohbet'} modu · {voice}</p>
               </div>
             </div>
 
-            <div className="controls">
-              <button className="control" onClick={cycleVoice}>
-                <span className="sound">≋</span>
-                Ses: {voice}
-                <b>⌄</b>
+            <div className="head-actions">
+              <button onClick={cycleVoice}>Ses: {voice}</button>
+              <button onClick={() => setMuted((v) => !v)}>
+                {muted ? 'Sesi Aç' : 'Sessiz'}
               </button>
-
-              <button className={`control ${muted ? 'selected' : ''}`} onClick={() => setMuted((v) => !v)}>
-                <span>♬</span>
-                {muted ? 'Sesi Aç' : 'Sessize Al'}
-              </button>
-
-              <button className={`control ${gender === 'Kadın' ? 'selected' : ''}`} onClick={() => setGender('Kadın')}>
-                <span>♙</span>
-                Kadın
-              </button>
-
-              <button className={`control ${gender === 'Erkek' ? 'selected' : ''}`} onClick={() => setGender('Erkek')}>
-                <span>♙</span>
-                Erkek
-              </button>
-
-              <button className="control live" onClick={() => setLiveOpen(true)}>
-                <span className="sound">≋</span>
-                Canlı Konuşma
-              </button>
+              <button onClick={() => setLiveOpen(true)}>Canlı</button>
             </div>
-          </section>
+          </header>
 
-          <section className="write-box">
+          <section className="chat-shell">
             <div className="message-list">
               {messages.map((item) => (
                 <div key={item.id} className={`message ${item.role}`}>
                   {item.text}
                 </div>
               ))}
-              {isThinking && <div className="message assistant">Lyra cevaplıyor...</div>}
+
+              {isThinking && <div className="message assistant typing">Lyra cevaplıyor...</div>}
+
+              <div ref={messagesEndRef} />
             </div>
 
-            <textarea
-              placeholder={placeholderText}
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              onKeyDown={handleTextareaKeyDown}
-            />
+            <div className="composer">
+              <textarea
+                placeholder={placeholderText}
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={handleTextareaKeyDown}
+              />
 
-            <div className="write-actions">
-              <div>
-                <button onClick={() => startListening(false)}>{isListening ? '■' : '🎙'}</button>
-                <button onClick={() => imageInputRef.current?.click()}>▧</button>
-                <button onClick={() => pdfInputRef.current?.click()}>PDF</button>
+              <div className="composer-actions">
+                <div className="left-actions">
+                  <button onClick={() => startListening(false)}>{isListening ? '■' : '🎙'}</button>
+                  <button onClick={() => imageInputRef.current?.click()}>Görsel</button>
+                  <button onClick={() => pdfInputRef.current?.click()}>PDF</button>
+                </div>
+
+                <button className="send" onClick={() => sendMessage()}>
+                  Gönder
+                </button>
               </div>
-
-              <button className="send" onClick={() => sendMessage()}>
-                ▶
-              </button>
             </div>
           </section>
 
-          <section className="mode-grid">
+          <section className="mode-dock">
             {modes.map((mode) => (
               <button
                 key={mode.key}
-                className={`mode-card ${activeMode === mode.key ? 'active' : ''}`}
+                className={`dock-item ${activeMode === mode.key ? 'active' : ''}`}
                 onClick={() => openMode(mode.key)}
               >
-                <span className="mode-icon">{mode.icon}</span>
+                <span>{mode.icon}</span>
                 <strong>{mode.title}</strong>
-                <small>{mode.desc}</small>
-                <b>⌄</b>
               </button>
             ))}
           </section>
 
-          <section className="sub-panel">
-            {activeMode === 'content' && (
-              <>
-                <strong>İçerik Üretme</strong>
-                <div>
-                  <button onClick={() => quickAction('Video konu başlıkları üret')}>Video Konu Başlıkları</button>
-                  <button onClick={() => quickAction('Hook yaz')}>Hook Alanı</button>
-                  <button onClick={() => quickAction('Teleprompter video metni yaz')}>Teleprompter Metni</button>
-                  <button onClick={() => quickAction('Ekran yazıları ve CTA üret')}>Ekran Yazısı + CTA</button>
-                </div>
-              </>
-            )}
+          {activeMode !== 'chat' && activeMode !== 'live' && (
+            <section className="sub-panel">
+              {activeMode === 'content' && (
+                <>
+                  <strong>İçerik araçları</strong>
+                  <div>
+                    <button onClick={() => quickAction('Video konu başlıkları üret')}>Video Başlıkları</button>
+                    <button onClick={() => quickAction('Hook yaz')}>Hook</button>
+                    <button onClick={() => quickAction('Teleprompter video metni yaz')}>Teleprompter</button>
+                    <button onClick={() => quickAction('Ekran yazıları ve CTA üret')}>CTA</button>
+                  </div>
+                </>
+              )}
 
-            {activeMode === 'lesson' && (
-              <>
-                <strong>Ders Modu</strong>
-                <div>
-                  <button onClick={() => quickAction('Konu özeti çıkar')}>Konu Özeti</button>
-                  <button onClick={() => quickAction('Konu formülleri ve kuralları çıkar')}>Konu Formülleri</button>
-                  <button onClick={() => quickAction('Sınav ipuçları ver')}>Sınav İpuçları</button>
-                  <button onClick={() => quickAction('Çözümlü sorular üret')}>Çözümlü Sorular</button>
-                  <button onClick={() => quickAction('Şıklı test üret')}>Test Üret</button>
-                  <button onClick={() => quickAction('Yanlışımı açıkla')}>Yanlışımı Açıkla</button>
-                  <button onClick={() => imageInputRef.current?.click()}>Soru Görseli Yükle</button>
-                </div>
-              </>
-            )}
+              {activeMode === 'lesson' && (
+                <>
+                  <strong>Ders araçları</strong>
+                  <div>
+                    <button onClick={() => quickAction('Konu özeti çıkar')}>Konu Özeti</button>
+                    <button onClick={() => quickAction('Konu formülleri ve kuralları çıkar')}>Formüller</button>
+                    <button onClick={() => quickAction('Sınav ipuçları ver')}>İpuçları</button>
+                    <button onClick={() => quickAction('Çözümlü sorular üret')}>Çözümlü Soru</button>
+                    <button onClick={() => quickAction('Şıklı test üret')}>Test</button>
+                    <button onClick={() => quickAction('Yanlışımı açıkla')}>Yanlış Açıkla</button>
+                  </div>
+                </>
+              )}
 
-            {activeMode === 'research' && (
-              <>
-                <strong>Araştırma Modu</strong>
-                <div>
-                  <button onClick={() => quickAction('Derin araştırma yap')}>Derin Araştır</button>
-                  <button onClick={() => quickAction('Kaynaklı özet çıkar')}>Kaynaklı Özet</button>
-                  <button onClick={() => quickAction('Karşılaştırmalı analiz yap')}>Karşılaştır</button>
-                </div>
-              </>
-            )}
+              {activeMode === 'research' && (
+                <>
+                  <strong>Araştırma araçları</strong>
+                  <div>
+                    <button onClick={() => quickAction('Derin araştırma yap')}>Derin Araştır</button>
+                    <button onClick={() => quickAction('Kaynaklı özet çıkar')}>Özet</button>
+                    <button onClick={() => quickAction('Karşılaştırmalı analiz yap')}>Karşılaştır</button>
+                  </div>
+                </>
+              )}
 
-            {activeMode === 'image' && (
-              <>
-                <strong>Görsel Üretme</strong>
-                <div>
-                  <button onClick={() => quickAction('Görsel promptu yaz')}>Prompt Yaz</button>
-                  <button onClick={() => quickAction('Konsept tasarla')}>Konsept Tasarla</button>
-                  <button onClick={() => quickAction('Renk paleti oluştur')}>Renk Paleti</button>
-                </div>
-              </>
-            )}
+              {activeMode === 'image' && (
+                <>
+                  <strong>Görsel araçları</strong>
+                  <div>
+                    <button onClick={() => quickAction('Görsel promptu yaz')}>Prompt</button>
+                    <button onClick={() => quickAction('Konsept tasarla')}>Konsept</button>
+                    <button onClick={() => quickAction('Renk paleti oluştur')}>Renk Paleti</button>
+                  </div>
+                </>
+              )}
 
-            {activeMode === 'read' && (
-              <>
-                <strong>Görselle Okut</strong>
-                <div>
-                  <button onClick={() => imageInputRef.current?.click()}>Görsel Yükle</button>
-                  <button onClick={() => quickAction('Görseldeki yazıyı oku')}>Yazıyı Oku</button>
-                  <button onClick={() => quickAction('Görseli analiz et')}>Analiz Et</button>
-                </div>
-              </>
-            )}
+              {activeMode === 'read' && (
+                <>
+                  <strong>Görselle okut</strong>
+                  <div>
+                    <button onClick={() => imageInputRef.current?.click()}>Görsel Yükle</button>
+                    <button onClick={() => quickAction('Görseldeki yazıyı oku')}>Yazıyı Oku</button>
+                    <button onClick={() => quickAction('Görseli analiz et')}>Analiz Et</button>
+                  </div>
+                </>
+              )}
 
-            {activeMode === 'pdf' && (
-              <>
-                <strong>PDF Özeti</strong>
-                <div>
-                  <button onClick={() => pdfInputRef.current?.click()}>PDF Yükle</button>
-                  <button onClick={() => quickAction('PDF ana başlıkları çıkar')}>Başlık Çıkar</button>
-                  <button onClick={() => quickAction('PDF çalışma notu hazırla')}>Not Hazırla</button>
-                </div>
-              </>
-            )}
-          </section>
+              {activeMode === 'pdf' && (
+                <>
+                  <strong>PDF araçları</strong>
+                  <div>
+                    <button onClick={() => pdfInputRef.current?.click()}>PDF Yükle</button>
+                    <button onClick={() => quickAction('PDF ana başlıkları çıkar')}>Başlık Çıkar</button>
+                    <button onClick={() => quickAction('PDF çalışma notu hazırla')}>Not Hazırla</button>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
         </section>
-
-        <aside className="phone-shell">
-          <div className="phone">
-            <div className="phone-status">
-              <strong>9:41</strong>
-              <span />
-              <b>▮▮▮</b>
-            </div>
-
-            <div className="phone-head">
-              <button onClick={() => startListening(false)}>☰</button>
-              <strong>LYRA</strong>
-              <button onClick={cycleVoice}>⌄</button>
-            </div>
-
-            <div className="phone-hero">
-              <div className="phone-avatar-video-wrap">
-                <AvatarVideo className="phone-avatar-video" imageClassName="phone-avatar-poster" />
-              </div>
-            </div>
-
-            <div className="phone-controls">
-              <button onClick={cycleVoice}>≋ Ses: {voice}</button>
-              <button onClick={() => setMuted((v) => !v)}>{muted ? 'Sesi Aç' : 'Sessize Al'}</button>
-              <button className={gender === 'Kadın' ? 'selected' : ''} onClick={() => setGender('Kadın')}>
-                Kadın
-              </button>
-              <button className={gender === 'Erkek' ? 'selected' : ''} onClick={() => setGender('Erkek')}>
-                Erkek
-              </button>
-              <button className="phone-live" onClick={() => setLiveOpen(true)}>
-                ≋ Canlı Konuşma ›
-              </button>
-            </div>
-
-            <div className="phone-input" onClick={() => sendMessage(message || 'Merhaba Lyra')}>
-              <span>{message || 'Lyra’ya bir şey sor veya yaz...'}</span>
-              <button>▶</button>
-            </div>
-
-            <div className="phone-grid">
-              {modes.map((mode) => (
-                <button key={mode.key} onClick={() => openMode(mode.key)}>
-                  <span>{mode.icon}</span>
-                  <strong>{mode.title}</strong>
-                  <small>⌄</small>
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
       </section>
 
       {liveOpen && (
@@ -913,7 +859,7 @@ Cevap: A`;
             <div className="live-buttons">
               <button onClick={() => startListening(true)}>🎙 Gemini Live Başlat</button>
               <button onClick={stopListening}>■ Durdur</button>
-              <button onClick={cycleVoice}>≋ Ses Değiştir</button>
+              <button onClick={cycleVoice}>Ses Değiştir</button>
               <button onClick={() => setMuted((v) => !v)}>{muted ? 'Sesi Aç' : 'Sessize Al'}</button>
             </div>
           </div>
@@ -922,19 +868,16 @@ Cevap: A`;
 
       <style jsx global>{`
         :root {
-          --white: #ffffff;
-          --silver-1: #f8f9fa;
-          --silver-2: #eef1f3;
-          --silver-3: #dfe3e7;
-          --silver-4: #c5cbd1;
-          --graphite: #111417;
-          --graphite-soft: #30363b;
-          --muted: #555d64;
-          --line: rgba(20, 24, 28, 0.13);
+          --bg: #f4f6f8;
+          --panel: rgba(255, 255, 255, 0.78);
+          --panel-strong: rgba(255, 255, 255, 0.94);
+          --line: rgba(20, 24, 28, 0.12);
           --line-strong: rgba(20, 24, 28, 0.22);
-          --shadow: 0 20px 70px rgba(18, 22, 26, 0.12);
-          --shadow-soft: 0 12px 30px rgba(18, 22, 26, 0.08);
-          --glass: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(235, 238, 241, 0.8), rgba(255, 255, 255, 0.9));
+          --graphite: #111417;
+          --muted: #555d64;
+          --shadow: 0 22px 70px rgba(18, 22, 26, 0.13);
+          --soft-shadow: 0 10px 28px rgba(18, 22, 26, 0.08);
+          --glass: linear-gradient(145deg, rgba(255,255,255,.96), rgba(236,240,243,.82), rgba(255,255,255,.9));
         }
 
         * {
@@ -945,11 +888,11 @@ Cevap: A`;
         body {
           margin: 0;
           min-height: 100%;
-          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           color: var(--graphite);
           background:
-            radial-gradient(circle at 48% 22%, rgba(255, 255, 255, 1), transparent 32%),
-            linear-gradient(135deg, #ffffff 0%, #f5f7f8 44%, #e6eaee 100%);
+            radial-gradient(circle at 50% 0%, rgba(255,255,255,1), transparent 34%),
+            linear-gradient(135deg, #ffffff 0%, #f4f6f8 45%, #e3e8ed 100%);
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
 
         button,
@@ -963,40 +906,17 @@ Cevap: A`;
         }
 
         .page {
-          position: relative;
           min-height: 100vh;
-          overflow: hidden;
           padding: 10px;
-        }
-
-        .page::before,
-        .page::after {
-          content: '';
-          position: absolute;
-          inset: -12%;
-          pointer-events: none;
-          background:
-            radial-gradient(ellipse at 50% 40%, transparent 0 28%, rgba(255, 255, 255, 0.92) 29%, transparent 30%),
-            radial-gradient(ellipse at 48% 44%, transparent 0 36%, rgba(218, 224, 229, 0.48) 37%, transparent 38%);
-          opacity: 0.7;
-        }
-
-        .page::after {
-          transform: rotate(-15deg) scale(1.05);
-          opacity: 0.22;
+          overflow: hidden;
         }
 
         .app-layout {
-          position: relative;
-          z-index: 2;
           width: 100%;
-          max-width: 100%;
           min-height: calc(100vh - 20px);
-          margin: 0 auto;
           display: grid;
-          grid-template-columns: 220px minmax(700px, 1fr) 320px;
-          gap: 14px;
-          align-items: stretch;
+          grid-template-columns: 230px minmax(0, 1fr);
+          gap: 12px;
         }
 
         .glass {
@@ -1016,12 +936,12 @@ Cevap: A`;
         }
 
         .logo-row {
+          min-height: 56px;
           display: flex;
           align-items: center;
-          gap: 10px;
-          padding: 2px 12px 18px;
-          font-size: 28px;
-          letter-spacing: 0.08em;
+          padding: 0 12px;
+          font-size: 30px;
+          letter-spacing: 0.16em;
         }
 
         .logo-row strong {
@@ -1031,45 +951,43 @@ Cevap: A`;
         .menu {
           display: grid;
           gap: 10px;
+          margin-top: 10px;
         }
 
         .menu-item,
         .mini-box,
         .profile-box,
-        .usage-box,
-        .control,
-        .write-box,
-        .mode-card,
-        .phone-controls button,
-        .phone-input,
-        .phone-grid button,
-        .head-actions button {
+        .head-actions button,
+        .composer,
+        .dock-item,
+        .sub-panel,
+        .sub-panel button {
           color: var(--graphite);
-          background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 242, 244, 0.9));
-          border: 1px solid rgba(25, 29, 33, 0.1);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 8px 20px rgba(18, 22, 26, 0.07);
+          background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(239,242,244,.9));
+          border: 1px solid rgba(25,29,33,.1);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,1), var(--soft-shadow);
         }
 
         .menu-item {
-          min-height: 46px;
+          min-height: 48px;
           border-radius: 18px;
           padding: 0 16px;
           display: flex;
           align-items: center;
-          gap: 13px;
-          text-align: left;
+          gap: 12px;
           font-weight: 900;
+          text-align: left;
           transition: 0.2s ease;
         }
 
-        .menu-item.active,
-        .menu-item:hover {
+        .menu-item:hover,
+        .menu-item.active {
           border-color: var(--line-strong);
           transform: translateY(-1px);
         }
 
         .menu-item span {
-          font-size: 18px;
+          min-width: 22px;
           font-weight: 950;
         }
 
@@ -1080,22 +998,19 @@ Cevap: A`;
         }
 
         .mini-box,
-        .profile-box,
-        .usage-box {
+        .profile-box {
           border-radius: 18px;
           padding: 16px;
         }
 
         .mini-box strong,
-        .profile-box strong,
-        .usage-box strong {
+        .profile-box strong {
           display: block;
           font-weight: 950;
         }
 
         .mini-box small,
-        .profile-box small,
-        .usage-box small {
+        .profile-box small {
           display: block;
           margin-top: 3px;
           color: var(--muted);
@@ -1105,8 +1020,8 @@ Cevap: A`;
         .profile-box {
           display: grid;
           grid-template-columns: 42px 1fr auto;
-          align-items: center;
           gap: 10px;
+          align-items: center;
         }
 
         .profile-dot {
@@ -1115,261 +1030,123 @@ Cevap: A`;
           border-radius: 50%;
           display: grid;
           place-items: center;
-          background: radial-gradient(circle at 30% 22%, #ffffff, transparent 28%), linear-gradient(145deg, #202428, #7e858b);
+          background:
+            radial-gradient(circle at 30% 22%, #ffffff, transparent 28%),
+            linear-gradient(145deg, #202428, #7e858b);
           color: #ffffff;
           font-weight: 950;
         }
 
-        .usage-box > div {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          font-weight: 900;
-        }
-
-        .usage-line {
-          display: block;
-          height: 7px;
-          margin: 12px 0 8px;
-          overflow: hidden;
-          border-radius: 999px;
-          background: #d8dde1;
-        }
-
-        .usage-line i {
-          display: block;
-          width: 68%;
-          height: 100%;
-          border-radius: inherit;
-          background: linear-gradient(90deg, #70777e, #c9ced2);
-        }
-
         .main-panel {
-          position: relative;
           min-height: calc(100vh - 20px);
           border-radius: 28px;
-          padding: 14px 18px 16px;
+          padding: 14px;
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr) auto auto;
+          gap: 12px;
           overflow: hidden;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .main-panel::before {
-          content: '';
-          position: absolute;
-          inset: -20%;
-          pointer-events: none;
-          background:
-            radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.95), transparent 20%),
-            radial-gradient(circle at 50% 30%, rgba(226, 231, 235, 0.52), transparent 36%);
-        }
-
-        .main-head,
-        .top-zone,
-        .write-box,
-        .mode-grid,
-        .sub-panel {
-          position: relative;
-          z-index: 1;
         }
 
         .main-head {
-          min-height: 44px;
+          min-height: 70px;
           display: flex;
           align-items: center;
-          justify-content: center;
-          margin-bottom: 4px;
+          justify-content: space-between;
+          gap: 16px;
         }
 
-        .main-head h1 {
-          margin: 0;
-          font-size: clamp(20px, 2vw, 28px);
-          letter-spacing: 0.12em;
-          font-weight: 950;
-        }
-
-        .head-actions {
-          position: absolute;
-          right: 0;
+        .assistant-mini {
           display: flex;
-          gap: 10px;
-        }
-
-        .head-actions button {
-          min-height: 38px;
-          border-radius: 999px;
-          padding: 0 14px;
-          font-weight: 950;
-        }
-
-        .top-zone {
-          display: flex;
-          flex-direction: column;
           align-items: center;
-          gap: 12px;
-          margin-bottom: 10px;
+          gap: 14px;
         }
 
-        .avatar-block {
-          position: relative;
-          width: 100%;
-          height: 210px;
-          display: grid;
-          place-items: center;
-          isolation: isolate;
-        }
-
-        .silver-orbit {
-          position: absolute;
-          border-radius: 50%;
-          border: 2px solid rgba(255, 255, 255, 0.92);
-          box-shadow: 0 0 24px rgba(255, 255, 255, 0.9), inset 0 0 26px rgba(205, 211, 216, 0.48);
-        }
-
-        .orbit-one {
-          width: 220px;
-          height: 220px;
-          animation: orbit 9s ease-in-out infinite;
-        }
-
-        .orbit-two {
-          width: 290px;
-          height: 290px;
-          opacity: 0.42;
-          animation: orbit 12s ease-in-out infinite reverse;
-        }
-
-        .avatar-video-wrap {
-          position: relative;
-          z-index: 2;
-          width: 180px;
-          height: 210px;
-          border-radius: 24px;
+        .mini-avatar {
+          width: 58px;
+          height: 58px;
+          border-radius: 18px;
           overflow: hidden;
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 16px 36px rgba(18, 22, 26, 0.12);
-        }
-
-        .avatar-media-root {
           position: relative;
-          width: 100%;
-          height: 100%;
-          display: grid;
-          place-items: center;
+          background: #fff;
+          border: 1px solid var(--line);
+          box-shadow: var(--soft-shadow);
         }
 
-        .avatar-poster,
-        .avatar-video,
-        .phone-avatar-poster,
-        .phone-avatar-video,
-        .live-avatar-poster,
-        .live-avatar-video {
+        .mini-avatar-video,
+        .mini-avatar-poster {
           position: absolute;
           inset: 0;
           width: 100%;
           height: 100%;
           object-fit: contain;
-          object-position: center center;
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
+          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
         }
 
-        .avatar-video,
-        .phone-avatar-video,
-        .live-avatar-video {
+        .mini-avatar-video {
           z-index: 2;
         }
 
-        .avatar-poster,
-        .phone-avatar-poster,
-        .live-avatar-poster {
+        .mini-avatar-poster {
           z-index: 1;
         }
 
-        .video-loading {
-          position: absolute;
-          inset: 0;
-          z-index: 3;
-          display: grid;
-          place-items: center;
-          font-size: 24px;
-          letter-spacing: 0.16em;
+        .assistant-mini h1 {
+          margin: 0;
+          font-size: 30px;
           font-weight: 950;
-          color: #2b2f34;
-          background: linear-gradient(145deg, #ffffff, #edf1f4);
+          letter-spacing: 0.18em;
         }
 
-        .controls {
-          width: 100%;
-          display: grid;
-          grid-template-columns: repeat(5, minmax(100px, auto));
-          justify-content: center;
-          gap: 10px;
+        .assistant-mini p {
+          margin: 4px 0 0;
+          color: var(--muted);
+          font-weight: 850;
         }
 
-        .control {
-          min-height: 52px;
-          border-radius: 20px;
-          padding: 0 18px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          font-size: 15px;
-          font-weight: 950;
-          transition: 0.2s ease;
-        }
-
-        .control:hover,
-        .mode-card:hover,
-        .phone-grid button:hover {
-          transform: translateY(-2px);
-          border-color: var(--line-strong);
-        }
-
-        .control.selected {
-          background: linear-gradient(145deg, #ffffff, rgba(222, 226, 230, 0.94));
-          border-color: var(--line-strong);
-        }
-
-        .control.live {
-          min-width: 190px;
-        }
-
-        .sound {
-          font-size: 22px;
-          line-height: 1;
-        }
-
-        .write-box {
-          min-height: 400px;
-          height: 400px;
-          margin-top: 2px;
-          border-radius: 24px;
-          padding: 16px 18px 12px;
+        .head-actions {
           display: flex;
-          flex-direction: column;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+
+        .head-actions button {
+          min-height: 40px;
+          border-radius: 999px;
+          padding: 0 14px;
+          font-weight: 900;
+        }
+
+        .chat-shell {
+          min-height: 0;
+          display: grid;
+          grid-template-rows: minmax(0, 1fr) auto;
+          gap: 12px;
         }
 
         .message-list {
-          flex: 1;
           min-height: 0;
           overflow: auto;
+          border-radius: 26px;
+          padding: 22px;
+          background:
+            radial-gradient(circle at 50% 0%, rgba(255,255,255,.9), transparent 32%),
+            rgba(255,255,255,.64);
+          border: 1px solid var(--line);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,1), var(--soft-shadow);
           display: flex;
           flex-direction: column;
-          gap: 10px;
-          margin-bottom: 10px;
-          padding-right: 4px;
+          gap: 14px;
         }
 
         .message {
           width: fit-content;
-          max-width: 92%;
-          padding: 11px 14px;
-          border-radius: 16px;
-          font-size: 14px;
-          line-height: 1.45;
-          font-weight: 800;
+          max-width: min(780px, 86%);
+          padding: 13px 16px;
+          border-radius: 20px;
+          font-size: 15px;
+          line-height: 1.55;
+          font-weight: 760;
           white-space: pre-wrap;
         }
 
@@ -1377,126 +1154,119 @@ Cevap: A`;
           align-self: flex-end;
           background: #111417;
           color: white;
+          border-bottom-right-radius: 8px;
         }
 
         .message.assistant {
           align-self: flex-start;
-          background: rgba(255, 255, 255, 0.88);
+          background: rgba(255,255,255,.94);
           color: var(--graphite);
           border: 1px solid var(--line);
+          border-bottom-left-radius: 8px;
         }
 
         .message.system {
           align-self: center;
-          background: rgba(225, 230, 234, 0.7);
-          color: var(--graphite-soft);
+          background: rgba(225,230,234,.72);
+          color: #3e454c;
           border: 1px solid var(--line);
+          font-size: 13px;
         }
 
-        .write-box textarea {
+        .message.typing {
+          opacity: 0.8;
+        }
+
+        .composer {
+          border-radius: 26px;
+          padding: 14px;
+        }
+
+        .composer textarea {
           width: 100%;
-          height: 68px;
-          min-height: 68px;
+          min-height: 78px;
+          max-height: 170px;
           border: 0;
           outline: 0;
-          resize: none;
+          resize: vertical;
           background: transparent;
           color: var(--graphite);
-          font-size: 17px;
-          font-weight: 850;
-        }
-
-        .write-box textarea::placeholder {
-          color: #394047;
-          opacity: 0.9;
-        }
-
-        .write-actions {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .write-actions div {
-          display: flex;
-          gap: 10px;
-        }
-
-        .write-actions button {
-          min-width: 38px;
-          height: 38px;
-          padding: 0 10px;
-          border-radius: 999px;
-          color: var(--graphite);
-          background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
-          border: 1px solid var(--line);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 7px 18px rgba(18, 22, 26, 0.1);
-          font-weight: 950;
-        }
-
-        .write-actions .send {
-          width: 46px;
-          height: 46px;
-          border-radius: 50%;
-        }
-
-        .mode-grid {
-          display: grid;
-          grid-template-columns: repeat(7, 1fr);
-          gap: 10px;
-          margin-top: 12px;
-        }
-
-        .mode-card {
-          min-height: 130px;
-          border-radius: 20px;
-          padding: 14px 10px 10px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-          transition: 0.2s ease;
-        }
-
-        .mode-card.active {
-          border-color: var(--line-strong);
-          outline: 2px solid rgba(18, 22, 26, 0.08);
-        }
-
-        .mode-icon {
-          height: 32px;
-          display: grid;
-          place-items: center;
-          font-size: 28px;
-          line-height: 1;
-          color: var(--graphite);
-        }
-
-        .mode-card strong {
-          margin-top: 8px;
-          font-size: 13px;
-          font-weight: 950;
-        }
-
-        .mode-card small {
-          margin-top: 6px;
-          color: var(--graphite-soft);
-          font-size: 10.5px;
-          line-height: 1.25;
+          font-size: 16px;
+          line-height: 1.45;
           font-weight: 800;
         }
 
-        .mode-card b {
-          margin-top: auto;
+        .composer textarea::placeholder {
+          color: #4a5259;
+          opacity: 0.9;
+        }
+
+        .composer-actions {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-top: 8px;
+        }
+
+        .left-actions {
+          display: flex;
+          gap: 8px;
+        }
+
+        .left-actions button,
+        .send {
+          min-height: 40px;
+          border-radius: 999px;
+          padding: 0 14px;
+          color: var(--graphite);
+          background: linear-gradient(145deg, #ffffff, #e8ecef);
+          border: 1px solid var(--line);
+          box-shadow: var(--soft-shadow);
+          font-weight: 900;
+        }
+
+        .send {
+          padding: 0 22px;
+          background: #111417;
+          color: white;
+        }
+
+        .mode-dock {
+          display: grid;
+          grid-template-columns: repeat(8, 1fr);
+          gap: 8px;
+        }
+
+        .dock-item {
+          min-height: 74px;
+          border-radius: 18px;
+          padding: 10px 8px;
+          display: grid;
+          place-items: center;
+          gap: 4px;
+          transition: 0.2s ease;
+        }
+
+        .dock-item:hover,
+        .dock-item.active {
+          transform: translateY(-2px);
+          border-color: var(--line-strong);
+        }
+
+        .dock-item span {
+          font-size: 22px;
+          line-height: 1;
+        }
+
+        .dock-item strong {
+          font-size: 12px;
           font-weight: 950;
         }
 
         .sub-panel {
-          margin-top: 10px;
-          border-radius: 20px;
-          padding: 14px;
-          background: rgba(255, 255, 255, 0.74);
-          border: 1px solid var(--line);
+          border-radius: 22px;
+          padding: 12px 14px;
           display: flex;
           align-items: center;
           flex-wrap: wrap;
@@ -1510,170 +1280,33 @@ Cevap: A`;
         .sub-panel div {
           display: flex;
           flex-wrap: wrap;
-          gap: 10px;
+          gap: 8px;
         }
 
         .sub-panel button {
-          min-height: 38px;
+          min-height: 36px;
           border-radius: 999px;
-          padding: 0 15px;
-          background: #fff;
-          border: 1px solid var(--line);
-          color: var(--graphite);
+          padding: 0 14px;
           font-weight: 900;
         }
 
-        .phone-shell {
-          align-self: stretch;
-          padding: 8px;
-          border-radius: 40px;
-          background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
-          box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7), 0 24px 60px rgba(18, 22, 26, 0.18);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .phone {
-          width: 300px;
-          height: 92%;
-          min-height: 700px;
-          overflow: hidden;
-          border-radius: 34px;
-          padding: 14px 12px 16px;
-          background: radial-gradient(circle at 50% 19%, rgba(255, 255, 255, 1), transparent 34%), linear-gradient(145deg, #ffffff, #eef1f3);
-          border: 1px solid rgba(255, 255, 255, 0.94);
-        }
-
-        .phone-status,
-        .phone-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-weight: 950;
-        }
-
-        .phone-status span {
-          width: 82px;
-          height: 24px;
-          border-radius: 999px;
-          background: #080a0c;
-        }
-
-        .phone-head {
-          margin-top: 14px;
-        }
-
-        .phone-head button {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.9);
-          color: var(--graphite);
-          border: 1px solid var(--line);
-          font-weight: 950;
-        }
-
-        .phone-head strong {
-          font-size: 22px;
-          letter-spacing: 0.1em;
-          font-weight: 950;
-        }
-
-        .phone-hero {
+        .avatar-media-root {
           position: relative;
-          height: 190px;
+          width: 100%;
+          height: 100%;
+        }
+
+        .video-loading {
+          position: absolute;
+          inset: 0;
+          z-index: 3;
           display: grid;
           place-items: center;
-          margin-top: 4px;
-        }
-
-        .phone-avatar-video-wrap {
-          position: relative;
-          width: 128px;
-          height: 176px;
-          border-radius: 22px;
-          overflow: hidden;
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 14px 32px rgba(18, 22, 26, 0.12);
-        }
-
-        .phone-controls {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-
-        .phone-controls button {
-          min-height: 42px;
-          border-radius: 16px;
+          font-size: 13px;
+          letter-spacing: 0.16em;
           font-weight: 950;
-        }
-
-        .phone-controls .selected {
-          background: linear-gradient(145deg, #ffffff, #e2e6e9);
-          border-color: var(--line-strong);
-        }
-
-        .phone-live {
-          grid-column: 1 / -1;
-        }
-
-        .phone-input {
-          min-height: 74px;
-          margin-top: 12px;
-          border-radius: 18px;
-          padding: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          color: #394047;
-          font-size: 12px;
-          font-weight: 850;
-        }
-
-        .phone-input button {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background: var(--glass);
-          border: 1px solid var(--line);
-          color: var(--graphite);
-          font-weight: 950;
-        }
-
-        .phone-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin-top: 12px;
-        }
-
-        .phone-grid button {
-          min-height: 82px;
-          border-radius: 16px;
-          padding: 8px 6px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-        }
-
-        .phone-grid span {
-          font-size: 22px;
-          line-height: 1;
-        }
-
-        .phone-grid strong {
-          font-size: 10.5px;
-          line-height: 1.12;
-          font-weight: 950;
-        }
-
-        .phone-grid small {
-          font-weight: 950;
+          color: #2b2f34;
+          background: linear-gradient(145deg, #ffffff, #edf1f4);
         }
 
         .modal {
@@ -1683,7 +1316,7 @@ Cevap: A`;
           display: grid;
           place-items: center;
           padding: 24px;
-          background: rgba(238, 241, 244, 0.72);
+          background: rgba(238,241,244,.72);
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
         }
@@ -1716,9 +1349,27 @@ Cevap: A`;
           margin: 0 auto;
           border-radius: 26px;
           overflow: hidden;
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          border: 1px solid rgba(20, 24, 28, 0.12);
+          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
+          border: 1px solid rgba(20,24,28,.12);
           box-shadow: var(--shadow);
+        }
+
+        .live-avatar-video,
+        .live-avatar-poster {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
+        }
+
+        .live-avatar-video {
+          z-index: 2;
+        }
+
+        .live-avatar-poster {
+          z-index: 1;
         }
 
         .live-panel h2 {
@@ -1749,31 +1400,7 @@ Cevap: A`;
           border: 1px solid var(--line);
           color: var(--graphite);
           font-weight: 900;
-          box-shadow: var(--shadow-soft);
-        }
-
-        @keyframes orbit {
-          0%,
-          100% {
-            transform: scale(1) translateY(0);
-          }
-          50% {
-            transform: scale(1.03) translateY(-8px);
-          }
-        }
-
-        @media (max-width: 1420px) {
-          .app-layout {
-            grid-template-columns: 210px minmax(640px, 1fr);
-          }
-
-          .phone-shell {
-            display: none;
-          }
-
-          .mode-grid {
-            grid-template-columns: repeat(4, 1fr);
-          }
+          box-shadow: var(--soft-shadow);
         }
 
         @media (max-width: 980px) {
@@ -1783,61 +1410,61 @@ Cevap: A`;
 
           .app-layout {
             grid-template-columns: 1fr;
-            min-height: auto;
           }
 
-          .sidebar,
-          .phone-shell {
+          .sidebar {
             display: none;
           }
 
           .main-panel {
             min-height: calc(100vh - 16px);
-            padding: 12px;
             border-radius: 22px;
+            padding: 10px;
           }
 
           .main-head {
-            justify-content: center;
+            align-items: flex-start;
+            gap: 10px;
           }
 
-          .main-head h1 {
-            font-size: 18px;
-            text-align: center;
+          .assistant-mini h1 {
+            font-size: 22px;
+          }
+
+          .assistant-mini p {
+            font-size: 12px;
           }
 
           .head-actions {
-            display: none;
+            max-width: 180px;
           }
 
-          .avatar-block {
-            height: 180px;
+          .head-actions button {
+            min-height: 34px;
+            font-size: 12px;
+            padding: 0 10px;
           }
 
-          .avatar-video-wrap {
-            width: 160px;
-            height: 180px;
+          .message-list {
+            padding: 14px;
+            border-radius: 20px;
           }
 
-          .controls {
-            grid-template-columns: 1fr 1fr;
+          .message {
+            max-width: 92%;
+            font-size: 14px;
           }
 
-          .control.live {
-            grid-column: 1 / -1;
+          .composer textarea {
+            min-height: 72px;
           }
 
-          .write-box {
-            height: 360px;
-            min-height: 360px;
+          .mode-dock {
+            grid-template-columns: repeat(4, 1fr);
           }
 
-          .mode-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .mode-card {
-            min-height: 120px;
+          .dock-item {
+            min-height: 64px;
           }
         }
       `}</style>
