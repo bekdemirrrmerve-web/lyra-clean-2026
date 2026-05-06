@@ -197,7 +197,11 @@ export default function Page() {
 
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextPlayTimeRef = useRef(0);
+
   const liveResponseTextRef = useRef("");
+  const liveUserTranscriptRef = useRef("");
+  const liveUserTranscriptAddedRef = useRef(false);
+  const liveMicStartedRef = useRef(false);
 
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -361,7 +365,16 @@ export default function Page() {
       setStatus("Lyra kesildi, seni dinliyor");
     }
 
-    const { outputText } = extractTextFromLiveMessage(message);
+    const { outputText, inputText } = extractTextFromLiveMessage(message);
+
+    if (inputText) {
+      liveUserTranscriptRef.current += inputText;
+      const cleanInput = liveUserTranscriptRef.current.trim();
+
+      if (cleanInput) {
+        setStatus(`Seni duyuyorum: ${cleanInput.slice(-42)}`);
+      }
+    }
 
     if (outputText) {
       liveResponseTextRef.current += outputText;
@@ -377,16 +390,28 @@ export default function Page() {
       message?.serverContent?.turnComplete ||
       message?.server_content?.turn_complete
     ) {
-      const cleanText = liveResponseTextRef.current.trim();
+      const userTranscript = liveUserTranscriptRef.current.trim();
+      const assistantTranscript = liveResponseTextRef.current.trim();
 
-      if (cleanText) {
-        addMessage("assistant", cleanText);
-      } else {
+      if (userTranscript && !liveUserTranscriptAddedRef.current) {
+        addMessage("user", userTranscript);
+        addMemory(userTranscript);
+        liveUserTranscriptAddedRef.current = true;
+      }
+
+      if (assistantTranscript) {
+        addMessage("assistant", assistantTranscript);
+      } else if (audioChunks.length > 0) {
         addMessage("assistant", "Lyra sesli cevap verdi.");
       }
 
+      liveUserTranscriptRef.current = "";
       liveResponseTextRef.current = "";
-      setStatus(isLiveMicOn ? "Canlı mikrofon açık" : "Canlı Gemini hazır");
+      liveUserTranscriptAddedRef.current = false;
+
+      setStatus(
+        isLiveMicOn ? "Canlı mikrofon açık, seni dinliyorum" : "Canlı Gemini hazır"
+      );
     }
   };
 
@@ -559,6 +584,10 @@ export default function Page() {
     liveConnectPromiseRef.current = null;
     liveReadyResolverRef.current = null;
     liveReadyRejecterRef.current = null;
+    liveMicStartedRef.current = false;
+    liveUserTranscriptRef.current = "";
+    liveResponseTextRef.current = "";
+    liveUserTranscriptAddedRef.current = false;
     setLiveMode(false);
     setLiveStatus("Kapalı");
     setIsLiveMicOn(false);
@@ -591,17 +620,29 @@ export default function Page() {
       inputAudioContextRef.current = null;
 
       setIsLiveMicOn(false);
+      liveMicStartedRef.current = false;
 
       if (liveReadyRef.current) {
         setStatus("Canlı Gemini hazır");
+        addMessage(
+          "assistant",
+          "Mikrofon kapandı kanka. Canlı mod açık kalıyor; istersen yazıyla devam edebilirsin."
+        );
       }
     } catch {
       setIsLiveMicOn(false);
+      liveMicStartedRef.current = false;
     }
   };
 
   const startLiveMic = async () => {
     try {
+      liveMicStartedRef.current = false;
+      liveUserTranscriptRef.current = "";
+      liveResponseTextRef.current = "";
+      liveUserTranscriptAddedRef.current = false;
+      setStatus("Mikrofon hazırlanıyor...");
+
       stopNormalAudio();
       await connectLive();
 
@@ -662,13 +703,20 @@ export default function Page() {
       processor.connect(silence);
       silence.connect(inputContext.destination);
 
+      liveMicStartedRef.current = true;
       setIsLiveMicOn(true);
       setLiveStatus("Mikrofon açık");
-      setStatus("Canlı mikrofon açık, konuşabilirsin");
+      setStatus("Canlı mikrofon açık, seni dinliyorum");
+
+      addMessage(
+        "assistant",
+        "Canlı mikrofon açık kanka. Şimdi konuş; söylediklerin yazışma alanına da düşecek, Lyra sesli cevap verecek."
+      );
     } catch (error: any) {
       const msg = error?.message || "Bilinmeyen hata";
 
       setIsLiveMicOn(false);
+      liveMicStartedRef.current = false;
       setStatus("Mikrofon açılamadı");
 
       if (msg.includes("Requested device not found")) {
@@ -698,22 +746,17 @@ export default function Page() {
       return;
     }
 
+    liveUserTranscriptRef.current = "";
+    liveResponseTextRef.current = "";
+    liveUserTranscriptAddedRef.current = true;
+
     addMessage("user", text);
+    addMemory(text);
 
     wsRef.current.send(
       JSON.stringify({
-        clientContent: {
-          turns: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text,
-                },
-              ],
-            },
-          ],
-          turnComplete: true,
+        realtimeInput: {
+          text,
         },
       })
     );
@@ -807,7 +850,6 @@ export default function Page() {
     setInput("");
 
     if (liveMode) {
-      addMemory(text);
       await sendLiveText(text);
       return;
     }
