@@ -7,24 +7,10 @@ type LiveStatus =
   | "Token alınıyor..."
   | "Bağlanıyor..."
   | "Bağlandı"
-  | "Mikrofon açık"
   | "Hata";
 
 const WS_ENDPOINT =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
-
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
 
 function base64ToArrayBuffer(base64: string) {
   const binary = atob(base64);
@@ -35,53 +21,6 @@ function base64ToArrayBuffer(base64: string) {
   }
 
   return bytes.buffer;
-}
-
-function downsampleTo16k(float32: Float32Array, inputSampleRate: number) {
-  const targetSampleRate = 16000;
-
-  if (inputSampleRate === targetSampleRate) return float32;
-
-  const ratio = inputSampleRate / targetSampleRate;
-  const newLength = Math.round(float32.length / ratio);
-  const result = new Float32Array(newLength);
-
-  let offsetResult = 0;
-  let offsetBuffer = 0;
-
-  while (offsetResult < result.length) {
-    const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
-    let accum = 0;
-    let count = 0;
-
-    for (
-      let i = offsetBuffer;
-      i < nextOffsetBuffer && i < float32.length;
-      i++
-    ) {
-      accum += float32[i];
-      count++;
-    }
-
-    result[offsetResult] = count > 0 ? accum / count : 0;
-    offsetResult++;
-    offsetBuffer = nextOffsetBuffer;
-  }
-
-  return result;
-}
-
-function floatTo16BitPCM(float32: Float32Array) {
-  const buffer = new ArrayBuffer(float32.length * 2);
-  const view = new DataView(buffer);
-
-  for (let i = 0; i < float32.length; i++) {
-    let sample = Math.max(-1, Math.min(1, float32[i]));
-    sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-    view.setInt16(i * 2, sample, true);
-  }
-
-  return buffer;
 }
 
 function collectAudioBase64(node: any, result: string[] = []) {
@@ -131,20 +70,16 @@ export default function LiveGeminiPage() {
     "Canlı Gemini test sayfası hazır.",
   ]);
   const [isConnected, setIsConnected] = useState(false);
-  const [isMicOn, setIsMicOn] = useState(false);
   const [textInput, setTextInput] = useState("");
 
   const wsRef = useRef<WebSocket | null>(null);
-  const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const silenceRef = useRef<GainNode | null>(null);
   const nextPlayTimeRef = useRef(0);
+  const setupReadyRef = useRef(false);
+  const pendingTextRef = useRef<string | null>(null);
 
   const addLog = (text: string) => {
-    setLog((prev) => [text, ...prev].slice(0, 20));
+    setLog((prev) => [text, ...prev].slice(0, 24));
   };
 
   const ensureOutputContext = async () => {
@@ -201,10 +136,36 @@ export default function LiveGeminiPage() {
     await playPcm24kFromArrayBuffer(arrayBuffer);
   };
 
+  const reallySendText = async (text: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      addLog("Bağlantı açık değil, mesaj gönderilemedi.");
+      return;
+    }
+
+    await ensureOutputContext();
+
+    wsRef.current.send(
+      JSON.stringify({
+        realtimeInput: {
+          text,
+        },
+      })
+    );
+
+    addLog(`Sen: ${text}`);
+  };
+
   const handleLiveJsonMessage = async (message: any) => {
     if (message?.setupComplete || message?.setup_complete) {
-      addLog("Kurulum tamamlandı. Yazı gönderebilir veya mikrofon açabilirsin.");
+      setupReadyRef.current = true;
       setStatus("Bağlandı");
+      addLog("Kurulum tamamlandı. Artık yazı gönderince sesli cevap bekleyeceğiz.");
+
+      if (pendingTextRef.current) {
+        const pending = pendingTextRef.current;
+        pendingTextRef.current = null;
+        await reallySendText(pending);
+      }
     }
 
     if (
@@ -218,12 +179,12 @@ export default function LiveGeminiPage() {
     const { outputText, inputText } = extractTextFromLiveMessage(message);
 
     if (inputText) addLog(`Senin sesin: ${inputText}`);
-    if (outputText) addLog(`Lyra: ${outputText}`);
+    if (outputText) addLog(`Lyra yazı dökümü: ${outputText}`);
 
     const audioChunks = collectAudioBase64(message);
 
     if (audioChunks.length > 0) {
-      addLog(`Ses paketi geldi: ${audioChunks.length} parça`);
+      addLog(`Ses paketi geldi: ${audioChunks.length} parça. Çalıyorum...`);
     }
 
     for (const audioBase64 of audioChunks) {
@@ -262,7 +223,7 @@ export default function LiveGeminiPage() {
           return;
         }
 
-        addLog("Binary ses paketi geldi.");
+        addLog("Binary ses paketi geldi. Çalıyorum...");
         await playPcm24kFromArrayBuffer(data);
         return;
       }
@@ -278,7 +239,7 @@ export default function LiveGeminiPage() {
         }
 
         const arrayBuffer = await data.arrayBuffer();
-        addLog("Blob ses paketi geldi.");
+        addLog("Blob ses paketi geldi. Çalıyorum...");
         await playPcm24kFromArrayBuffer(arrayBuffer);
         return;
       }
@@ -296,6 +257,7 @@ export default function LiveGeminiPage() {
         return;
       }
 
+      setupReadyRef.current = false;
       await ensureOutputContext();
 
       setStatus("Token alınıyor...");
@@ -340,7 +302,7 @@ export default function LiveGeminiPage() {
               parts: [
                 {
                   text:
-                    "Sen Lyra Clean 2026'sın. Türkçe konuşan, sıcak, doğal, hızlı, samimi ve zeki bir kadın asistan gibi cevap ver. Kullanıcıyla yakın arkadaş enerjisinde konuş. Kısa, akıcı ve canlı cevap ver. Kullanıcının mesajını tekrar etme.",
+                    "Sen Lyra Clean 2026'sın. Türkçe konuşan, sıcak, doğal, hızlı, samimi ve zeki bir kadın asistan gibi cevap ver. Kullanıcıyla yakın arkadaş enerjisinde konuş. Kısa, akıcı ve canlı cevap ver. Kullanıcının mesajını tekrar etme. Türkçe konuş.",
                 },
               ],
             },
@@ -363,7 +325,7 @@ export default function LiveGeminiPage() {
 
       websocket.onclose = (event) => {
         setIsConnected(false);
-        setIsMicOn(false);
+        setupReadyRef.current = false;
 
         if (event.code === 1000) {
           setStatus("Kapalı");
@@ -380,142 +342,19 @@ export default function LiveGeminiPage() {
     }
   };
 
-  const stopMic = () => {
-    try {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            realtimeInput: {
-              audioStreamEnd: true,
-            },
-          })
-        );
-      }
-
-      processorRef.current?.disconnect();
-      sourceRef.current?.disconnect();
-      silenceRef.current?.disconnect();
-
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-      inputAudioContextRef.current?.close();
-
-      processorRef.current = null;
-      sourceRef.current = null;
-      silenceRef.current = null;
-      mediaStreamRef.current = null;
-      inputAudioContextRef.current = null;
-
-      setIsMicOn(false);
-
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        setStatus("Bağlandı");
-      }
-
-      addLog("Mikrofon kapatıldı.");
-    } catch {
-      setIsMicOn(false);
-    }
-  };
-
   const disconnectLive = () => {
     try {
-      stopMic();
-
       if (wsRef.current) {
         wsRef.current.close();
       }
 
       wsRef.current = null;
       setIsConnected(false);
+      setupReadyRef.current = false;
       setStatus("Kapalı");
       addLog("Canlı Gemini kapatıldı.");
     } catch {
       setStatus("Kapalı");
-    }
-  };
-
-  const startMic = async () => {
-    try {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        await connectLive();
-      }
-
-      const websocket = wsRef.current;
-
-      if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        addLog("Önce bağlantı kurulmalı.");
-        return;
-      }
-
-      const AudioCtx =
-        window.AudioContext || (window as any).webkitAudioContext;
-
-      const inputContext = new AudioCtx();
-      inputAudioContextRef.current = inputContext;
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
-      mediaStreamRef.current = stream;
-
-      const source = inputContext.createMediaStreamSource(stream);
-      sourceRef.current = source;
-
-      const processor = inputContext.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-
-      const silence = inputContext.createGain();
-      silence.gain.value = 0;
-      silenceRef.current = silence;
-
-      processor.onaudioprocess = (event) => {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-          return;
-        }
-
-        const input = event.inputBuffer.getChannelData(0);
-        const downsampled = downsampleTo16k(input, inputContext.sampleRate);
-        const pcm16Buffer = floatTo16BitPCM(downsampled);
-        const base64 = arrayBufferToBase64(pcm16Buffer);
-
-        wsRef.current.send(
-          JSON.stringify({
-            realtimeInput: {
-              audio: {
-                data: base64,
-                mimeType: "audio/pcm;rate=16000",
-              },
-            },
-          })
-        );
-      };
-
-      source.connect(processor);
-      processor.connect(silence);
-      silence.connect(inputContext.destination);
-
-      setIsMicOn(true);
-      setStatus("Mikrofon açık");
-      addLog("Mikrofon başladı. Konuşabilirsin.");
-    } catch (error: any) {
-      setStatus(wsRef.current?.readyState === WebSocket.OPEN ? "Bağlandı" : "Hata");
-
-      const msg = error?.message || "hata";
-
-      if (msg.includes("Requested device not found")) {
-        addLog(
-          "Mikrofon bulunamadı. Bilgisayarda mikrofon takılı mı ve tarayıcı izni açık mı kontrol et."
-        );
-      } else if (msg.includes("Permission denied")) {
-        addLog("Mikrofon izni reddedildi. Tarayıcı izinlerinden mikrofonu aç.");
-      } else {
-        addLog("Mikrofon açılamadı: " + msg);
-      }
     }
   };
 
@@ -524,32 +363,24 @@ export default function LiveGeminiPage() {
 
     if (!text) return;
 
+    await ensureOutputContext();
+
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      addLog("Önce Canlı Gemini bağlantısını aç.");
+      pendingTextRef.current = text;
+      addLog("Bağlantı yoktu. Önce bağlanıyorum, sonra mesajı otomatik göndereceğim...");
+      setTextInput("");
+      await connectLive();
       return;
     }
 
-    await ensureOutputContext();
+    if (!setupReadyRef.current) {
+      pendingTextRef.current = text;
+      addLog("Kurulum henüz tamamlanmadı. Mesajı beklemeye aldım.");
+      setTextInput("");
+      return;
+    }
 
-    wsRef.current.send(
-      JSON.stringify({
-        clientContent: {
-          turns: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text,
-                },
-              ],
-            },
-          ],
-          turnComplete: true,
-        },
-      })
-    );
-
-    addLog(`Sen: ${text}`);
+    await reallySendText(text);
     setTextInput("");
   };
 
@@ -559,32 +390,24 @@ export default function LiveGeminiPage() {
         <div className="top">
           <div>
             <h1>Canlı Gemini</h1>
-            <p>Lyra’nın gerçek zamanlı Gemini Live konuşma testi.</p>
+            <p>Önce yazıyla sesli cevap test ediyoruz. Ses paketi gelirse sistem tamam.</p>
           </div>
           <a href="/">Ana Lyra’ya dön</a>
         </div>
 
         <div className="status-card">
-          <div className={`orb ${isMicOn ? "talking" : ""}`}>L</div>
+          <div className={`orb ${isConnected ? "talking" : ""}`}>L</div>
           <h2>{status}</h2>
           <p>
-            {isMicOn
-              ? "Mikrofon açık. Gemini seni canlı dinliyor."
-              : isConnected
-              ? "Bağlantı hazır. Mikrofonu aç veya yazı gönder."
-              : "Bağlan butonuyla Live API oturumunu başlat."}
+            {isConnected
+              ? "Bağlantı hazır. Mesaj yazıp Gönder’e bas."
+              : "Mesaj yazıp Gönder’e basarsan otomatik bağlanır."}
           </p>
         </div>
 
         <div className="controls">
           <button onClick={connectLive} disabled={isConnected}>
             Canlı Gemini Bağlan
-          </button>
-          <button onClick={startMic} disabled={isMicOn}>
-            Mikrofonu Aç
-          </button>
-          <button onClick={stopMic} disabled={!isMicOn}>
-            Mikrofonu Kapat
           </button>
           <button onClick={clearPlayback}>Sesi Sustur</button>
           <button onClick={disconnectLive}>Bağlantıyı Kapat</button>
@@ -597,7 +420,7 @@ export default function LiveGeminiPage() {
             onKeyDown={(e) => {
               if (e.key === "Enter") sendTextToLive();
             }}
-            placeholder="Canlı Gemini’ye yazıyla da mesaj gönder..."
+            placeholder="Örn: Merhaba Lyra, bana kısa sesli cevap ver."
           />
           <button onClick={sendTextToLive}>Gönder</button>
         </div>
@@ -685,7 +508,7 @@ export default function LiveGeminiPage() {
 
         .status-card {
           margin-top: 18px;
-          min-height: 360px;
+          min-height: 320px;
           display: grid;
           place-items: center;
           text-align: center;
@@ -693,12 +516,12 @@ export default function LiveGeminiPage() {
         }
 
         .orb {
-          width: 190px;
-          height: 190px;
+          width: 170px;
+          height: 170px;
           display: grid;
           place-items: center;
           border-radius: 999px;
-          font-size: 72px;
+          font-size: 66px;
           font-weight: 950;
           color: white;
           background:
@@ -717,7 +540,7 @@ export default function LiveGeminiPage() {
         }
 
         .status-card h2 {
-          margin-top: 20px;
+          margin-top: 18px;
         }
 
         .status-card p {
@@ -811,9 +634,9 @@ export default function LiveGeminiPage() {
           }
 
           .orb {
-            width: 150px;
-            height: 150px;
-            font-size: 58px;
+            width: 140px;
+            height: 140px;
+            font-size: 54px;
           }
         }
       `}</style>
