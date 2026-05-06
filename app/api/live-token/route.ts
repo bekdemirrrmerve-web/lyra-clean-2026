@@ -5,7 +5,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const LIVE_MODEL = process.env.GEMINI_LIVE_MODEL || "gemini-3.1-flash-live-preview";
+const LIVE_MODEL =
+  process.env.GEMINI_LIVE_MODEL || "gemini-3.1-flash-live-preview";
 
 export async function GET() {
   try {
@@ -25,7 +26,7 @@ export async function GET() {
     });
 
     const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const newSessionExpireTime = new Date(Date.now() + 60 * 1000);
+    const newSessionExpireTime = new Date(Date.now() + 60 * 1000).toISOString();
 
     const token = await client.authTokens.create({
       config: {
@@ -58,8 +59,11 @@ export async function GET() {
       ok: true,
       token: token.name,
       model: LIVE_MODEL,
+      expiresAt: expireTime,
     });
   } catch (error: any) {
+    console.error("Gemini Live token error:", error);
+
     return NextResponse.json(
       {
         ok: false,
