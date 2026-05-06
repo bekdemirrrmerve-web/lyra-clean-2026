@@ -4,6 +4,9 @@ import { useState } from 'react';
 
 type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'live';
 
+const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
+const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
+
 const modes: {
   key: ModeKey;
   title: string;
@@ -157,12 +160,13 @@ export default function Page() {
             <div className="avatar-video-wrap">
               <video
                 className="avatar-video"
-                src="/lyra-avatar-mp4.mp4"
-                poster="/lyra-avatar.jpg.jpeg"
+                src={AVATAR_VIDEO}
+                poster={AVATAR_IMAGE}
                 autoPlay
                 loop
                 muted
                 playsInline
+                preload="auto"
               />
             </div>
           </section>
@@ -266,12 +270,13 @@ export default function Page() {
               <div className="phone-avatar-video-wrap">
                 <video
                   className="phone-avatar-video"
-                  src="/lyra-avatar.mp4"
-                  poster="/lyra-avatar.jpg"
+                  src={AVATAR_VIDEO}
+                  poster={AVATAR_IMAGE}
                   autoPlay
                   loop
                   muted
                   playsInline
+                  preload="auto"
                 />
               </div>
             </div>
@@ -316,12 +321,13 @@ export default function Page() {
               <span className="live-pulse two" />
               <video
                 className="live-avatar-video"
-                src="/lyra-avatar.mp4"
-                poster="/lyra-avatar.jpg"
+                src={AVATAR_VIDEO}
+                poster={AVATAR_IMAGE}
                 autoPlay
                 loop
                 muted
                 playsInline
+                preload="auto"
               />
             </div>
 
