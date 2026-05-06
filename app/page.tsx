@@ -14,12 +14,17 @@ type ChatMessage = {
 const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
 const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
 
+const GEMINI_ENDPOINTS = ['/api/gemini', '/api/gemini-chat', '/api/chat', '/api/lyra', '/api/ai'];
+const PDF_ENDPOINTS = ['/api/pdf', '/api/pdf-summary', '/api/upload-pdf'];
+const IMAGE_ENDPOINTS = ['/api/vision', '/api/image-read', '/api/analyze-image'];
+
+const voices = ['Lyra', 'Nova', 'Luna', 'Aura', 'Gemini Live'];
+
 const modes: {
   key: ModeKey;
   title: string;
   desc: string;
   icon: string;
-  options: string[];
   starter: string;
 }[] = [
   {
@@ -27,60 +32,51 @@ const modes: {
     title: 'Araştırma Modu',
     desc: 'Bilgi bul, analiz et ve net cevaplar üret.',
     icon: '⌕',
-    options: ['Derin araştır', 'Kaynaklı özetle', 'Güncel bilgi bul'],
-    starter: 'Araştırma modundayım. Konuyu yaz, sana net ve düzenli çıkarayım.',
+    starter: 'Araştırılacak konuyu yaz.',
   },
   {
     key: 'content',
     title: 'İçerik Üretme',
-    desc: 'Hook, metin, video fikri ve içerik hazırla.',
+    desc: 'Hook, başlık, video metni ve teleprompter hazırla.',
     icon: '✎',
-    options: ['Hook yaz', 'Teleprompter hazırla', 'Video fikri üret'],
-    starter: 'İçerik üretme modundayım. Konuyu yaz, hook ve metin hazırlayayım.',
+    starter: 'Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım.',
   },
   {
     key: 'lesson',
     title: 'Ders Modu',
-    desc: 'Konu anlat, soru çöz ve öğrenmeyi kolaylaştır.',
+    desc: 'Konu anlat, test üret, yanlış açıkla.',
     icon: '▰',
-    options: ['Konu anlat', 'Test üret', 'Yanlışımı açıkla'],
-    starter: 'Ders modundayım. Hangi konuyu çalışıyoruz?',
+    starter: 'Çalışmak istediğin konuyu, soruyu ya da görseli gönder.',
   },
   {
     key: 'image',
     title: 'Görsel Üretme',
-    desc: 'Fikirleri görsele dönüştür ve tasarla.',
+    desc: 'Görsel promptu ve konsept hazırla.',
     icon: '▧',
-    options: ['Prompt yaz', 'Konsept üret', 'Görsel fikri ver'],
-    starter: 'Görsel üretme modundayım. Nasıl bir görsel istediğini yaz.',
+    starter: 'Nasıl bir görsel istediğini yaz.',
   },
   {
     key: 'read',
     title: 'Görselle Okut',
     desc: 'Görsel, belge ve ekranları analiz et.',
     icon: '◌',
-    options: ['Fotoğraf oku', 'Belge analiz et', 'Etiket çöz'],
-    starter: 'Görselle okut modundayım. Görsel yükleyip analiz ettirebilirsin.',
+    starter: 'Görsel yükle veya görselde ne okutmak istediğini yaz.',
   },
   {
     key: 'pdf',
     title: 'PDF Özeti',
-    desc: 'PDF yükle, özetle ve önemli yerleri çıkar.',
+    desc: 'PDF yükle, özetle ve not çıkar.',
     icon: '▤',
-    options: ['PDF özetle', 'Başlık çıkar', 'Not hazırla'],
-    starter: 'PDF modundayım. PDF yükle, sana özet çıkarayım.',
+    starter: 'PDF yükle, sana özet ve önemli notlar çıkarayım.',
   },
   {
     key: 'live',
     title: 'Canlı Mod',
-    desc: 'Gerçek zamanlı konuşma alanına geç.',
+    desc: 'Gerçek zamanlı konuşma alanı.',
     icon: '≋',
-    options: ['Canlı konuş', 'Ses seç', 'Sessize al'],
-    starter: 'Canlı mod açıldı. Konuşmaya başlayabilirsin.',
+    starter: 'Canlı konuşma açık. Konuşmaya başlayabilirsin.',
   },
 ];
-
-const voices = ['Lyra', 'Nova', 'Luna', 'Aura'];
 
 function AvatarVideo({
   className,
@@ -104,7 +100,6 @@ function AvatarVideo({
           video.play().catch(() => {});
         }
       }
-
       rafRef.current = requestAnimationFrame(checkLoop);
     };
 
@@ -118,7 +113,6 @@ function AvatarVideo({
   return (
     <div className="avatar-media-root">
       <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
-
       <video
         ref={videoRef}
         className={className}
@@ -141,19 +135,22 @@ function AvatarVideo({
           event.currentTarget.style.display = 'none';
         }}
       />
-
       {!videoReady && <div className="video-loading">LYRA</div>}
     </div>
   );
 }
 
-async function tryJsonEndpoints(endpoints: string[], body: Record<string, unknown>) {
+async function postJsonFast(endpoints: string[], body: Record<string, unknown>) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 18000);
+
   for (const endpoint of endpoints) {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
 
       if (!res.ok) continue;
@@ -165,31 +162,36 @@ async function tryJsonEndpoints(endpoints: string[], body: Record<string, unknow
         data?.message ||
         data?.text ||
         data?.content ||
-        data?.result;
+        data?.result ||
+        data?.response;
 
-      if (typeof text === 'string' && text.trim()) return text.trim();
+      if (typeof text === 'string' && text.trim()) {
+        clearTimeout(timeout);
+        return text.trim();
+      }
     } catch {
-      // sıradaki endpoint denensin
+      continue;
     }
   }
 
+  clearTimeout(timeout);
   return null;
 }
 
-async function tryFormEndpoints(
-  endpoints: string[],
-  file: File,
-  extra: Record<string, string>
-) {
+async function postFileFast(endpoints: string[], file: File, extra: Record<string, string>) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 24000);
+
   for (const endpoint of endpoints) {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      Object.entries(extra).forEach(([key, value]) => formData.append(key, value));
+      const form = new FormData();
+      form.append('file', file);
+      Object.entries(extra).forEach(([key, value]) => form.append(key, value));
 
       const res = await fetch(endpoint, {
         method: 'POST',
-        body: formData,
+        body: form,
+        signal: controller.signal,
       });
 
       if (!res.ok) continue;
@@ -202,31 +204,115 @@ async function tryFormEndpoints(
         data?.message ||
         data?.text ||
         data?.content ||
-        data?.result;
+        data?.result ||
+        data?.response;
 
-      if (typeof text === 'string' && text.trim()) return text.trim();
+      if (typeof text === 'string' && text.trim()) {
+        clearTimeout(timeout);
+        return text.trim();
+      }
     } catch {
-      // sıradaki endpoint denensin
+      continue;
     }
   }
 
+  clearTimeout(timeout);
   return null;
 }
 
+function buildPrompt(mode: ModeKey, input: string, action?: string) {
+  if (mode === 'content') {
+    return `
+Sen Lyra'sın. Türkçe, akıcı, sosyal medya odaklı içerik üret.
+Konu: ${input}
+İstenen aksiyon: ${action || 'tam içerik paketi'}
+
+Şu formatta cevap ver:
+1) Video Konu Başlıkları: 5 fikir
+2) İlk 3 Saniye Hook: 5 seçenek
+3) Teleprompter Metni: 45-60 saniyelik, konuşur gibi
+4) Ekran Yazıları: kısa kısa
+5) CTA: kaydet/yorum/paylaş odaklı
+6) Çekim Notu: ışık, kadraj, tempo
+`;
+  }
+
+  if (mode === 'lesson') {
+    return `
+Sen Lyra'sın. Öğretmen gibi ama çok anlaşılır anlat.
+Konu/Soru: ${input}
+İstenen aksiyon: ${action || 'ders anlatımı'}
+
+Şu formatta cevap ver:
+1) Konu Özeti
+2) Bilmen Gereken Formüller / Kurallar
+3) Sınav İpuçları
+4) Çözümlü Örnek Sorular
+5) Şıklı Mini Test
+6) Yanlış Yapılırsa Nasıl Düşünülmeli?
+`;
+  }
+
+  if (mode === 'research') {
+    return `
+Sen Lyra'sın. Konuyu sade, güncel ve net araştırma özeti gibi anlat.
+Konu: ${input}
+Format:
+1) Kısa cevap
+2) Detaylı açıklama
+3) Önemli maddeler
+4) Dikkat edilmesi gerekenler
+5) Sonuç
+`;
+  }
+
+  if (mode === 'image') {
+    return `
+Sen Lyra'sın. Görsel üretim promptu hazırlıyorsun.
+İstek: ${input}
+Format:
+1) Kısa konsept
+2) Detaylı prompt
+3) Renk paleti
+4) Kadraj
+5) Stil alternatifleri
+`;
+  }
+
+  if (mode === 'read') {
+    return `
+Sen Lyra'sın. Görsel okuma/analiz modundasın.
+Kullanıcı isteği: ${input}
+Görsel yüklendiyse analiz et; yüklenmediyse ne yüklemesi gerektiğini söyle.
+`;
+  }
+
+  if (mode === 'pdf') {
+    return `
+Sen Lyra'sın. PDF özetleme modundasın.
+Kullanıcı isteği: ${input}
+PDF yüklendiyse özetle; yüklenmediyse PDF yüklemesini iste.
+`;
+  }
+
+  return input;
+}
+
 export default function Page() {
-  const [activeMode, setActiveMode] = useState<ModeKey>('research');
+  const [activeMode, setActiveMode] = useState<ModeKey>('content');
   const [muted, setMuted] = useState(false);
   const [gender, setGender] = useState<'Kadın' | 'Erkek'>('Kadın');
   const [liveOpen, setLiveOpen] = useState(false);
-  const [voiceIndex, setVoiceIndex] = useState(0);
+  const [voiceIndex, setVoiceIndex] = useState(4);
   const [message, setMessage] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [liveContinuous, setLiveContinuous] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
       role: 'assistant',
-      text: 'Merhaba, ben Lyra. Yazabilir, konuşabilir, PDF ya da görsel yükleyebilirsin.',
+      text: 'Merhaba, ben Lyra. Konu yaz; içerik, ders, araştırma, PDF veya görsel alanında hemen çalışayım.',
     },
   ]);
 
@@ -241,7 +327,7 @@ export default function Page() {
 
   const addMessage = (role: Role, text: string) => {
     const id = messageIdRef.current++;
-    setMessages((prev) => [...prev, { id, role, text }].slice(-14));
+    setMessages((prev) => [...prev, { id, role, text }].slice(-16));
   };
 
   const speak = (text: string) => {
@@ -249,69 +335,104 @@ export default function Page() {
 
     window.speechSynthesis.cancel();
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const cleanText = text.replace(/\*\*/g, '').replace(/[#>`]/g, '');
+    const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'tr-TR';
-    utterance.rate = 0.96;
-    utterance.pitch = voice === 'Luna' ? 1.08 : voice === 'Nova' ? 0.92 : 1;
+    utterance.rate = voice === 'Gemini Live' ? 1.04 : 0.98;
+    utterance.pitch = voice === 'Luna' ? 1.08 : voice === 'Nova' ? 0.94 : 1;
 
     const availableVoices = window.speechSynthesis.getVoices();
-    const turkishVoice =
+    const tr =
       availableVoices.find((v) => v.lang?.toLowerCase().includes('tr')) ||
+      availableVoices.find((v) => v.name?.toLowerCase().includes('google')) ||
       availableVoices.find((v) => v.name?.toLowerCase().includes('female')) ||
       availableVoices[0];
 
-    if (turkishVoice) utterance.voice = turkishVoice;
+    if (tr) utterance.voice = tr;
 
     window.speechSynthesis.speak(utterance);
   };
 
-  const getFallbackAnswer = (input: string, mode: ModeKey) => {
-    if (mode === 'research') {
-      return `"${input}" için araştırma modunu açtım. API bağlantın aktifse burada kaynaklı cevap dönecek; şu an ön yüzde demo cevap gösteriyorum.`;
-    }
-
+  const fallbackAnswer = (input: string, mode: ModeKey, action?: string) => {
     if (mode === 'content') {
-      return `"${input}" için içerik taslağı hazırlayabilirim: güçlü hook, kısa açıklama, örnek video metni ve CTA.`;
+      return `Video Konu Başlıkları:
+1. ${input} hakkında kimsenin anlatmadığı 3 detay
+2. ${input} konusunda yapılan en büyük hata
+3. ${input} için hızlı ama etkili rutin
+4. ${input} gerçek mi abartı mı?
+5. ${input} hakkında 45 saniyelik mini rehber
+
+Hook:
+“Bunu yapıyorsan fark etmeden sonucu bozuyor olabilirsin.”
+
+Teleprompter Metni:
+“Bugün sana ${input} konusunu çok basit anlatacağım. Çünkü çoğu kişi burada gereksiz bilgiye boğuluyor ama asıl mesele çok net. Önce problemi tanı, sonra doğru adımı seç. Eğer bunu kaydedersen daha sonra uygularken elinin altında olur.”
+
+CTA:
+“Kaydet, sonra birlikte uygulayalım.”`;
     }
 
     if (mode === 'lesson') {
-      return `"${input}" konusunu önce basit anlatım, sonra örnek soru, sonra kısa tekrar şeklinde çalışabiliriz.`;
+      return `Konu Özeti:
+${input} konusunu önce temel tanım, sonra örnek mantığıyla çalışmalısın.
+
+Formüller / Kurallar:
+- Ana kuralı yaz
+- Verilenleri ayır
+- İstenen değeri bul
+- Birimleri kontrol et
+
+Sınav İpuçları:
+- Soruda anahtar kelimeyi yakala.
+- Uzun soru görünce panikleme, verilenleri sırala.
+- Önce kolay işlemden başla.
+
+Çözümlü Soru:
+Soru: ${input} ile ilgili temel bir örnek düşün.
+Çözüm: Verilenleri yaz, formülü kur, sonucu sadeleştir.
+
+Mini Test:
+1) Bu konuda ilk bakılacak şey nedir?
+A) Verilenler B) Şıklar C) Rastgele işlem D) Son cümle
+Cevap: A`;
     }
 
-    if (mode === 'image') {
-      return `"${input}" için görsel prompt oluşturabilirim. Stil, renk, kadraj ve gerçekçilik seviyesini yazarsan netleştiririm.`;
+    if (mode === 'research') {
+      return `${input} için hızlı araştırma özeti:
+- Konunun ana fikri çıkarılır.
+- Önemli alt başlıklar belirlenir.
+- Gerekiyorsa kaynaklı analiz yapılır.
+- Sonuç sade bir dille toparlanır.`;
     }
 
-    if (mode === 'read') {
-      return `Görsel okutma için görsel yüklemen gerekiyor. Etiketi, ekran görüntüsünü ya da ürünü analiz edebilirim.`;
-    }
-
-    if (mode === 'pdf') {
-      return `PDF özetlemek için PDF yüklemen gerekiyor. Yüklediğinde ana fikirleri, başlıkları ve önemli notları çıkarırım.`;
-    }
-
-    return `“${input}” mesajını aldım. Canlı mod için mikrofonu başlatabilirsin.`;
+    return `“${input}” için ${active?.title || 'Lyra'} modunda çalışmaya hazırım.`;
   };
 
-  const sendMessage = async (input?: string) => {
-    const text = (input ?? message).trim();
-    if (!text || isThinking) return;
+  const sendMessage = async (input?: string, action?: string) => {
+    const raw = (input ?? message).trim();
+    if (!raw || isThinking) return;
 
     setMessage('');
-    addMessage('user', text);
+    addMessage('user', raw);
     setIsThinking(true);
 
+    const prompt = buildPrompt(activeMode, raw, action);
+
     const aiText =
-      (await tryJsonEndpoints(['/api/chat', '/api/ai', '/api/gemini', '/api/lyra'], {
-        message: text,
+      (await postJsonFast(GEMINI_ENDPOINTS, {
+        message: prompt,
+        rawMessage: raw,
         mode: activeMode,
+        action: action || null,
         voice,
         gender,
-      })) || getFallbackAnswer(text, activeMode);
+        live: liveOpen,
+        provider: 'gemini',
+      })) || fallbackAnswer(raw, activeMode, action);
 
     addMessage('assistant', aiText);
-    speak(aiText);
     setIsThinking(false);
+    speak(aiText);
   };
 
   const handleTextareaKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -328,30 +449,29 @@ export default function Page() {
   const openMode = (key: ModeKey) => {
     setActiveMode(key);
 
-    const mode = modes.find((m) => m.key === key);
-    if (mode) addMessage('system', `${mode.title}: ${mode.starter}`);
+    if (key === 'live') {
+      setLiveOpen(true);
+      return;
+    }
 
-    if (key === 'live') setLiveOpen(true);
-    if (key === 'pdf') setTimeout(() => pdfInputRef.current?.click(), 150);
-    if (key === 'read') setTimeout(() => imageInputRef.current?.click(), 150);
+    if (key === 'pdf') {
+      setTimeout(() => pdfInputRef.current?.click(), 120);
+      return;
+    }
+
+    if (key === 'read') {
+      setTimeout(() => imageInputRef.current?.click(), 120);
+    }
   };
 
-  const handleQuickOption = (option: string) => {
-    setMessage(option);
-    addMessage('system', `${option} seçildi. Detay yazıp Enter’a basabilirsin.`);
-  };
-
-  const startListening = () => {
+  const startListening = (continuous = false) => {
     if (typeof window === 'undefined') return;
 
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      addMessage(
-        'assistant',
-        'Bu tarayıcı mikrofonla yazıya çevirme özelliğini desteklemiyor. Chrome veya Safari deneyebilirsin.'
-      );
+      addMessage('assistant', 'Bu tarayıcı mikrofonla konuşmayı desteklemiyor. Chrome veya Safari dene.');
       return;
     }
 
@@ -362,31 +482,51 @@ export default function Page() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'tr-TR';
-    recognition.continuous = false;
+    recognition.continuous = continuous;
     recognition.interimResults = true;
 
-    recognition.onstart = () => setIsListening(true);
+    recognition.onstart = () => {
+      setIsListening(true);
+      setLiveContinuous(continuous);
+    };
 
     recognition.onresult = (event: any) => {
-      let transcript = '';
+      let finalTranscript = '';
+      let interimTranscript = '';
+
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        transcript += event.results[i][0].transcript;
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalTranscript += transcript;
+        else interimTranscript += transcript;
       }
 
-      setMessage(transcript);
+      setMessage(finalTranscript || interimTranscript);
 
-      const lastResult = event.results[event.results.length - 1];
-      if (lastResult?.isFinal && transcript.trim()) {
-        sendMessage(transcript.trim());
+      if (finalTranscript.trim()) {
+        sendMessage(finalTranscript.trim());
       }
     };
 
     recognition.onerror = () => {
       setIsListening(false);
+      setLiveContinuous(false);
       addMessage('assistant', 'Mikrofonu duyamadım. İzinleri kontrol edip tekrar deneyelim.');
     };
 
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => {
+      setIsListening(false);
+      if (continuous && liveOpen) {
+        setTimeout(() => {
+          try {
+            recognition.start();
+          } catch {
+            setLiveContinuous(false);
+          }
+        }, 250);
+      } else {
+        setLiveContinuous(false);
+      }
+    };
 
     recognitionRef.current = recognition;
     recognition.start();
@@ -396,6 +536,7 @@ export default function Page() {
     recognitionRef.current?.stop?.();
     recognitionRef.current = null;
     setIsListening(false);
+    setLiveContinuous(false);
   };
 
   const handlePdfUpload = async (file?: File) => {
@@ -406,14 +547,12 @@ export default function Page() {
     setIsThinking(true);
 
     const result =
-      (await tryFormEndpoints(['/api/pdf', '/api/pdf-summary', '/api/upload-pdf'], file, {
-        mode: 'pdf',
-      })) ||
-      `PDF yüklendi ama PDF okuma API bağlantısı bulunamadı. Dosya adı: ${file.name}. Eski çalışan PDF endpoint'in varsa /api/pdf, /api/pdf-summary veya /api/upload-pdf isimlerinden birine bağlayınca özet burada döner.`;
+      (await postFileFast(PDF_ENDPOINTS, file, { mode: 'pdf', provider: 'gemini' })) ||
+      `PDF yüklendi. PDF API bağlantısı bulunamadı ama dosya alındı: ${file.name}.`;
 
     addMessage('assistant', result);
-    speak(result);
     setIsThinking(false);
+    speak(result);
   };
 
   const handleImageUpload = async (file?: File) => {
@@ -424,14 +563,23 @@ export default function Page() {
     setIsThinking(true);
 
     const result =
-      (await tryFormEndpoints(['/api/vision', '/api/image-read', '/api/analyze-image'], file, {
-        mode: 'read',
-      })) ||
-      `Görsel yüklendi ama görsel analiz API bağlantısı bulunamadı. Dosya adı: ${file.name}. Eski çalışan görsel endpoint'in varsa /api/vision, /api/image-read veya /api/analyze-image yoluna bağlayınca analiz burada döner.`;
+      (await postFileFast(IMAGE_ENDPOINTS, file, { mode: 'read', provider: 'gemini' })) ||
+      `Görsel yüklendi. Görsel analiz API bağlantısı bulunamadı ama dosya alındı: ${file.name}.`;
 
     addMessage('assistant', result);
-    speak(result);
     setIsThinking(false);
+    speak(result);
+  };
+
+  const quickAction = (action: string) => {
+    const text = message.trim();
+
+    if (!text) {
+      setMessage(action);
+      return;
+    }
+
+    sendMessage(text, action);
   };
 
   return (
@@ -465,37 +613,22 @@ export default function Page() {
           </div>
 
           <nav className="menu">
-            <button
-              className="menu-item active"
-              onClick={() => addMessage('system', 'Yeni sohbet başlatıldı.')}
-            >
+            <button className="menu-item active" onClick={() => setMessages([])}>
               <span>＋</span> Yeni Sohbet
             </button>
-            <button
-              className="menu-item"
-              onClick={() => addMessage('system', 'Sohbetler alanı açıldı.')}
-            >
+            <button className="menu-item">
               <span>▢</span> Sohbetler
             </button>
-            <button className="menu-item" onClick={() => setActiveMode('research')}>
+            <button className="menu-item" onClick={() => setActiveMode('content')}>
               <span>⌘</span> Modlar
             </button>
-            <button
-              className="menu-item"
-              onClick={() => addMessage('system', 'Araçlar alanı hazır.')}
-            >
+            <button className="menu-item">
               <span>▤</span> Araçlar
             </button>
-            <button
-              className="menu-item"
-              onClick={() => addMessage('system', 'Hatırlatıcılar alanı hazır.')}
-            >
+            <button className="menu-item">
               <span>♢</span> Hatırlatıcılar
             </button>
-            <button
-              className="menu-item"
-              onClick={() => addMessage('system', 'Ayarlar alanı hazır.')}
-            >
+            <button className="menu-item">
               <span>⚙</span> Ayarlar
             </button>
           </nav>
@@ -536,14 +669,7 @@ export default function Page() {
             <h1>LYRA AI ASİSTANINIZ</h1>
 
             <div className="head-actions">
-              <button
-                onClick={() =>
-                  addMessage(
-                    'assistant',
-                    'Ben Lyra. Araştırma, içerik, ders, PDF ve görsel analiz alanlarında yardımcı olurum.'
-                  )
-                }
-              >
+              <button onClick={() => addMessage('assistant', 'Ben Lyra. Gemini destekli konuşma, içerik, ders, PDF ve görsel analiz modlarıyla çalışırım.')}>
                 ⓘ Lyra Hakkında
               </button>
               <button onClick={cycleVoice}>♢</button>
@@ -566,26 +692,17 @@ export default function Page() {
               <b>⌄</b>
             </button>
 
-            <button
-              className={`control ${muted ? 'selected' : ''}`}
-              onClick={() => setMuted((value) => !value)}
-            >
+            <button className={`control ${muted ? 'selected' : ''}`} onClick={() => setMuted((v) => !v)}>
               <span>♬</span>
               {muted ? 'Sesi Aç' : 'Sessize Al'}
             </button>
 
-            <button
-              className={`control ${gender === 'Kadın' ? 'selected' : ''}`}
-              onClick={() => setGender('Kadın')}
-            >
+            <button className={`control ${gender === 'Kadın' ? 'selected' : ''}`} onClick={() => setGender('Kadın')}>
               <span>♙</span>
               Kadın
             </button>
 
-            <button
-              className={`control ${gender === 'Erkek' ? 'selected' : ''}`}
-              onClick={() => setGender('Erkek')}
-            >
+            <button className={`control ${gender === 'Erkek' ? 'selected' : ''}`} onClick={() => setGender('Erkek')}>
               <span>♙</span>
               Erkek
             </button>
@@ -603,7 +720,7 @@ export default function Page() {
                   {item.text}
                 </div>
               ))}
-              {isThinking && <div className="message assistant">Lyra düşünüyor...</div>}
+              {isThinking && <div className="message assistant">Lyra cevaplıyor...</div>}
             </div>
 
             <textarea
@@ -615,9 +732,7 @@ export default function Page() {
 
             <div className="write-actions">
               <div>
-                <button onClick={isListening ? stopListening : startListening}>
-                  {isListening ? '■' : '🎙'}
-                </button>
+                <button onClick={() => startListening(false)}>{isListening ? '■' : '🎙'}</button>
                 <button onClick={() => imageInputRef.current?.click()}>▧</button>
                 <button onClick={() => pdfInputRef.current?.click()}>PDF</button>
               </div>
@@ -643,18 +758,78 @@ export default function Page() {
             ))}
           </section>
 
-          {active && active.key !== 'live' && (
-            <section className="sub-panel">
-              <strong>{active.title}</strong>
-              <div>
-                {active.options.map((option) => (
-                  <button key={option} onClick={() => handleQuickOption(option)}>
-                    {option}
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
+          <section className="sub-panel">
+            {activeMode === 'content' && (
+              <>
+                <strong>İçerik Üretme</strong>
+                <div>
+                  <button onClick={() => quickAction('Video konu başlıkları üret')}>Video Konu Başlıkları</button>
+                  <button onClick={() => quickAction('Hook yaz')}>Hook Alanı</button>
+                  <button onClick={() => quickAction('Teleprompter video metni yaz')}>Teleprompter Metni</button>
+                  <button onClick={() => quickAction('Ekran yazıları ve CTA üret')}>Ekran Yazısı + CTA</button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'lesson' && (
+              <>
+                <strong>Ders Modu</strong>
+                <div>
+                  <button onClick={() => quickAction('Konu özeti çıkar')}>Konu Özeti</button>
+                  <button onClick={() => quickAction('Konu formülleri ve kuralları çıkar')}>Konu Formülleri</button>
+                  <button onClick={() => quickAction('Sınav ipuçları ver')}>Sınav İpuçları</button>
+                  <button onClick={() => quickAction('Çözümlü sorular üret')}>Çözümlü Sorular</button>
+                  <button onClick={() => quickAction('Şıklı test üret')}>Test Üret</button>
+                  <button onClick={() => quickAction('Yanlışımı açıkla')}>Yanlışımı Açıkla</button>
+                  <button onClick={() => imageInputRef.current?.click()}>Soru Görseli Yükle</button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'research' && (
+              <>
+                <strong>Araştırma Modu</strong>
+                <div>
+                  <button onClick={() => quickAction('Derin araştırma yap')}>Derin Araştır</button>
+                  <button onClick={() => quickAction('Kaynaklı özet çıkar')}>Kaynaklı Özet</button>
+                  <button onClick={() => quickAction('Karşılaştırmalı analiz yap')}>Karşılaştır</button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'image' && (
+              <>
+                <strong>Görsel Üretme</strong>
+                <div>
+                  <button onClick={() => quickAction('Görsel promptu yaz')}>Prompt Yaz</button>
+                  <button onClick={() => quickAction('Konsept tasarla')}>Konsept Tasarla</button>
+                  <button onClick={() => quickAction('Renk paleti oluştur')}>Renk Paleti</button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'read' && (
+              <>
+                <strong>Görselle Okut</strong>
+                <div>
+                  <button onClick={() => imageInputRef.current?.click()}>Görsel Yükle</button>
+                  <button onClick={() => quickAction('Görseldeki yazıyı oku')}>Yazıyı Oku</button>
+                  <button onClick={() => quickAction('Görseli analiz et')}>Analiz Et</button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'pdf' && (
+              <>
+                <strong>PDF Özeti</strong>
+                <div>
+                  <button onClick={() => pdfInputRef.current?.click()}>PDF Yükle</button>
+                  <button onClick={() => quickAction('PDF ana başlıkları çıkar')}>Başlık Çıkar</button>
+                  <button onClick={() => quickAction('PDF çalışma notu hazırla')}>Not Hazırla</button>
+                </div>
+              </>
+            )}
+          </section>
         </section>
 
         <aside className="phone-shell">
@@ -666,7 +841,7 @@ export default function Page() {
             </div>
 
             <div className="phone-head">
-              <button onClick={startListening}>☰</button>
+              <button onClick={() => startListening(false)}>☰</button>
               <strong>
                 <span>✦</span> LYRA
               </strong>
@@ -681,19 +856,11 @@ export default function Page() {
 
             <div className="phone-controls">
               <button onClick={cycleVoice}>≋ Ses: {voice}</button>
-              <button onClick={() => setMuted((value) => !value)}>
-                {muted ? 'Sesi Aç' : 'Sessize Al'}
-              </button>
-              <button
-                className={gender === 'Kadın' ? 'selected' : ''}
-                onClick={() => setGender('Kadın')}
-              >
+              <button onClick={() => setMuted((v) => !v)}>{muted ? 'Sesi Aç' : 'Sessize Al'}</button>
+              <button className={gender === 'Kadın' ? 'selected' : ''} onClick={() => setGender('Kadın')}>
                 Kadın
               </button>
-              <button
-                className={gender === 'Erkek' ? 'selected' : ''}
-                onClick={() => setGender('Erkek')}
-              >
+              <button className={gender === 'Erkek' ? 'selected' : ''} onClick={() => setGender('Erkek')}>
                 Erkek
               </button>
               <button className="phone-live" onClick={() => setLiveOpen(true)}>
@@ -722,7 +889,10 @@ export default function Page() {
       {liveOpen && (
         <section className="modal">
           <div className="live-panel glass">
-            <button className="close" onClick={() => setLiveOpen(false)}>
+            <button className="close" onClick={() => {
+              setLiveOpen(false);
+              stopListening();
+            }}>
               ×
             </button>
 
@@ -733,17 +903,16 @@ export default function Page() {
             <h2>Canlı Konuşma</h2>
             <p>
               Ses: <strong>{voice}</strong> · {muted ? 'Sessiz mod açık' : 'Ses açık'} ·{' '}
-              {gender} avatar
+              {liveContinuous ? 'Gemini Live dinliyor' : 'Hazır'}
             </p>
 
             <div className="live-buttons">
-              <button onClick={isListening ? stopListening : startListening}>
-                {isListening ? '■ Dinlemeyi Durdur' : '🎙 Konuşmayı Başlat'}
+              <button onClick={() => startListening(true)}>
+                🎙 Gemini Live Başlat
               </button>
+              <button onClick={stopListening}>■ Durdur</button>
               <button onClick={cycleVoice}>≋ Ses Değiştir</button>
-              <button onClick={() => setMuted((value) => !value)}>
-                {muted ? 'Sesi Aç' : 'Sessize Al'}
-              </button>
+              <button onClick={() => setMuted((v) => !v)}>{muted ? 'Sesi Aç' : 'Sessize Al'}</button>
             </div>
           </div>
         </section>
@@ -763,40 +932,23 @@ export default function Page() {
           --line-strong: rgba(20, 24, 28, 0.22);
           --shadow: 0 30px 90px rgba(18, 22, 26, 0.14);
           --shadow-soft: 0 14px 40px rgba(18, 22, 26, 0.09);
-          --glass: linear-gradient(
-            145deg,
-            rgba(255, 255, 255, 0.95),
-            rgba(235, 238, 241, 0.78),
-            rgba(255, 255, 255, 0.88)
-          );
+          --glass: linear-gradient(145deg, rgba(255,255,255,.95), rgba(235,238,241,.78), rgba(255,255,255,.88));
         }
 
-        * {
-          box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
-        html,
-        body {
+        html, body {
           margin: 0;
           min-height: 100%;
-          font-family:
-            Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            'Segoe UI', sans-serif;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           color: var(--graphite);
           background:
-            radial-gradient(circle at 48% 22%, rgba(255, 255, 255, 1), transparent 32%),
+            radial-gradient(circle at 48% 22%, rgba(255,255,255,1), transparent 32%),
             linear-gradient(135deg, #ffffff 0%, #f5f7f8 44%, #e6eaee 100%);
         }
 
-        button,
-        textarea {
-          font: inherit;
-        }
-
-        button {
-          cursor: pointer;
-          border: 0;
-        }
+        button, textarea { font: inherit; }
+        button { cursor: pointer; border: 0; }
 
         .page {
           position: relative;
@@ -805,53 +957,28 @@ export default function Page() {
           padding: 24px 24px 36px;
         }
 
-        .page::before,
-        .page::after {
+        .page::before, .page::after {
           content: '';
           position: absolute;
           inset: -22%;
           pointer-events: none;
           background:
-            radial-gradient(
-              ellipse at 50% 42%,
-              transparent 0 28%,
-              rgba(255, 255, 255, 0.92) 29%,
-              transparent 30%
-            ),
-            radial-gradient(
-              ellipse at 48% 44%,
-              transparent 0 37%,
-              rgba(218, 224, 229, 0.62) 38%,
-              transparent 39%
-            );
-          opacity: 0.75;
+            radial-gradient(ellipse at 50% 42%, transparent 0 28%, rgba(255,255,255,.92) 29%, transparent 30%),
+            radial-gradient(ellipse at 48% 44%, transparent 0 37%, rgba(218,224,229,.62) 38%, transparent 39%);
+          opacity: .75;
         }
 
-        .page::after {
-          transform: rotate(-15deg) scale(1.12);
-          opacity: 0.32;
-        }
+        .page::after { transform: rotate(-15deg) scale(1.12); opacity: .32; }
 
         .brand-outside {
           position: relative;
           z-index: 2;
           width: 150px;
           margin-bottom: 14px;
-          color: var(--graphite);
         }
 
-        .brand-star {
-          font-size: 42px;
-          line-height: 1;
-          color: #282d32;
-        }
-
-        .brand-text {
-          margin-top: 6px;
-          font-size: 34px;
-          font-weight: 950;
-          letter-spacing: 0.18em;
-        }
+        .brand-star { font-size: 42px; line-height: 1; color: #282d32; }
+        .brand-text { margin-top: 6px; font-size: 34px; font-weight: 950; letter-spacing: .18em; }
 
         .app-layout {
           position: relative;
@@ -886,40 +1013,19 @@ export default function Page() {
           gap: 12px;
           padding: 0 18px 26px;
           font-size: 28px;
-          letter-spacing: 0.08em;
+          letter-spacing: .08em;
         }
 
-        .logo-row strong {
-          font-weight: 950;
-        }
+        .logo-row strong { font-weight: 950; }
+        .menu { display: grid; gap: 12px; }
 
-        .menu {
-          display: grid;
-          gap: 12px;
-        }
-
-        .menu-item,
-        .mini-box,
-        .profile-box,
-        .usage-box,
-        .control,
-        .write-box,
-        .mode-card,
-        .phone-controls button,
-        .phone-input,
-        .phone-grid button,
+        .menu-item, .mini-box, .profile-box, .usage-box, .control, .write-box,
+        .mode-card, .phone-controls button, .phone-input, .phone-grid button,
         .head-actions button {
           color: var(--graphite);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(255, 255, 255, 0.98),
-              rgba(239, 242, 244, 0.9)
-            );
-          border: 1px solid rgba(25, 29, 33, 0.1);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 10px 26px rgba(18, 22, 26, 0.08);
+          background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(239,242,244,.9));
+          border: 1px solid rgba(25,29,33,.1);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 10px 26px rgba(18,22,26,.08);
         }
 
         .menu-item {
@@ -931,53 +1037,19 @@ export default function Page() {
           gap: 13px;
           text-align: left;
           font-weight: 900;
-          transition: 0.2s ease;
+          transition: .2s ease;
         }
 
-        .menu-item.active,
-        .menu-item:hover {
-          border-color: var(--line-strong);
-          transform: translateY(-1px);
-        }
+        .menu-item.active, .menu-item:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+        .menu-item span { font-size: 19px; font-weight: 950; }
 
-        .menu-item span {
-          font-size: 19px;
-          font-weight: 950;
-        }
+        .side-bottom { margin-top: auto; display: grid; gap: 12px; }
+        .mini-box, .profile-box, .usage-box { border-radius: 20px; padding: 18px; }
+        .mini-box { display: flex; gap: 12px; align-items: center; }
+        .mini-box span { font-size: 26px; }
 
-        .side-bottom {
-          margin-top: auto;
-          display: grid;
-          gap: 12px;
-        }
-
-        .mini-box,
-        .profile-box,
-        .usage-box {
-          border-radius: 20px;
-          padding: 18px;
-        }
-
-        .mini-box {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-        }
-
-        .mini-box span {
-          font-size: 26px;
-        }
-
-        .mini-box strong,
-        .profile-box strong,
-        .usage-box strong {
-          display: block;
-          font-weight: 950;
-        }
-
-        .mini-box small,
-        .profile-box small,
-        .usage-box small {
+        .mini-box strong, .profile-box strong, .usage-box strong { display: block; font-weight: 950; }
+        .mini-box small, .profile-box small, .usage-box small {
           display: block;
           margin-top: 3px;
           color: var(--muted);
@@ -997,20 +1069,12 @@ export default function Page() {
           border-radius: 50%;
           display: grid;
           place-items: center;
-          background:
-            radial-gradient(circle at 30% 22%, #ffffff, transparent 28%),
-            linear-gradient(145deg, #202428, #7e858b);
-          color: #ffffff;
+          background: radial-gradient(circle at 30% 22%, #fff, transparent 28%), linear-gradient(145deg, #202428, #7e858b);
+          color: white;
           font-weight: 950;
         }
 
-        .usage-box > div {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          font-weight: 900;
-        }
-
+        .usage-box > div { display: flex; justify-content: space-between; gap: 12px; font-weight: 900; }
         .usage-line {
           display: block;
           height: 7px;
@@ -1019,7 +1083,6 @@ export default function Page() {
           border-radius: 999px;
           background: #d8dde1;
         }
-
         .usage-line i {
           display: block;
           width: 68%;
@@ -1042,19 +1105,11 @@ export default function Page() {
           inset: -20%;
           pointer-events: none;
           background:
-            radial-gradient(circle at 50% 25%, rgba(255, 255, 255, 0.95), transparent 25%),
-            radial-gradient(circle at 50% 33%, rgba(226, 231, 235, 0.68), transparent 42%);
+            radial-gradient(circle at 50% 25%, rgba(255,255,255,.95), transparent 25%),
+            radial-gradient(circle at 50% 33%, rgba(226,231,235,.68), transparent 42%);
         }
 
-        .main-head,
-        .hero,
-        .controls,
-        .write-box,
-        .mode-grid,
-        .sub-panel {
-          position: relative;
-          z-index: 1;
-        }
+        .main-head, .hero, .controls, .write-box, .mode-grid, .sub-panel { position: relative; z-index: 1; }
 
         .main-head {
           min-height: 56px;
@@ -1066,7 +1121,7 @@ export default function Page() {
         .main-head h1 {
           margin: 0;
           font-size: clamp(21px, 2.2vw, 31px);
-          letter-spacing: 0.12em;
+          letter-spacing: .12em;
           font-weight: 950;
         }
 
@@ -1094,24 +1149,12 @@ export default function Page() {
         .silver-orbit {
           position: absolute;
           border-radius: 50%;
-          border: 2px solid rgba(255, 255, 255, 0.95);
-          box-shadow:
-            0 0 26px rgba(255, 255, 255, 0.9),
-            inset 0 0 30px rgba(205, 211, 216, 0.58);
+          border: 2px solid rgba(255,255,255,.95);
+          box-shadow: 0 0 26px rgba(255,255,255,.9), inset 0 0 30px rgba(205,211,216,.58);
         }
 
-        .orbit-one {
-          width: 300px;
-          height: 300px;
-          animation: orbit 9s ease-in-out infinite;
-        }
-
-        .orbit-two {
-          width: 385px;
-          height: 385px;
-          opacity: 0.46;
-          animation: orbit 12s ease-in-out infinite reverse;
-        }
+        .orbit-one { width: 300px; height: 300px; animation: orbit 9s ease-in-out infinite; }
+        .orbit-two { width: 385px; height: 385px; opacity: .46; animation: orbit 12s ease-in-out infinite reverse; }
 
         .avatar-video-wrap {
           position: relative;
@@ -1120,12 +1163,9 @@ export default function Page() {
           height: 300px;
           border-radius: 28px;
           overflow: hidden;
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          background:
-            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 20px 56px rgba(18, 22, 26, 0.16);
+          border: 1px solid rgba(20,24,28,.12);
+          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 20px 56px rgba(18,22,26,.16);
         }
 
         .avatar-media-root {
@@ -1136,33 +1176,19 @@ export default function Page() {
           place-items: center;
         }
 
-        .avatar-poster,
-        .avatar-video,
-        .phone-avatar-poster,
-        .phone-avatar-video,
-        .live-avatar-poster,
-        .live-avatar-video {
+        .avatar-poster, .avatar-video, .phone-avatar-poster, .phone-avatar-video,
+        .live-avatar-poster, .live-avatar-video {
           position: absolute;
           inset: 0;
           width: 100%;
           height: 100%;
           object-fit: contain;
           object-position: center center;
-          background:
-            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
+          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
         }
 
-        .avatar-video,
-        .phone-avatar-video,
-        .live-avatar-video {
-          z-index: 2;
-        }
-
-        .avatar-poster,
-        .phone-avatar-poster,
-        .live-avatar-poster {
-          z-index: 1;
-        }
+        .avatar-video, .phone-avatar-video, .live-avatar-video { z-index: 2; }
+        .avatar-poster, .phone-avatar-poster, .live-avatar-poster { z-index: 1; }
 
         .video-loading {
           position: absolute;
@@ -1171,10 +1197,10 @@ export default function Page() {
           display: grid;
           place-items: center;
           font-size: 28px;
-          letter-spacing: 0.16em;
+          letter-spacing: .16em;
           font-weight: 950;
           color: #2b2f34;
-          background: linear-gradient(145deg, #ffffff, #edf1f4);
+          background: linear-gradient(145deg, #fff, #edf1f4);
         }
 
         .controls {
@@ -1195,39 +1221,31 @@ export default function Page() {
           gap: 10px;
           font-size: 16px;
           font-weight: 950;
-          transition: 0.2s ease;
+          transition: .2s ease;
         }
 
-        .control:hover,
-        .mode-card:hover,
-        .phone-grid button:hover {
+        .control:hover, .mode-card:hover, .phone-grid button:hover {
           transform: translateY(-2px);
           border-color: var(--line-strong);
         }
 
         .control.selected {
-          background: linear-gradient(145deg, #ffffff, rgba(222, 226, 230, 0.94));
+          background: linear-gradient(145deg, #fff, rgba(222,226,230,.94));
           border-color: var(--line-strong);
         }
 
-        .control.live {
-          min-width: 214px;
-        }
-
-        .sound {
-          font-size: 24px;
-          line-height: 1;
-        }
+        .control.live { min-width: 214px; }
+        .sound { font-size: 24px; line-height: 1; }
 
         .write-box {
-          min-height: 210px;
+          min-height: 275px;
           margin-top: 22px;
           border-radius: 26px;
           padding: 18px 22px 14px;
         }
 
         .message-list {
-          max-height: 90px;
+          height: 150px;
           overflow: auto;
           display: flex;
           flex-direction: column;
@@ -1238,12 +1256,13 @@ export default function Page() {
 
         .message {
           width: fit-content;
-          max-width: 88%;
-          padding: 8px 12px;
+          max-width: 92%;
+          padding: 10px 13px;
           border-radius: 16px;
           font-size: 14px;
-          line-height: 1.35;
+          line-height: 1.42;
           font-weight: 800;
+          white-space: pre-wrap;
         }
 
         .message.user {
@@ -1254,14 +1273,14 @@ export default function Page() {
 
         .message.assistant {
           align-self: flex-start;
-          background: rgba(255, 255, 255, 0.86);
+          background: rgba(255,255,255,.86);
           color: var(--graphite);
           border: 1px solid var(--line);
         }
 
         .message.system {
           align-self: center;
-          background: rgba(225, 230, 234, 0.7);
+          background: rgba(225,230,234,.7);
           color: var(--graphite-soft);
           border: 1px solid var(--line);
         }
@@ -1278,10 +1297,7 @@ export default function Page() {
           font-weight: 850;
         }
 
-        .write-box textarea::placeholder {
-          color: #394047;
-          opacity: 0.9;
-        }
+        .write-box textarea::placeholder { color: #394047; opacity: .9; }
 
         .write-actions {
           display: flex;
@@ -1289,10 +1305,7 @@ export default function Page() {
           justify-content: space-between;
         }
 
-        .write-actions div {
-          display: flex;
-          gap: 10px;
-        }
+        .write-actions div { display: flex; gap: 10px; }
 
         .write-actions button {
           min-width: 38px;
@@ -1300,19 +1313,13 @@ export default function Page() {
           padding: 0 10px;
           border-radius: 999px;
           color: var(--graphite);
-          background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
+          background: linear-gradient(145deg, rgba(255,255,255,1), rgba(230,234,237,.92));
           border: 1px solid var(--line);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 7px 18px rgba(18, 22, 26, 0.1);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 7px 18px rgba(18,22,26,.1);
           font-weight: 950;
         }
 
-        .write-actions .send {
-          width: 46px;
-          height: 46px;
-          border-radius: 50%;
-        }
+        .write-actions .send { width: 46px; height: 46px; border-radius: 50%; }
 
         .mode-grid {
           display: grid;
@@ -1322,54 +1329,46 @@ export default function Page() {
         }
 
         .mode-card {
-          min-height: 185px;
+          min-height: 165px;
           border-radius: 24px;
-          padding: 20px 12px 14px;
+          padding: 18px 10px 12px;
           display: flex;
           flex-direction: column;
           align-items: center;
           text-align: center;
-          transition: 0.2s ease;
+          transition: .2s ease;
         }
 
         .mode-card.active {
           border-color: var(--line-strong);
-          outline: 2px solid rgba(18, 22, 26, 0.08);
+          outline: 2px solid rgba(18,22,26,.08);
         }
 
         .mode-icon {
-          height: 44px;
+          height: 38px;
           display: grid;
           place-items: center;
-          font-size: 38px;
+          font-size: 32px;
           line-height: 1;
           color: var(--graphite);
         }
 
-        .mode-card strong {
-          margin-top: 12px;
-          font-size: 15px;
-          font-weight: 950;
-        }
-
+        .mode-card strong { margin-top: 10px; font-size: 14px; font-weight: 950; }
         .mode-card small {
-          margin-top: 8px;
+          margin-top: 7px;
           color: var(--graphite-soft);
-          font-size: 12px;
-          line-height: 1.35;
+          font-size: 11px;
+          line-height: 1.28;
           font-weight: 800;
         }
 
-        .mode-card b {
-          margin-top: auto;
-          font-weight: 950;
-        }
+        .mode-card b { margin-top: auto; font-weight: 950; }
 
         .sub-panel {
           margin-top: 16px;
           border-radius: 22px;
           padding: 16px;
-          background: rgba(255, 255, 255, 0.74);
+          background: rgba(255,255,255,.74);
           border: 1px solid var(--line);
           display: flex;
           align-items: center;
@@ -1377,9 +1376,7 @@ export default function Page() {
           gap: 16px;
         }
 
-        .sub-panel strong {
-          font-weight: 950;
-        }
+        .sub-panel strong { font-weight: 950; }
 
         .sub-panel div {
           display: flex;
@@ -1401,10 +1398,8 @@ export default function Page() {
           align-self: center;
           padding: 10px;
           border-radius: 46px;
-          background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
-          box-shadow:
-            inset 0 0 0 2px rgba(255, 255, 255, 0.7),
-            0 28px 70px rgba(18, 22, 26, 0.22);
+          background: linear-gradient(145deg, #f9fafb, #9da3a9, #fff);
+          box-shadow: inset 0 0 0 2px rgba(255,255,255,.7), 0 28px 70px rgba(18,22,26,.22);
         }
 
         .phone {
@@ -1413,14 +1408,11 @@ export default function Page() {
           overflow: hidden;
           border-radius: 38px;
           padding: 15px 14px 18px;
-          background:
-            radial-gradient(circle at 50% 19%, rgba(255, 255, 255, 1), transparent 34%),
-            linear-gradient(145deg, #ffffff, #eef1f3);
-          border: 1px solid rgba(255, 255, 255, 0.94);
+          background: radial-gradient(circle at 50% 19%, rgba(255,255,255,1), transparent 34%), linear-gradient(145deg, #fff, #eef1f3);
+          border: 1px solid rgba(255,255,255,.94);
         }
 
-        .phone-status,
-        .phone-head {
+        .phone-status, .phone-head {
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -1434,25 +1426,19 @@ export default function Page() {
           background: #080a0c;
         }
 
-        .phone-head {
-          margin-top: 18px;
-        }
+        .phone-head { margin-top: 18px; }
 
         .phone-head button {
           width: 34px;
           height: 34px;
           border-radius: 50%;
-          background: rgba(255, 255, 255, 0.9);
+          background: rgba(255,255,255,.9);
           color: var(--graphite);
           border: 1px solid var(--line);
           font-weight: 950;
         }
 
-        .phone-head strong {
-          font-size: 24px;
-          letter-spacing: 0.12em;
-          font-weight: 950;
-        }
+        .phone-head strong { font-size: 24px; letter-spacing: .12em; font-weight: 950; }
 
         .phone-hero {
           position: relative;
@@ -1468,12 +1454,9 @@ export default function Page() {
           height: 190px;
           border-radius: 24px;
           overflow: hidden;
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          background:
-            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 14px 32px rgba(18, 22, 26, 0.12);
+          border: 1px solid rgba(20,24,28,.12);
+          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 14px 32px rgba(18,22,26,.12);
         }
 
         .phone-controls {
@@ -1489,13 +1472,11 @@ export default function Page() {
         }
 
         .phone-controls .selected {
-          background: linear-gradient(145deg, #ffffff, #e2e6e9);
+          background: linear-gradient(145deg, #fff, #e2e6e9);
           border-color: var(--line-strong);
         }
 
-        .phone-live {
-          grid-column: 1 / -1;
-        }
+        .phone-live { grid-column: 1 / -1; }
 
         .phone-input {
           min-height: 82px;
@@ -1538,20 +1519,9 @@ export default function Page() {
           gap: 4px;
         }
 
-        .phone-grid span {
-          font-size: 23px;
-          line-height: 1;
-        }
-
-        .phone-grid strong {
-          font-size: 11px;
-          line-height: 1.12;
-          font-weight: 950;
-        }
-
-        .phone-grid small {
-          font-weight: 950;
-        }
+        .phone-grid span { font-size: 23px; line-height: 1; }
+        .phone-grid strong { font-size: 11px; line-height: 1.12; font-weight: 950; }
+        .phone-grid small { font-weight: 950; }
 
         .modal {
           position: fixed;
@@ -1560,7 +1530,7 @@ export default function Page() {
           display: grid;
           place-items: center;
           padding: 24px;
-          background: rgba(238, 241, 244, 0.72);
+          background: rgba(238,241,244,.72);
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
         }
@@ -1593,9 +1563,8 @@ export default function Page() {
           margin: 0 auto;
           border-radius: 28px;
           overflow: hidden;
-          background:
-            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          border: 1px solid rgba(20, 24, 28, 0.12);
+          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
+          border: 1px solid rgba(20,24,28,.12);
           box-shadow: var(--shadow);
         }
 
@@ -1631,110 +1600,34 @@ export default function Page() {
         }
 
         @keyframes orbit {
-          0%,
-          100% {
-            transform: scale(1) translateY(0);
-          }
-          50% {
-            transform: scale(1.03) translateY(-8px);
-          }
+          0%, 100% { transform: scale(1) translateY(0); }
+          50% { transform: scale(1.03) translateY(-8px); }
         }
 
         @media (max-width: 1280px) {
-          .app-layout {
-            grid-template-columns: 220px minmax(620px, 1fr);
-          }
-
-          .phone-shell {
-            grid-column: 1 / -1;
-            justify-self: center;
-          }
-
-          .mode-grid {
-            grid-template-columns: repeat(3, 1fr);
-          }
+          .app-layout { grid-template-columns: 220px minmax(620px, 1fr); }
+          .phone-shell { grid-column: 1 / -1; justify-self: center; }
+          .mode-grid { grid-template-columns: repeat(3, 1fr); }
         }
 
         @media (max-width: 860px) {
-          .page {
-            padding: 18px 12px 24px;
-          }
-
-          .brand-outside {
-            margin: 0 auto 14px;
-            text-align: center;
-          }
-
-          .app-layout {
-            grid-template-columns: 1fr;
-          }
-
-          .sidebar,
-          .phone-shell {
-            display: none;
-          }
-
-          .main-panel {
-            min-height: auto;
-            padding: 18px 14px 20px;
-            border-radius: 26px;
-          }
-
-          .main-head {
-            justify-content: center;
-          }
-
-          .main-head h1 {
-            font-size: 18px;
-            text-align: center;
-          }
-
-          .head-actions {
-            display: none;
-          }
-
-          .hero {
-            height: 270px;
-          }
-
-          .orbit-one {
-            width: 250px;
-            height: 250px;
-          }
-
-          .orbit-two {
-            width: 320px;
-            height: 320px;
-          }
-
-          .avatar-video-wrap {
-            width: 210px;
-            height: 255px;
-            border-radius: 22px;
-          }
-
-          .controls {
-            grid-template-columns: 1fr 1fr;
-            margin-top: -4px;
-          }
-
-          .control.live {
-            grid-column: 1 / -1;
-          }
-
-          .control {
-            min-height: 50px;
-            padding: 0 14px;
-            font-size: 14px;
-          }
-
-          .mode-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .mode-card {
-            min-height: 160px;
-          }
+          .page { padding: 18px 12px 24px; }
+          .brand-outside { margin: 0 auto 14px; text-align: center; }
+          .app-layout { grid-template-columns: 1fr; }
+          .sidebar, .phone-shell { display: none; }
+          .main-panel { min-height: auto; padding: 18px 14px 20px; border-radius: 26px; }
+          .main-head { justify-content: center; }
+          .main-head h1 { font-size: 18px; text-align: center; }
+          .head-actions { display: none; }
+          .hero { height: 270px; }
+          .orbit-one { width: 250px; height: 250px; }
+          .orbit-two { width: 320px; height: 320px; }
+          .avatar-video-wrap { width: 210px; height: 255px; border-radius: 22px; }
+          .controls { grid-template-columns: 1fr 1fr; margin-top: -4px; }
+          .control.live { grid-column: 1 / -1; }
+          .control { min-height: 50px; padding: 0 14px; font-size: 14px; }
+          .mode-grid { grid-template-columns: repeat(2, 1fr); }
+          .mode-card { min-height: 160px; }
         }
       `}</style>
     </main>
