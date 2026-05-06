@@ -28,7 +28,7 @@ export async function GET() {
     const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     const newSessionExpireTime = new Date(Date.now() + 60 * 1000).toISOString();
 
-    const token = await client.authTokens.create({
+    const tokenRequest: any = {
       config: {
         uses: 1,
         expireTime,
@@ -36,7 +36,6 @@ export async function GET() {
         liveConnectConstraints: {
           model: LIVE_MODEL,
           config: {
-            sessionResumption: {},
             temperature: 0.7,
             responseModalities: ["AUDIO"],
             systemInstruction: {
@@ -53,7 +52,9 @@ export async function GET() {
           apiVersion: "v1alpha",
         },
       },
-    });
+    };
+
+    const token = await (client as any).authTokens.create(tokenRequest);
 
     return NextResponse.json({
       ok: true,
