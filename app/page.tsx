@@ -1,8 +1,15 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'live';
+type NavKey =
+  | 'new'
+  | 'chats'
+  | 'modes'
+  | 'tools'
+  | 'reminders'
+  | 'settings';
 
 const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
 const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
@@ -13,6 +20,7 @@ const modes: {
   desc: string;
   icon: string;
   options: string[];
+  prompt: string;
 }[] = [
   {
     key: 'research',
@@ -20,6 +28,7 @@ const modes: {
     desc: 'Bilgi bul, analiz et ve net cevaplar üret.',
     icon: '⌕',
     options: ['Derin araştır', 'Kaynaklı özetle', 'Güncel bilgi bul'],
+    prompt: 'Bugün araştırmamı istediğin konuyu yaz, sana net ve düzenli çıkarayım.',
   },
   {
     key: 'content',
@@ -27,6 +36,7 @@ const modes: {
     desc: 'Hook, metin, video fikri ve içerik hazırla.',
     icon: '✎',
     options: ['Hook yaz', 'Teleprompter hazırla', 'Video fikri üret'],
+    prompt: 'İçerik fikrini yaz, ben sana hook ve metin çıkarayım.',
   },
   {
     key: 'lesson',
@@ -34,6 +44,7 @@ const modes: {
     desc: 'Konu anlat, soru çöz ve öğrenmeyi kolaylaştır.',
     icon: '▰',
     options: ['Konu anlat', 'Test üret', 'Yanlışımı açıkla'],
+    prompt: 'Hangi dersi çalışmak istiyorsun? Konu ya da soru yaz.',
   },
   {
     key: 'image',
@@ -41,6 +52,7 @@ const modes: {
     desc: 'Fikirleri görsele dönüştür ve tasarla.',
     icon: '▧',
     options: ['Prompt yaz', 'Konsept üret', 'Görsel fikri ver'],
+    prompt: 'Nasıl bir görsel istediğini yaz, birlikte tasarlayalım.',
   },
   {
     key: 'read',
@@ -48,6 +60,7 @@ const modes: {
     desc: 'Görsel, belge ve ekranları analiz et.',
     icon: '◌',
     options: ['Fotoğraf oku', 'Belge analiz et', 'Etiket çöz'],
+    prompt: 'Görsel veya belge içeriğini incelememi istiyorsan anlat.',
   },
   {
     key: 'live',
@@ -55,57 +68,73 @@ const modes: {
     desc: 'Gerçek zamanlı konuşma alanına geç.',
     icon: '≋',
     options: ['Canlı konuş', 'Ses seç', 'Sessize al'],
+    prompt: 'Canlı mod açıldı. Sesli görüşme alanına geçebilirsin.',
   },
 ];
+
+const voices = ['Lyra', 'Nova', 'Luna', 'Aura'];
 
 function AvatarVideo({
   className,
   imageClassName,
+  rounded = false,
 }: {
   className: string;
   imageClassName: string;
+  rounded?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
 
-  const preventBlackEnd = () => {
+  useEffect(() => {
     const video = videoRef.current;
-    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    if (!video) return;
 
-    if (video.currentTime >= video.duration - 0.18) {
-      video.currentTime = 0.05;
-      video.play().catch(() => {});
-    }
-  };
+    const checkLoop = () => {
+      if (video && Number.isFinite(video.duration) && video.duration > 0) {
+        // Son karelerdeki siyah frame görünmeden önce tekrar başlat
+        if (video.currentTime >= video.duration - 0.28) {
+          video.currentTime = 0.04;
+          video.play().catch(() => {});
+        }
+      }
+      rafRef.current = requestAnimationFrame(checkLoop);
+    };
+
+    rafRef.current = requestAnimationFrame(checkLoop);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   return (
-    <>
-      <img
-        className={imageClassName}
-        src={AVATAR_IMAGE}
-        alt="Lyra avatar görseli"
-        aria-hidden="true"
-      />
-
+    <div className={`avatar-media-root ${rounded ? 'rounded' : ''}`}>
+      <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
       <video
         ref={videoRef}
         className={className}
         src={AVATAR_VIDEO}
         poster={AVATAR_IMAGE}
         autoPlay
-        loop
         muted
         playsInline
         preload="auto"
-        onTimeUpdate={preventBlackEnd}
-        onEnded={(event) => {
-          event.currentTarget.currentTime = 0.05;
-          event.currentTarget.play().catch(() => {});
+        onLoadedData={(e) => {
+          setVideoReady(true);
+          e.currentTarget.play().catch(() => {});
         }}
-        onError={(event) => {
-          event.currentTarget.style.display = 'none';
+        onEnded={(e) => {
+          e.currentTarget.currentTime = 0.04;
+          e.currentTarget.play().catch(() => {});
+        }}
+        onError={(e) => {
+          e.currentTarget.style.display = 'none';
         }}
       />
-    </>
+      {!videoReady && <div className="video-loading">LYRA</div>}
+    </div>
   );
 }
 
@@ -114,17 +143,66 @@ export default function Page() {
   const [muted, setMuted] = useState(false);
   const [gender, setGender] = useState<'Kadın' | 'Erkek'>('Kadın');
   const [liveOpen, setLiveOpen] = useState(false);
+  const [selectedNav, setSelectedNav] = useState<NavKey>('new');
+  const [voiceIndex, setVoiceIndex] = useState(0);
+  const [message, setMessage] = useState('');
+  const [chatLog, setChatLog] = useState<string[]>([]);
 
-  const active = modes.find((item) => item.key === activeMode);
+  const voice = voices[voiceIndex];
+  const active = useMemo(
+    () => modes.find((item) => item.key === activeMode),
+    [activeMode]
+  );
+
+  const placeholderText = active?.prompt || `Lyra’ya bir şey sor veya yaz...`;
+
+  const handleVoiceChange = () => {
+    setVoiceIndex((prev) => (prev + 1) % voices.length);
+  };
 
   const openMode = (key: ModeKey) => {
     if (key === 'live') {
-      setLiveOpen(true);
       setActiveMode('live');
+      setLiveOpen(true);
       return;
     }
 
     setActiveMode((current) => (current === key ? null : key));
+  };
+
+  const handleQuickOption = (option: string) => {
+    const readyText = `${option} seçildi`;
+    setMessage(readyText);
+  };
+
+  const handleSend = () => {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
+    const answer =
+      activeMode === 'research'
+        ? `Araştırma modunda "${trimmed}" için çalışmaya hazırım.`
+        : activeMode === 'content'
+        ? `"${trimmed}" için içerik kurgusu hazırlayabilirim.`
+        : activeMode === 'lesson'
+        ? `"${trimmed}" konusu için ders planı çıkarabilirim.`
+        : activeMode === 'image'
+        ? `"${trimmed}" için görsel prompt tasarlayabilirim.`
+        : activeMode === 'read'
+        ? `"${trimmed}" için görsel/belge analizi yapabilirim.`
+        : `“${trimmed}” mesajını aldım.`;
+
+    setChatLog((prev) => [trimmed, answer, ...prev].slice(0, 6));
+    setMessage('');
+  };
+
+  const handleTextareaKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>
+  ) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSend();
+    }
   };
 
   return (
@@ -142,22 +220,40 @@ export default function Page() {
           </div>
 
           <nav className="menu">
-            <button className="menu-item active">
+            <button
+              className={`menu-item ${selectedNav === 'new' ? 'active' : ''}`}
+              onClick={() => setSelectedNav('new')}
+            >
               <span>＋</span> Yeni Sohbet
             </button>
-            <button className="menu-item">
+            <button
+              className={`menu-item ${selectedNav === 'chats' ? 'active' : ''}`}
+              onClick={() => setSelectedNav('chats')}
+            >
               <span>▢</span> Sohbetler
             </button>
-            <button className="menu-item">
+            <button
+              className={`menu-item ${selectedNav === 'modes' ? 'active' : ''}`}
+              onClick={() => setSelectedNav('modes')}
+            >
               <span>⌘</span> Modlar
             </button>
-            <button className="menu-item">
+            <button
+              className={`menu-item ${selectedNav === 'tools' ? 'active' : ''}`}
+              onClick={() => setSelectedNav('tools')}
+            >
               <span>▤</span> Araçlar
             </button>
-            <button className="menu-item">
+            <button
+              className={`menu-item ${selectedNav === 'reminders' ? 'active' : ''}`}
+              onClick={() => setSelectedNav('reminders')}
+            >
               <span>♢</span> Hatırlatıcılar
             </button>
-            <button className="menu-item">
+            <button
+              className={`menu-item ${selectedNav === 'settings' ? 'active' : ''}`}
+              onClick={() => setSelectedNav('settings')}
+            >
               <span>⚙</span> Ayarlar
             </button>
           </nav>
@@ -198,25 +294,27 @@ export default function Page() {
             <h1>LYRA AI ASİSTANINIZ</h1>
 
             <div className="head-actions">
-              <button>ⓘ Lyra Hakkında</button>
-              <button>♢</button>
+              <button onClick={() => setActiveMode('research')}>ⓘ Lyra Hakkında</button>
+              <button onClick={() => setSelectedNav('settings')}>♢</button>
             </div>
           </header>
 
           <section className="hero">
             <div className="silver-orbit orbit-one" />
             <div className="silver-orbit orbit-two" />
-            <div className="silver-orbit orbit-three" />
 
             <div className="avatar-video-wrap">
-              <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
+              <AvatarVideo
+                className="avatar-video"
+                imageClassName="avatar-poster"
+              />
             </div>
           </section>
 
           <section className="controls">
-            <button className="control">
+            <button className="control" onClick={handleVoiceChange}>
               <span className="sound">≋</span>
-              Ses: Lyra
+              Ses: {voice}
               <b>⌄</b>
             </button>
 
@@ -225,7 +323,7 @@ export default function Page() {
               onClick={() => setMuted((value) => !value)}
             >
               <span>♬</span>
-              {muted ? 'Sessiz' : 'Sessize Al'}
+              {muted ? 'Sesi Aç' : 'Sessize Al'}
             </button>
 
             <button
@@ -251,18 +349,35 @@ export default function Page() {
           </section>
 
           <section className="write-box">
-            <textarea placeholder="Lyra’ya bir şey sor veya yaz..." />
+            <textarea
+              placeholder={placeholderText}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleTextareaKeyDown}
+            />
 
             <div className="write-actions">
               <div>
-                <button>⌘</button>
-                <button>✧</button>
-                <button>▧</button>
+                <button onClick={() => setActiveMode('research')}>⌘</button>
+                <button onClick={() => setActiveMode('content')}>✧</button>
+                <button onClick={() => setActiveMode('image')}>▧</button>
               </div>
 
-              <button className="send">▶</button>
+              <button className="send" onClick={handleSend}>
+                ▶
+              </button>
             </div>
           </section>
+
+          {chatLog.length > 0 && (
+            <section className="chat-preview">
+              {chatLog.map((item, index) => (
+                <div key={`${item}-${index}`} className="chat-chip">
+                  {item}
+                </div>
+              ))}
+            </section>
+          )}
 
           <section className="mode-grid">
             {modes.map((mode) => (
@@ -284,7 +399,9 @@ export default function Page() {
               <strong>{active.title}</strong>
               <div>
                 {active.options.map((option) => (
-                  <button key={option}>{option}</button>
+                  <button key={option} onClick={() => handleQuickOption(option)}>
+                    {option}
+                  </button>
                 ))}
               </div>
             </section>
@@ -300,15 +417,14 @@ export default function Page() {
             </div>
 
             <div className="phone-head">
-              <button>☰</button>
+              <button onClick={() => setSelectedNav('new')}>☰</button>
               <strong>
                 <span>✦</span> LYRA
               </strong>
-              <button>♢</button>
+              <button onClick={() => setSelectedNav('settings')}>♢</button>
             </div>
 
             <div className="phone-hero">
-              <div className="phone-ring" />
               <div className="phone-avatar-video-wrap">
                 <AvatarVideo
                   className="phone-avatar-video"
@@ -318,18 +434,30 @@ export default function Page() {
             </div>
 
             <div className="phone-controls">
-              <button>≋ Ses: Lyra</button>
-              <button>{muted ? 'Sessiz' : 'Sessize Al'}</button>
-              <button className={gender === 'Kadın' ? 'selected' : ''}>Kadın</button>
-              <button className={gender === 'Erkek' ? 'selected' : ''}>Erkek</button>
+              <button onClick={handleVoiceChange}>≋ Ses: {voice}</button>
+              <button onClick={() => setMuted((value) => !value)}>
+                {muted ? 'Sesi Aç' : 'Sessize Al'}
+              </button>
+              <button
+                className={gender === 'Kadın' ? 'selected' : ''}
+                onClick={() => setGender('Kadın')}
+              >
+                Kadın
+              </button>
+              <button
+                className={gender === 'Erkek' ? 'selected' : ''}
+                onClick={() => setGender('Erkek')}
+              >
+                Erkek
+              </button>
               <button className="phone-live" onClick={() => setLiveOpen(true)}>
                 ≋ Canlı Konuşma ›
               </button>
             </div>
 
-            <div className="phone-input">
-              <span>Lyra’ya bir şey sor veya yaz...</span>
-              <button>▶</button>
+            <div className="phone-input" onClick={() => setSelectedNav('new')}>
+              <span>{message || 'Lyra’ya bir şey sor veya yaz...'}</span>
+              <button onClick={handleSend}>▶</button>
             </div>
 
             <div className="phone-grid">
@@ -353,8 +481,6 @@ export default function Page() {
             </button>
 
             <div className="live-avatar-video-wrap">
-              <span className="live-pulse one" />
-              <span className="live-pulse two" />
               <AvatarVideo
                 className="live-avatar-video"
                 imageClassName="live-avatar-poster"
@@ -362,11 +488,14 @@ export default function Page() {
             </div>
 
             <h2>Canlı Konuşma</h2>
-            <p>Lyra canlı mod alanı. Buradan sesli konuşma sistemine bağlanacak.</p>
+            <p>
+              Ses: <strong>{voice}</strong> · {muted ? 'Sessiz mod açık' : 'Ses açık'} ·{' '}
+              {gender} avatar
+            </p>
 
             <div className="live-buttons">
-              <button>🎙 Konuşmayı Başlat</button>
-              <button>≋ Ses: Lyra</button>
+              <button onClick={() => setMuted(false)}>🎙 Konuşmayı Başlat</button>
+              <button onClick={handleVoiceChange}>≋ Ses Değiştir</button>
               <button onClick={() => setMuted((value) => !value)}>
                 {muted ? 'Sesi Aç' : 'Sessize Al'}
               </button>
@@ -386,7 +515,7 @@ export default function Page() {
           --graphite-soft: #30363b;
           --muted: #555d64;
           --line: rgba(20, 24, 28, 0.13);
-          --line-strong: rgba(20, 24, 28, 0.2);
+          --line-strong: rgba(20, 24, 28, 0.22);
           --shadow: 0 30px 90px rgba(18, 22, 26, 0.14);
           --shadow-soft: 0 14px 40px rgba(18, 22, 26, 0.09);
           --glass: linear-gradient(
@@ -428,7 +557,7 @@ export default function Page() {
           position: relative;
           min-height: 100vh;
           overflow: hidden;
-          padding: 34px 34px 44px;
+          padding: 24px 24px 36px;
         }
 
         .page::before,
@@ -449,26 +578,20 @@ export default function Page() {
               transparent 0 37%,
               rgba(218, 224, 229, 0.62) 38%,
               transparent 39%
-            ),
-            radial-gradient(
-              ellipse at 52% 46%,
-              transparent 0 47%,
-              rgba(255, 255, 255, 0.52) 48%,
-              transparent 49%
             );
-          opacity: 0.86;
+          opacity: 0.75;
         }
 
         .page::after {
           transform: rotate(-15deg) scale(1.12);
-          opacity: 0.42;
+          opacity: 0.32;
         }
 
         .brand-outside {
           position: relative;
           z-index: 2;
           width: 150px;
-          margin-bottom: 16px;
+          margin-bottom: 14px;
           color: var(--graphite);
         }
 
@@ -476,7 +599,6 @@ export default function Page() {
           font-size: 42px;
           line-height: 1;
           color: #282d32;
-          filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.16));
         }
 
         .brand-text {
@@ -501,12 +623,12 @@ export default function Page() {
           background: var(--glass);
           border: 1px solid var(--line);
           box-shadow: var(--shadow);
-          backdrop-filter: blur(26px);
-          -webkit-backdrop-filter: blur(26px);
+          backdrop-filter: blur(22px);
+          -webkit-backdrop-filter: blur(22px);
         }
 
         .sidebar {
-          min-height: 780px;
+          min-height: 760px;
           border-radius: 34px;
           padding: 28px 18px;
           display: flex;
@@ -520,7 +642,6 @@ export default function Page() {
           padding: 0 18px 26px;
           font-size: 28px;
           letter-spacing: 0.08em;
-          color: var(--graphite);
         }
 
         .logo-row strong {
@@ -542,18 +663,18 @@ export default function Page() {
         .phone-controls button,
         .phone-input,
         .phone-grid button,
-        .head-actions button {
+        .head-actions button,
+        .chat-chip {
           color: var(--graphite);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(255, 255, 255, 0.98),
-              rgba(239, 242, 244, 0.9)
-            );
+          background: linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.98),
+            rgba(239, 242, 244, 0.9)
+          );
           border: 1px solid rgba(25, 29, 33, 0.1);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 12px 28px rgba(18, 22, 26, 0.08);
+            0 10px 26px rgba(18, 22, 26, 0.08);
         }
 
         .menu-item {
@@ -565,15 +686,18 @@ export default function Page() {
           gap: 13px;
           text-align: left;
           font-weight: 900;
+          transition: 0.2s ease;
+        }
+
+        .menu-item.active,
+        .menu-item:hover {
+          border-color: var(--line-strong);
+          transform: translateY(-1px);
         }
 
         .menu-item span {
           font-size: 19px;
           font-weight: 950;
-        }
-
-        .menu-item.active {
-          border-color: var(--line-strong);
         }
 
         .side-bottom {
@@ -661,9 +785,9 @@ export default function Page() {
 
         .main-panel {
           position: relative;
-          min-height: 780px;
+          min-height: 760px;
           border-radius: 34px;
-          padding: 22px 32px 32px;
+          padding: 22px 32px 28px;
           overflow: hidden;
         }
 
@@ -682,7 +806,8 @@ export default function Page() {
         .controls,
         .write-box,
         .mode-grid,
-        .sub-panel {
+        .sub-panel,
+        .chat-preview {
           position: relative;
           z-index: 1;
         }
@@ -699,7 +824,6 @@ export default function Page() {
           font-size: clamp(21px, 2.2vw, 31px);
           letter-spacing: 0.12em;
           font-weight: 950;
-          color: var(--graphite);
         }
 
         .head-actions {
@@ -717,7 +841,7 @@ export default function Page() {
         }
 
         .hero {
-          height: 330px;
+          height: 280px;
           display: grid;
           place-items: center;
           isolation: isolate;
@@ -733,77 +857,76 @@ export default function Page() {
         }
 
         .orbit-one {
-          width: 300px;
-          height: 300px;
+          width: 280px;
+          height: 280px;
           animation: orbit 9s ease-in-out infinite;
         }
 
         .orbit-two {
-          width: 390px;
-          height: 390px;
-          opacity: 0.52;
+          width: 360px;
+          height: 360px;
+          opacity: 0.46;
           animation: orbit 12s ease-in-out infinite reverse;
-        }
-
-        .orbit-three {
-          width: 470px;
-          height: 470px;
-          opacity: 0.22;
-          animation: orbit 16s ease-in-out infinite;
         }
 
         .avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 300px;
-          height: 300px;
-          border-radius: 42px;
+          width: 220px;
+          height: 260px;
+          border-radius: 28px;
           overflow: hidden;
-          display: grid;
-          place-items: center;
-          background:
-            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.98), transparent 36%),
-            linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(224, 228, 232, 0.78));
           border: 1px solid rgba(20, 24, 28, 0.12);
+          background: #f5f6f8;
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 28px 70px rgba(18, 22, 26, 0.16);
+            0 20px 56px rgba(18, 22, 26, 0.16);
         }
 
-        .avatar-video-wrap::before {
-          content: '';
-          position: absolute;
-          inset: -2px;
-          border-radius: inherit;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(255, 255, 255, 0.95),
-              rgba(182, 188, 194, 0.3),
-              rgba(255, 255, 255, 0.82)
-            );
-          z-index: 0;
+        .avatar-media-root {
+          position: relative;
+          width: 100%;
+          height: 100%;
         }
 
         .avatar-poster,
-        .avatar-video {
+        .avatar-video,
+        .phone-avatar-poster,
+        .phone-avatar-video,
+        .live-avatar-poster,
+        .live-avatar-video {
           position: absolute;
           inset: 0;
-          z-index: 1;
           width: 100%;
           height: 100%;
-          object-fit: contain;
+          object-fit: cover;
           object-position: center center;
-          background:
-            radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f3f5 58%, #e3e7eb 100%);
+          background: transparent;
         }
 
-        .avatar-video {
+        .avatar-video,
+        .phone-avatar-video,
+        .live-avatar-video {
           z-index: 2;
-          filter:
-            saturate(1.03)
-            contrast(1.02)
-            drop-shadow(0 18px 34px rgba(18, 22, 26, 0.14));
+        }
+
+        .avatar-poster,
+        .phone-avatar-poster,
+        .live-avatar-poster {
+          z-index: 1;
+        }
+
+        .video-loading {
+          position: absolute;
+          inset: 0;
+          z-index: 3;
+          display: grid;
+          place-items: center;
+          font-size: 28px;
+          letter-spacing: 0.16em;
+          font-weight: 950;
+          color: #2b2f34;
+          background: linear-gradient(145deg, #ffffff, #edf1f4);
         }
 
         .controls {
@@ -811,7 +934,7 @@ export default function Page() {
           grid-template-columns: repeat(5, minmax(118px, auto));
           justify-content: center;
           gap: 12px;
-          margin-top: -22px;
+          margin-top: -6px;
         }
 
         .control {
@@ -824,10 +947,7 @@ export default function Page() {
           gap: 10px;
           font-size: 16px;
           font-weight: 950;
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease,
-            border-color 0.2s ease;
+          transition: 0.2s ease;
         }
 
         .control:hover,
@@ -835,14 +955,10 @@ export default function Page() {
         .phone-grid button:hover {
           transform: translateY(-2px);
           border-color: var(--line-strong);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 18px 42px rgba(18, 22, 26, 0.12);
         }
 
         .control.selected {
-          background:
-            linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(222, 226, 230, 0.94));
+          background: linear-gradient(145deg, #ffffff, rgba(222, 226, 230, 0.94));
           border-color: var(--line-strong);
         }
 
@@ -895,8 +1011,7 @@ export default function Page() {
           height: 38px;
           border-radius: 50%;
           color: var(--graphite);
-          background:
-            linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
+          background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
           border: 1px solid var(--line);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
@@ -907,6 +1022,20 @@ export default function Page() {
         .write-actions .send {
           width: 46px;
           height: 46px;
+        }
+
+        .chat-preview {
+          margin-top: 12px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .chat-chip {
+          border-radius: 999px;
+          padding: 8px 14px;
+          font-size: 13px;
+          font-weight: 800;
         }
 
         .mode-grid {
@@ -924,6 +1053,7 @@ export default function Page() {
           flex-direction: column;
           align-items: center;
           text-align: center;
+          transition: 0.2s ease;
         }
 
         .mode-card.active {
@@ -938,14 +1068,12 @@ export default function Page() {
           font-size: 48px;
           line-height: 1;
           color: var(--graphite);
-          filter: drop-shadow(0 10px 12px rgba(18, 22, 26, 0.16));
         }
 
         .mode-card strong {
           margin-top: 16px;
           font-size: 17px;
           font-weight: 950;
-          color: var(--graphite);
         }
 
         .mode-card small {
@@ -1052,53 +1180,23 @@ export default function Page() {
 
         .phone-hero {
           position: relative;
-          height: 205px;
+          height: 190px;
           display: grid;
           place-items: center;
-        }
-
-        .phone-ring {
-          position: absolute;
-          width: 178px;
-          height: 178px;
-          border-radius: 50%;
-          border: 2px solid rgba(255, 255, 255, 0.95);
-          box-shadow: 0 0 24px rgba(255, 255, 255, 0.9);
+          margin-top: 6px;
         }
 
         .phone-avatar-video-wrap {
           position: relative;
-          z-index: 2;
-          width: 160px;
-          height: 175px;
-          border-radius: 30px;
+          width: 126px;
+          height: 176px;
+          border-radius: 24px;
           overflow: hidden;
-          display: grid;
-          place-items: center;
-          background:
-            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.96), transparent 40%),
-            linear-gradient(145deg, #ffffff, #e2e6e9);
           border: 1px solid rgba(20, 24, 28, 0.12);
+          background: #f5f6f8;
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 18px 42px rgba(18, 22, 26, 0.14);
-        }
-
-        .phone-avatar-poster,
-        .phone-avatar-video {
-          position: absolute;
-          inset: 0;
-          z-index: 1;
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          object-position: center center;
-          background:
-            radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f3f5 58%, #e3e7eb 100%);
-        }
-
-        .phone-avatar-video {
-          z-index: 2;
+            0 14px 32px rgba(18, 22, 26, 0.12);
         }
 
         .phone-controls {
@@ -1213,45 +1311,14 @@ export default function Page() {
 
         .live-avatar-video-wrap {
           position: relative;
-          width: 280px;
-          height: 300px;
+          width: 210px;
+          height: 280px;
           margin: 0 auto;
-          display: grid;
-          place-items: center;
-          border-radius: 44px;
+          border-radius: 28px;
           overflow: hidden;
-          background: linear-gradient(145deg, #ffffff, #dfe4e8);
+          background: #f5f6f8;
+          border: 1px solid rgba(20, 24, 28, 0.12);
           box-shadow: var(--shadow);
-        }
-
-        .live-avatar-poster,
-        .live-avatar-video {
-          position: absolute;
-          inset: 0;
-          z-index: 2;
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          object-position: center center;
-          background:
-            radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f3f5 58%, #e3e7eb 100%);
-        }
-
-        .live-avatar-video {
-          z-index: 3;
-        }
-
-        .live-pulse {
-          position: absolute;
-          inset: 22px;
-          z-index: 1;
-          border-radius: 50%;
-          border: 2px solid rgba(255, 255, 255, 0.98);
-          animation: pulse 2.4s ease-out infinite;
-        }
-
-        .live-pulse.two {
-          animation-delay: 0.9s;
         }
 
         .live-panel h2 {
@@ -1295,17 +1362,6 @@ export default function Page() {
           }
         }
 
-        @keyframes pulse {
-          0% {
-            transform: scale(0.82);
-            opacity: 0.95;
-          }
-          100% {
-            transform: scale(1.18);
-            opacity: 0;
-          }
-        }
-
         @media (max-width: 1280px) {
           .app-layout {
             grid-template-columns: 220px minmax(620px, 1fr);
@@ -1323,11 +1379,11 @@ export default function Page() {
 
         @media (max-width: 860px) {
           .page {
-            padding: 22px 14px 30px;
+            padding: 18px 12px 24px;
           }
 
           .brand-outside {
-            margin: 0 auto 16px;
+            margin: 0 auto 14px;
             text-align: center;
           }
 
@@ -1360,12 +1416,12 @@ export default function Page() {
           }
 
           .hero {
-            height: 260px;
+            height: 240px;
           }
 
           .orbit-one {
-            width: 250px;
-            height: 250px;
+            width: 240px;
+            height: 240px;
           }
 
           .orbit-two {
@@ -1373,20 +1429,15 @@ export default function Page() {
             height: 310px;
           }
 
-          .orbit-three {
-            width: 360px;
-            height: 360px;
-          }
-
           .avatar-video-wrap {
-            width: 230px;
-            height: 230px;
-            border-radius: 34px;
+            width: 180px;
+            height: 225px;
+            border-radius: 22px;
           }
 
           .controls {
             grid-template-columns: 1fr 1fr;
-            margin-top: -18px;
+            margin-top: -4px;
           }
 
           .control.live {
