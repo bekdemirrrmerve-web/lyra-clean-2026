@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'live';
 
@@ -57,6 +57,57 @@ const modes: {
     options: ['Canlı konuş', 'Ses seç', 'Sessize al'],
   },
 ];
+
+function AvatarVideo({
+  className,
+  imageClassName,
+}: {
+  className: string;
+  imageClassName: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const preventBlackEnd = () => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+
+    if (video.currentTime >= video.duration - 0.18) {
+      video.currentTime = 0.05;
+      video.play().catch(() => {});
+    }
+  };
+
+  return (
+    <>
+      <img
+        className={imageClassName}
+        src={AVATAR_IMAGE}
+        alt="Lyra avatar görseli"
+        aria-hidden="true"
+      />
+
+      <video
+        ref={videoRef}
+        className={className}
+        src={AVATAR_VIDEO}
+        poster={AVATAR_IMAGE}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        onTimeUpdate={preventBlackEnd}
+        onEnded={(event) => {
+          event.currentTarget.currentTime = 0.05;
+          event.currentTarget.play().catch(() => {});
+        }}
+        onError={(event) => {
+          event.currentTarget.style.display = 'none';
+        }}
+      />
+    </>
+  );
+}
 
 export default function Page() {
   const [activeMode, setActiveMode] = useState<ModeKey | null>(null);
@@ -158,16 +209,7 @@ export default function Page() {
             <div className="silver-orbit orbit-three" />
 
             <div className="avatar-video-wrap">
-              <video
-                className="avatar-video"
-                src={AVATAR_VIDEO}
-                poster={AVATAR_IMAGE}
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="auto"
-              />
+              <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
             </div>
           </section>
 
@@ -268,15 +310,9 @@ export default function Page() {
             <div className="phone-hero">
               <div className="phone-ring" />
               <div className="phone-avatar-video-wrap">
-                <video
+                <AvatarVideo
                   className="phone-avatar-video"
-                  src={AVATAR_VIDEO}
-                  poster={AVATAR_IMAGE}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  preload="auto"
+                  imageClassName="phone-avatar-poster"
                 />
               </div>
             </div>
@@ -319,15 +355,9 @@ export default function Page() {
             <div className="live-avatar-video-wrap">
               <span className="live-pulse one" />
               <span className="live-pulse two" />
-              <video
+              <AvatarVideo
                 className="live-avatar-video"
-                src={AVATAR_VIDEO}
-                poster={AVATAR_IMAGE}
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="auto"
+                imageClassName="live-avatar-poster"
               />
             </div>
 
@@ -408,9 +438,24 @@ export default function Page() {
           inset: -22%;
           pointer-events: none;
           background:
-            radial-gradient(ellipse at 50% 42%, transparent 0 28%, rgba(255, 255, 255, 0.92) 29%, transparent 30%),
-            radial-gradient(ellipse at 48% 44%, transparent 0 37%, rgba(218, 224, 229, 0.62) 38%, transparent 39%),
-            radial-gradient(ellipse at 52% 46%, transparent 0 47%, rgba(255, 255, 255, 0.52) 48%, transparent 49%);
+            radial-gradient(
+              ellipse at 50% 42%,
+              transparent 0 28%,
+              rgba(255, 255, 255, 0.92) 29%,
+              transparent 30%
+            ),
+            radial-gradient(
+              ellipse at 48% 44%,
+              transparent 0 37%,
+              rgba(218, 224, 229, 0.62) 38%,
+              transparent 39%
+            ),
+            radial-gradient(
+              ellipse at 52% 46%,
+              transparent 0 47%,
+              rgba(255, 255, 255, 0.52) 48%,
+              transparent 49%
+            );
           opacity: 0.86;
         }
 
@@ -500,7 +545,11 @@ export default function Page() {
         .head-actions button {
           color: var(--graphite);
           background:
-            linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 242, 244, 0.9));
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.98),
+              rgba(239, 242, 244, 0.9)
+            );
           border: 1px solid rgba(25, 29, 33, 0.1);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
@@ -668,7 +717,7 @@ export default function Page() {
         }
 
         .hero {
-          height: 310px;
+          height: 330px;
           display: grid;
           place-items: center;
           isolation: isolate;
@@ -706,15 +755,15 @@ export default function Page() {
         .avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 260px;
+          width: 300px;
           height: 300px;
-          border-radius: 150px 150px 46px 46px;
+          border-radius: 42px;
           overflow: hidden;
           display: grid;
           place-items: center;
           background:
-            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.95), transparent 36%),
-            linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(224, 228, 232, 0.72));
+            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.98), transparent 36%),
+            linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(224, 228, 232, 0.78));
           border: 1px solid rgba(20, 24, 28, 0.12);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
@@ -727,19 +776,32 @@ export default function Page() {
           inset: -2px;
           border-radius: inherit;
           background:
-            linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(182, 188, 194, 0.34), rgba(255, 255, 255, 0.78));
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.95),
+              rgba(182, 188, 194, 0.3),
+              rgba(255, 255, 255, 0.82)
+            );
           z-index: 0;
         }
 
+        .avatar-poster,
         .avatar-video {
-          position: relative;
+          position: absolute;
+          inset: 0;
           z-index: 1;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          object-position: center top;
+          object-fit: contain;
+          object-position: center center;
+          background:
+            radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f3f5 58%, #e3e7eb 100%);
+        }
+
+        .avatar-video {
+          z-index: 2;
           filter:
-            saturate(1.02)
+            saturate(1.03)
             contrast(1.02)
             drop-shadow(0 18px 34px rgba(18, 22, 26, 0.14));
         }
@@ -749,7 +811,7 @@ export default function Page() {
           grid-template-columns: repeat(5, minmax(118px, auto));
           justify-content: center;
           gap: 12px;
-          margin-top: -34px;
+          margin-top: -22px;
         }
 
         .control {
@@ -1007,9 +1069,9 @@ export default function Page() {
         .phone-avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 150px;
+          width: 160px;
           height: 175px;
-          border-radius: 90px 90px 28px 28px;
+          border-radius: 30px;
           overflow: hidden;
           display: grid;
           place-items: center;
@@ -1022,11 +1084,21 @@ export default function Page() {
             0 18px 42px rgba(18, 22, 26, 0.14);
         }
 
+        .phone-avatar-poster,
         .phone-avatar-video {
+          position: absolute;
+          inset: 0;
+          z-index: 1;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          object-position: center top;
+          object-fit: contain;
+          object-position: center center;
+          background:
+            radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f3f5 58%, #e3e7eb 100%);
+        }
+
+        .phone-avatar-video {
+          z-index: 2;
         }
 
         .phone-controls {
@@ -1141,24 +1213,32 @@ export default function Page() {
 
         .live-avatar-video-wrap {
           position: relative;
-          width: 230px;
-          height: 250px;
+          width: 280px;
+          height: 300px;
           margin: 0 auto;
           display: grid;
           place-items: center;
-          border-radius: 130px 130px 42px 42px;
+          border-radius: 44px;
           overflow: hidden;
           background: linear-gradient(145deg, #ffffff, #dfe4e8);
           box-shadow: var(--shadow);
         }
 
+        .live-avatar-poster,
         .live-avatar-video {
-          position: relative;
+          position: absolute;
+          inset: 0;
           z-index: 2;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          object-position: center top;
+          object-fit: contain;
+          object-position: center center;
+          background:
+            radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f3f5 58%, #e3e7eb 100%);
+        }
+
+        .live-avatar-video {
+          z-index: 3;
         }
 
         .live-pulse {
@@ -1299,8 +1379,9 @@ export default function Page() {
           }
 
           .avatar-video-wrap {
-            width: 205px;
-            height: 240px;
+            width: 230px;
+            height: 230px;
+            border-radius: 34px;
           }
 
           .controls {
