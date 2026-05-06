@@ -5,8 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const LIVE_MODEL =
-  process.env.GEMINI_LIVE_MODEL || "gemini-3.1-flash-live-preview";
+const LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 export async function GET() {
   try {
