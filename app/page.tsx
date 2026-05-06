@@ -60,7 +60,7 @@ const modes: {
     title: 'Görselle Okut',
     desc: 'Görsel, belge ve ekranları analiz et.',
     icon: '◌',
-    starter: 'Görsel yükle veya görselde ne okutmak istediğini yaz.',
+    starter: 'Görsel yükle veya ne okutmak istediğini yaz.',
   },
   {
     key: 'pdf',
@@ -223,7 +223,7 @@ async function postFileFast(endpoints: string[], file: File, extra: Record<strin
 function buildPrompt(mode: ModeKey, input: string, action?: string) {
   if (mode === 'content') {
     return `
-Sen Lyra'sın. Türkçe, akıcı, sosyal medya odaklı içerik üret.
+Sen Lyra'sın. Türkçe, akıcı ve sosyal medya odaklı içerik üret.
 Konu: ${input}
 İstenen aksiyon: ${action || 'tam içerik paketi'}
 
@@ -231,9 +231,9 @@ Konu: ${input}
 1) Video Konu Başlıkları: 5 fikir
 2) İlk 3 Saniye Hook: 5 seçenek
 3) Teleprompter Metni: 45-60 saniyelik, konuşur gibi
-4) Ekran Yazıları: kısa kısa
-5) CTA: kaydet/yorum/paylaş odaklı
-6) Çekim Notu: ışık, kadraj, tempo
+4) Ekran Yazıları
+5) CTA
+6) Çekim Notu
 `;
   }
 
@@ -255,7 +255,7 @@ Konu/Soru: ${input}
 
   if (mode === 'research') {
     return `
-Sen Lyra'sın. Konuyu sade, güncel ve net araştırma özeti gibi anlat.
+Sen Lyra'sın. Konuyu sade, net ve düzenli anlat.
 Konu: ${input}
 Format:
 1) Kısa cevap
@@ -327,7 +327,7 @@ export default function Page() {
 
   const addMessage = (role: Role, text: string) => {
     const id = messageIdRef.current++;
-    setMessages((prev) => [...prev, { id, role, text }].slice(-16));
+    setMessages((prev) => [...prev, { id, role, text }].slice(-20));
   };
 
   const speak = (text: string) => {
@@ -349,60 +349,62 @@ export default function Page() {
       availableVoices[0];
 
     if (tr) utterance.voice = tr;
-
     window.speechSynthesis.speak(utterance);
   };
 
-  const fallbackAnswer = (input: string, mode: ModeKey, action?: string) => {
+  const fallbackAnswer = (input: string, mode: ModeKey) => {
     if (mode === 'content') {
       return `Video Konu Başlıkları:
-1. ${input} hakkında kimsenin anlatmadığı 3 detay
-2. ${input} konusunda yapılan en büyük hata
-3. ${input} için hızlı ama etkili rutin
-4. ${input} gerçek mi abartı mı?
-5. ${input} hakkında 45 saniyelik mini rehber
+1. ${input} hakkında 5 farklı video fikri
+2. ${input} için izlenir bir seri fikri
+3. ${input} konusunda en sık yapılan hata
+4. ${input} hızlı rehber
+5. ${input} doğru bilinen yanlışlar
 
 Hook:
-“Bunu yapıyorsan fark etmeden sonucu bozuyor olabilirsin.”
+“Bunu yapıyorsan sonucu fark etmeden bozuyor olabilirsin.”
 
 Teleprompter Metni:
-“Bugün sana ${input} konusunu çok basit anlatacağım. Çünkü çoğu kişi burada gereksiz bilgiye boğuluyor ama asıl mesele çok net. Önce problemi tanı, sonra doğru adımı seç. Eğer bunu kaydedersen daha sonra uygularken elinin altında olur.”
+“Bugün sana ${input} konusunu çok basit anlatacağım. Çünkü çoğu kişi burada yanlış noktaya odaklanıyor. Aslında işin özü çok daha net. Önce problemi anlayacağız, sonra doğru adımı seçeceğiz ve sonunda bunu nasıl uygulayacağını konuşacağız.”
 
 CTA:
-“Kaydet, sonra birlikte uygulayalım.”`;
+“Kaydet, sonra birlikte tekrar bakalım.”`;
     }
 
     if (mode === 'lesson') {
       return `Konu Özeti:
-${input} konusunu önce temel tanım, sonra örnek mantığıyla çalışmalısın.
+${input} konusunu temel mantık + örnek + tekrar şeklinde çalışmalısın.
 
 Formüller / Kurallar:
-- Ana kuralı yaz
-- Verilenleri ayır
-- İstenen değeri bul
-- Birimleri kontrol et
+- Ana formül
+- Gerekli kural
+- Uygulama sırası
+- Birim kontrolü
 
 Sınav İpuçları:
-- Soruda anahtar kelimeyi yakala.
-- Uzun soru görünce panikleme, verilenleri sırala.
-- Önce kolay işlemden başla.
+- Sorunun istediğini bul
+- Verilenleri ayır
+- Hızlı çözüm yolunu seç
+- Sonucu kontrol et
 
 Çözümlü Soru:
-Soru: ${input} ile ilgili temel bir örnek düşün.
-Çözüm: Verilenleri yaz, formülü kur, sonucu sadeleştir.
+Örnek soru + çözüm mantığı.
 
 Mini Test:
-1) Bu konuda ilk bakılacak şey nedir?
-A) Verilenler B) Şıklar C) Rastgele işlem D) Son cümle
+1) Bu konuda ilk yapılacak şey nedir?
+A) Verilenleri ayırmak
+B) Şıkları ezberlemek
+C) Rastgele işlem yapmak
+D) Sonucu tahmin etmek
 Cevap: A`;
     }
 
     if (mode === 'research') {
       return `${input} için hızlı araştırma özeti:
-- Konunun ana fikri çıkarılır.
-- Önemli alt başlıklar belirlenir.
-- Gerekiyorsa kaynaklı analiz yapılır.
-- Sonuç sade bir dille toparlanır.`;
+- Ana fikir
+- Alt başlıklar
+- Önemli noktalar
+- Kısa sonuç`;
     }
 
     return `“${input}” için ${active?.title || 'Lyra'} modunda çalışmaya hazırım.`;
@@ -428,7 +430,7 @@ Cevap: A`;
         gender,
         live: liveOpen,
         provider: 'gemini',
-      })) || fallbackAnswer(raw, activeMode, action);
+      })) || fallbackAnswer(raw, activeMode);
 
     addMessage('assistant', aiText);
     setIsThinking(false);
@@ -515,6 +517,7 @@ Cevap: A`;
 
     recognition.onend = () => {
       setIsListening(false);
+
       if (continuous && liveOpen) {
         setTimeout(() => {
           try {
@@ -573,12 +576,10 @@ Cevap: A`;
 
   const quickAction = (action: string) => {
     const text = message.trim();
-
     if (!text) {
       setMessage(action);
       return;
     }
-
     sendMessage(text, action);
   };
 
@@ -600,15 +601,9 @@ Cevap: A`;
         onChange={(event) => handleImageUpload(event.target.files?.[0])}
       />
 
-      <section className="brand-outside">
-        <div className="brand-star">✦</div>
-        <div className="brand-text">LYRA</div>
-      </section>
-
       <section className="app-layout">
         <aside className="sidebar glass">
           <div className="logo-row">
-            <span>✦</span>
             <strong>LYRA</strong>
           </div>
 
@@ -635,7 +630,6 @@ Cevap: A`;
 
           <div className="side-bottom">
             <div className="mini-box">
-              <span>✦</span>
               <div>
                 <strong>LYRA PRO</strong>
                 <small>AI Asistan</small>
@@ -669,48 +663,57 @@ Cevap: A`;
             <h1>LYRA AI ASİSTANINIZ</h1>
 
             <div className="head-actions">
-              <button onClick={() => addMessage('assistant', 'Ben Lyra. Gemini destekli konuşma, içerik, ders, PDF ve görsel analiz modlarıyla çalışırım.')}>
-                ⓘ Lyra Hakkında
+              <button
+                onClick={() =>
+                  addMessage(
+                    'assistant',
+                    'Ben Lyra. Gemini destekli konuşma, içerik, ders, PDF ve görsel analiz modlarıyla çalışırım.'
+                  )
+                }
+              >
+                Lyra Hakkında
               </button>
-              <button onClick={cycleVoice}>♢</button>
+              <button onClick={cycleVoice}>⌄</button>
             </div>
           </header>
 
-          <section className="hero">
-            <div className="silver-orbit orbit-one" />
-            <div className="silver-orbit orbit-two" />
+          <section className="top-zone">
+            <div className="avatar-block">
+              <div className="silver-orbit orbit-one" />
+              <div className="silver-orbit orbit-two" />
 
-            <div className="avatar-video-wrap">
-              <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
+              <div className="avatar-video-wrap">
+                <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
+              </div>
             </div>
-          </section>
 
-          <section className="controls">
-            <button className="control" onClick={cycleVoice}>
-              <span className="sound">≋</span>
-              Ses: {voice}
-              <b>⌄</b>
-            </button>
+            <div className="controls">
+              <button className="control" onClick={cycleVoice}>
+                <span className="sound">≋</span>
+                Ses: {voice}
+                <b>⌄</b>
+              </button>
 
-            <button className={`control ${muted ? 'selected' : ''}`} onClick={() => setMuted((v) => !v)}>
-              <span>♬</span>
-              {muted ? 'Sesi Aç' : 'Sessize Al'}
-            </button>
+              <button className={`control ${muted ? 'selected' : ''}`} onClick={() => setMuted((v) => !v)}>
+                <span>♬</span>
+                {muted ? 'Sesi Aç' : 'Sessize Al'}
+              </button>
 
-            <button className={`control ${gender === 'Kadın' ? 'selected' : ''}`} onClick={() => setGender('Kadın')}>
-              <span>♙</span>
-              Kadın
-            </button>
+              <button className={`control ${gender === 'Kadın' ? 'selected' : ''}`} onClick={() => setGender('Kadın')}>
+                <span>♙</span>
+                Kadın
+              </button>
 
-            <button className={`control ${gender === 'Erkek' ? 'selected' : ''}`} onClick={() => setGender('Erkek')}>
-              <span>♙</span>
-              Erkek
-            </button>
+              <button className={`control ${gender === 'Erkek' ? 'selected' : ''}`} onClick={() => setGender('Erkek')}>
+                <span>♙</span>
+                Erkek
+              </button>
 
-            <button className="control live" onClick={() => setLiveOpen(true)}>
-              <span className="sound">≋</span>
-              Canlı Konuşma
-            </button>
+              <button className="control live" onClick={() => setLiveOpen(true)}>
+                <span className="sound">≋</span>
+                Canlı Konuşma
+              </button>
+            </div>
           </section>
 
           <section className="write-box">
@@ -842,10 +845,8 @@ Cevap: A`;
 
             <div className="phone-head">
               <button onClick={() => startListening(false)}>☰</button>
-              <strong>
-                <span>✦</span> LYRA
-              </strong>
-              <button onClick={cycleVoice}>♢</button>
+              <strong>LYRA</strong>
+              <button onClick={cycleVoice}>⌄</button>
             </div>
 
             <div className="phone-hero">
@@ -889,10 +890,13 @@ Cevap: A`;
       {liveOpen && (
         <section className="modal">
           <div className="live-panel glass">
-            <button className="close" onClick={() => {
-              setLiveOpen(false);
-              stopListening();
-            }}>
+            <button
+              className="close"
+              onClick={() => {
+                setLiveOpen(false);
+                stopListening();
+              }}
+            >
               ×
             </button>
 
@@ -907,9 +911,7 @@ Cevap: A`;
             </p>
 
             <div className="live-buttons">
-              <button onClick={() => startListening(true)}>
-                🎙 Gemini Live Başlat
-              </button>
+              <button onClick={() => startListening(true)}>🎙 Gemini Live Başlat</button>
               <button onClick={stopListening}>■ Durdur</button>
               <button onClick={cycleVoice}>≋ Ses Değiştir</button>
               <button onClick={() => setMuted((v) => !v)}>{muted ? 'Sesi Aç' : 'Sessize Al'}</button>
@@ -930,64 +932,70 @@ Cevap: A`;
           --muted: #555d64;
           --line: rgba(20, 24, 28, 0.13);
           --line-strong: rgba(20, 24, 28, 0.22);
-          --shadow: 0 30px 90px rgba(18, 22, 26, 0.14);
-          --shadow-soft: 0 14px 40px rgba(18, 22, 26, 0.09);
-          --glass: linear-gradient(145deg, rgba(255,255,255,.95), rgba(235,238,241,.78), rgba(255,255,255,.88));
+          --shadow: 0 20px 70px rgba(18, 22, 26, 0.12);
+          --shadow-soft: 0 12px 30px rgba(18, 22, 26, 0.08);
+          --glass: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(235, 238, 241, 0.8), rgba(255, 255, 255, 0.9));
         }
 
-        * { box-sizing: border-box; }
+        * {
+          box-sizing: border-box;
+        }
 
-        html, body {
+        html,
+        body {
           margin: 0;
           min-height: 100%;
           font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           color: var(--graphite);
           background:
-            radial-gradient(circle at 48% 22%, rgba(255,255,255,1), transparent 32%),
+            radial-gradient(circle at 48% 22%, rgba(255, 255, 255, 1), transparent 32%),
             linear-gradient(135deg, #ffffff 0%, #f5f7f8 44%, #e6eaee 100%);
         }
 
-        button, textarea { font: inherit; }
-        button { cursor: pointer; border: 0; }
+        button,
+        textarea {
+          font: inherit;
+        }
+
+        button {
+          cursor: pointer;
+          border: 0;
+        }
 
         .page {
           position: relative;
           min-height: 100vh;
           overflow: hidden;
-          padding: 24px 24px 36px;
+          padding: 10px;
         }
 
-        .page::before, .page::after {
+        .page::before,
+        .page::after {
           content: '';
           position: absolute;
-          inset: -22%;
+          inset: -12%;
           pointer-events: none;
           background:
-            radial-gradient(ellipse at 50% 42%, transparent 0 28%, rgba(255,255,255,.92) 29%, transparent 30%),
-            radial-gradient(ellipse at 48% 44%, transparent 0 37%, rgba(218,224,229,.62) 38%, transparent 39%);
-          opacity: .75;
+            radial-gradient(ellipse at 50% 40%, transparent 0 28%, rgba(255, 255, 255, 0.92) 29%, transparent 30%),
+            radial-gradient(ellipse at 48% 44%, transparent 0 36%, rgba(218, 224, 229, 0.48) 37%, transparent 38%);
+          opacity: 0.7;
         }
 
-        .page::after { transform: rotate(-15deg) scale(1.12); opacity: .32; }
-
-        .brand-outside {
-          position: relative;
-          z-index: 2;
-          width: 150px;
-          margin-bottom: 14px;
+        .page::after {
+          transform: rotate(-15deg) scale(1.05);
+          opacity: 0.22;
         }
-
-        .brand-star { font-size: 42px; line-height: 1; color: #282d32; }
-        .brand-text { margin-top: 6px; font-size: 34px; font-weight: 950; letter-spacing: .18em; }
 
         .app-layout {
           position: relative;
           z-index: 2;
-          max-width: 1700px;
+          width: 100%;
+          max-width: 100%;
+          min-height: calc(100vh - 20px);
           margin: 0 auto;
           display: grid;
-          grid-template-columns: 245px minmax(680px, 1fr) 370px;
-          gap: 24px;
+          grid-template-columns: 220px minmax(700px, 1fr) 320px;
+          gap: 14px;
           align-items: stretch;
         }
 
@@ -1000,9 +1008,9 @@ Cevap: A`;
         }
 
         .sidebar {
-          min-height: 760px;
-          border-radius: 34px;
-          padding: 28px 18px;
+          min-height: calc(100vh - 20px);
+          border-radius: 28px;
+          padding: 18px 14px;
           display: flex;
           flex-direction: column;
         }
@@ -1010,26 +1018,40 @@ Cevap: A`;
         .logo-row {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 0 18px 26px;
+          gap: 10px;
+          padding: 2px 12px 18px;
           font-size: 28px;
-          letter-spacing: .08em;
+          letter-spacing: 0.08em;
         }
 
-        .logo-row strong { font-weight: 950; }
-        .menu { display: grid; gap: 12px; }
+        .logo-row strong {
+          font-weight: 950;
+        }
 
-        .menu-item, .mini-box, .profile-box, .usage-box, .control, .write-box,
-        .mode-card, .phone-controls button, .phone-input, .phone-grid button,
+        .menu {
+          display: grid;
+          gap: 10px;
+        }
+
+        .menu-item,
+        .mini-box,
+        .profile-box,
+        .usage-box,
+        .control,
+        .write-box,
+        .mode-card,
+        .phone-controls button,
+        .phone-input,
+        .phone-grid button,
         .head-actions button {
           color: var(--graphite);
-          background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(239,242,244,.9));
-          border: 1px solid rgba(25,29,33,.1);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 10px 26px rgba(18,22,26,.08);
+          background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 242, 244, 0.9));
+          border: 1px solid rgba(25, 29, 33, 0.1);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 8px 20px rgba(18, 22, 26, 0.07);
         }
 
         .menu-item {
-          min-height: 48px;
+          min-height: 46px;
           border-radius: 18px;
           padding: 0 16px;
           display: flex;
@@ -1037,19 +1059,43 @@ Cevap: A`;
           gap: 13px;
           text-align: left;
           font-weight: 900;
-          transition: .2s ease;
+          transition: 0.2s ease;
         }
 
-        .menu-item.active, .menu-item:hover { border-color: var(--line-strong); transform: translateY(-1px); }
-        .menu-item span { font-size: 19px; font-weight: 950; }
+        .menu-item.active,
+        .menu-item:hover {
+          border-color: var(--line-strong);
+          transform: translateY(-1px);
+        }
 
-        .side-bottom { margin-top: auto; display: grid; gap: 12px; }
-        .mini-box, .profile-box, .usage-box { border-radius: 20px; padding: 18px; }
-        .mini-box { display: flex; gap: 12px; align-items: center; }
-        .mini-box span { font-size: 26px; }
+        .menu-item span {
+          font-size: 18px;
+          font-weight: 950;
+        }
 
-        .mini-box strong, .profile-box strong, .usage-box strong { display: block; font-weight: 950; }
-        .mini-box small, .profile-box small, .usage-box small {
+        .side-bottom {
+          margin-top: auto;
+          display: grid;
+          gap: 10px;
+        }
+
+        .mini-box,
+        .profile-box,
+        .usage-box {
+          border-radius: 18px;
+          padding: 16px;
+        }
+
+        .mini-box strong,
+        .profile-box strong,
+        .usage-box strong {
+          display: block;
+          font-weight: 950;
+        }
+
+        .mini-box small,
+        .profile-box small,
+        .usage-box small {
           display: block;
           margin-top: 3px;
           color: var(--muted);
@@ -1069,20 +1115,27 @@ Cevap: A`;
           border-radius: 50%;
           display: grid;
           place-items: center;
-          background: radial-gradient(circle at 30% 22%, #fff, transparent 28%), linear-gradient(145deg, #202428, #7e858b);
-          color: white;
+          background: radial-gradient(circle at 30% 22%, #ffffff, transparent 28%), linear-gradient(145deg, #202428, #7e858b);
+          color: #ffffff;
           font-weight: 950;
         }
 
-        .usage-box > div { display: flex; justify-content: space-between; gap: 12px; font-weight: 900; }
+        .usage-box > div {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          font-weight: 900;
+        }
+
         .usage-line {
           display: block;
           height: 7px;
-          margin: 14px 0 8px;
+          margin: 12px 0 8px;
           overflow: hidden;
           border-radius: 999px;
           background: #d8dde1;
         }
+
         .usage-line i {
           display: block;
           width: 68%;
@@ -1093,10 +1146,12 @@ Cevap: A`;
 
         .main-panel {
           position: relative;
-          min-height: 760px;
-          border-radius: 34px;
-          padding: 22px 32px 28px;
+          min-height: calc(100vh - 20px);
+          border-radius: 28px;
+          padding: 14px 18px 16px;
           overflow: hidden;
+          display: flex;
+          flex-direction: column;
         }
 
         .main-panel::before {
@@ -1105,23 +1160,31 @@ Cevap: A`;
           inset: -20%;
           pointer-events: none;
           background:
-            radial-gradient(circle at 50% 25%, rgba(255,255,255,.95), transparent 25%),
-            radial-gradient(circle at 50% 33%, rgba(226,231,235,.68), transparent 42%);
+            radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.95), transparent 20%),
+            radial-gradient(circle at 50% 30%, rgba(226, 231, 235, 0.52), transparent 36%);
         }
 
-        .main-head, .hero, .controls, .write-box, .mode-grid, .sub-panel { position: relative; z-index: 1; }
+        .main-head,
+        .top-zone,
+        .write-box,
+        .mode-grid,
+        .sub-panel {
+          position: relative;
+          z-index: 1;
+        }
 
         .main-head {
-          min-height: 56px;
+          min-height: 44px;
           display: flex;
           align-items: center;
           justify-content: center;
+          margin-bottom: 4px;
         }
 
         .main-head h1 {
           margin: 0;
-          font-size: clamp(21px, 2.2vw, 31px);
-          letter-spacing: .12em;
+          font-size: clamp(20px, 2vw, 28px);
+          letter-spacing: 0.12em;
           font-weight: 950;
         }
 
@@ -1135,12 +1198,22 @@ Cevap: A`;
         .head-actions button {
           min-height: 38px;
           border-radius: 999px;
-          padding: 0 16px;
+          padding: 0 14px;
           font-weight: 950;
         }
 
-        .hero {
-          height: 315px;
+        .top-zone {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+
+        .avatar-block {
+          position: relative;
+          width: 100%;
+          height: 210px;
           display: grid;
           place-items: center;
           isolation: isolate;
@@ -1149,23 +1222,33 @@ Cevap: A`;
         .silver-orbit {
           position: absolute;
           border-radius: 50%;
-          border: 2px solid rgba(255,255,255,.95);
-          box-shadow: 0 0 26px rgba(255,255,255,.9), inset 0 0 30px rgba(205,211,216,.58);
+          border: 2px solid rgba(255, 255, 255, 0.92);
+          box-shadow: 0 0 24px rgba(255, 255, 255, 0.9), inset 0 0 26px rgba(205, 211, 216, 0.48);
         }
 
-        .orbit-one { width: 300px; height: 300px; animation: orbit 9s ease-in-out infinite; }
-        .orbit-two { width: 385px; height: 385px; opacity: .46; animation: orbit 12s ease-in-out infinite reverse; }
+        .orbit-one {
+          width: 220px;
+          height: 220px;
+          animation: orbit 9s ease-in-out infinite;
+        }
+
+        .orbit-two {
+          width: 290px;
+          height: 290px;
+          opacity: 0.42;
+          animation: orbit 12s ease-in-out infinite reverse;
+        }
 
         .avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 250px;
-          height: 300px;
-          border-radius: 28px;
+          width: 180px;
+          height: 210px;
+          border-radius: 24px;
           overflow: hidden;
-          border: 1px solid rgba(20,24,28,.12);
-          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 20px 56px rgba(18,22,26,.16);
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 16px 36px rgba(18, 22, 26, 0.12);
         }
 
         .avatar-media-root {
@@ -1176,19 +1259,32 @@ Cevap: A`;
           place-items: center;
         }
 
-        .avatar-poster, .avatar-video, .phone-avatar-poster, .phone-avatar-video,
-        .live-avatar-poster, .live-avatar-video {
+        .avatar-poster,
+        .avatar-video,
+        .phone-avatar-poster,
+        .phone-avatar-video,
+        .live-avatar-poster,
+        .live-avatar-video {
           position: absolute;
           inset: 0;
           width: 100%;
           height: 100%;
           object-fit: contain;
           object-position: center center;
-          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
         }
 
-        .avatar-video, .phone-avatar-video, .live-avatar-video { z-index: 2; }
-        .avatar-poster, .phone-avatar-poster, .live-avatar-poster { z-index: 1; }
+        .avatar-video,
+        .phone-avatar-video,
+        .live-avatar-video {
+          z-index: 2;
+        }
+
+        .avatar-poster,
+        .phone-avatar-poster,
+        .live-avatar-poster {
+          z-index: 1;
+        }
 
         .video-loading {
           position: absolute;
@@ -1196,60 +1292,72 @@ Cevap: A`;
           z-index: 3;
           display: grid;
           place-items: center;
-          font-size: 28px;
-          letter-spacing: .16em;
+          font-size: 24px;
+          letter-spacing: 0.16em;
           font-weight: 950;
           color: #2b2f34;
-          background: linear-gradient(145deg, #fff, #edf1f4);
+          background: linear-gradient(145deg, #ffffff, #edf1f4);
         }
 
         .controls {
+          width: 100%;
           display: grid;
-          grid-template-columns: repeat(5, minmax(118px, auto));
+          grid-template-columns: repeat(5, minmax(100px, auto));
           justify-content: center;
-          gap: 12px;
-          margin-top: -6px;
+          gap: 10px;
         }
 
         .control {
-          min-height: 58px;
-          border-radius: 22px;
-          padding: 0 24px;
+          min-height: 52px;
+          border-radius: 20px;
+          padding: 0 18px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 10px;
-          font-size: 16px;
+          font-size: 15px;
           font-weight: 950;
-          transition: .2s ease;
+          transition: 0.2s ease;
         }
 
-        .control:hover, .mode-card:hover, .phone-grid button:hover {
+        .control:hover,
+        .mode-card:hover,
+        .phone-grid button:hover {
           transform: translateY(-2px);
           border-color: var(--line-strong);
         }
 
         .control.selected {
-          background: linear-gradient(145deg, #fff, rgba(222,226,230,.94));
+          background: linear-gradient(145deg, #ffffff, rgba(222, 226, 230, 0.94));
           border-color: var(--line-strong);
         }
 
-        .control.live { min-width: 214px; }
-        .sound { font-size: 24px; line-height: 1; }
+        .control.live {
+          min-width: 190px;
+        }
+
+        .sound {
+          font-size: 22px;
+          line-height: 1;
+        }
 
         .write-box {
-          min-height: 275px;
-          margin-top: 22px;
-          border-radius: 26px;
-          padding: 18px 22px 14px;
+          min-height: 400px;
+          height: 400px;
+          margin-top: 2px;
+          border-radius: 24px;
+          padding: 16px 18px 12px;
+          display: flex;
+          flex-direction: column;
         }
 
         .message-list {
-          height: 150px;
+          flex: 1;
+          min-height: 0;
           overflow: auto;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 10px;
           margin-bottom: 10px;
           padding-right: 4px;
         }
@@ -1257,10 +1365,10 @@ Cevap: A`;
         .message {
           width: fit-content;
           max-width: 92%;
-          padding: 10px 13px;
+          padding: 11px 14px;
           border-radius: 16px;
           font-size: 14px;
-          line-height: 1.42;
+          line-height: 1.45;
           font-weight: 800;
           white-space: pre-wrap;
         }
@@ -1273,21 +1381,22 @@ Cevap: A`;
 
         .message.assistant {
           align-self: flex-start;
-          background: rgba(255,255,255,.86);
+          background: rgba(255, 255, 255, 0.88);
           color: var(--graphite);
           border: 1px solid var(--line);
         }
 
         .message.system {
           align-self: center;
-          background: rgba(225,230,234,.7);
+          background: rgba(225, 230, 234, 0.7);
           color: var(--graphite-soft);
           border: 1px solid var(--line);
         }
 
         .write-box textarea {
           width: 100%;
-          height: 58px;
+          height: 68px;
+          min-height: 68px;
           border: 0;
           outline: 0;
           resize: none;
@@ -1297,7 +1406,10 @@ Cevap: A`;
           font-weight: 850;
         }
 
-        .write-box textarea::placeholder { color: #394047; opacity: .9; }
+        .write-box textarea::placeholder {
+          color: #394047;
+          opacity: 0.9;
+        }
 
         .write-actions {
           display: flex;
@@ -1305,7 +1417,10 @@ Cevap: A`;
           justify-content: space-between;
         }
 
-        .write-actions div { display: flex; gap: 10px; }
+        .write-actions div {
+          display: flex;
+          gap: 10px;
+        }
 
         .write-actions button {
           min-width: 38px;
@@ -1313,70 +1428,84 @@ Cevap: A`;
           padding: 0 10px;
           border-radius: 999px;
           color: var(--graphite);
-          background: linear-gradient(145deg, rgba(255,255,255,1), rgba(230,234,237,.92));
+          background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
           border: 1px solid var(--line);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 7px 18px rgba(18,22,26,.1);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 7px 18px rgba(18, 22, 26, 0.1);
           font-weight: 950;
         }
 
-        .write-actions .send { width: 46px; height: 46px; border-radius: 50%; }
+        .write-actions .send {
+          width: 46px;
+          height: 46px;
+          border-radius: 50%;
+        }
 
         .mode-grid {
           display: grid;
           grid-template-columns: repeat(7, 1fr);
-          gap: 12px;
-          margin-top: 18px;
+          gap: 10px;
+          margin-top: 12px;
         }
 
         .mode-card {
-          min-height: 165px;
-          border-radius: 24px;
-          padding: 18px 10px 12px;
+          min-height: 130px;
+          border-radius: 20px;
+          padding: 14px 10px 10px;
           display: flex;
           flex-direction: column;
           align-items: center;
           text-align: center;
-          transition: .2s ease;
+          transition: 0.2s ease;
         }
 
         .mode-card.active {
           border-color: var(--line-strong);
-          outline: 2px solid rgba(18,22,26,.08);
+          outline: 2px solid rgba(18, 22, 26, 0.08);
         }
 
         .mode-icon {
-          height: 38px;
+          height: 32px;
           display: grid;
           place-items: center;
-          font-size: 32px;
+          font-size: 28px;
           line-height: 1;
           color: var(--graphite);
         }
 
-        .mode-card strong { margin-top: 10px; font-size: 14px; font-weight: 950; }
+        .mode-card strong {
+          margin-top: 8px;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
         .mode-card small {
-          margin-top: 7px;
+          margin-top: 6px;
           color: var(--graphite-soft);
-          font-size: 11px;
-          line-height: 1.28;
+          font-size: 10.5px;
+          line-height: 1.25;
           font-weight: 800;
         }
 
-        .mode-card b { margin-top: auto; font-weight: 950; }
+        .mode-card b {
+          margin-top: auto;
+          font-weight: 950;
+        }
 
         .sub-panel {
-          margin-top: 16px;
-          border-radius: 22px;
-          padding: 16px;
-          background: rgba(255,255,255,.74);
+          margin-top: 10px;
+          border-radius: 20px;
+          padding: 14px;
+          background: rgba(255, 255, 255, 0.74);
           border: 1px solid var(--line);
           display: flex;
           align-items: center;
           flex-wrap: wrap;
-          gap: 16px;
+          gap: 14px;
         }
 
-        .sub-panel strong { font-weight: 950; }
+        .sub-panel strong {
+          font-weight: 950;
+        }
 
         .sub-panel div {
           display: flex;
@@ -1385,9 +1514,9 @@ Cevap: A`;
         }
 
         .sub-panel button {
-          min-height: 40px;
+          min-height: 38px;
           border-radius: 999px;
-          padding: 0 16px;
+          padding: 0 15px;
           background: #fff;
           border: 1px solid var(--line);
           color: var(--graphite);
@@ -1395,24 +1524,29 @@ Cevap: A`;
         }
 
         .phone-shell {
-          align-self: center;
-          padding: 10px;
-          border-radius: 46px;
-          background: linear-gradient(145deg, #f9fafb, #9da3a9, #fff);
-          box-shadow: inset 0 0 0 2px rgba(255,255,255,.7), 0 28px 70px rgba(18,22,26,.22);
+          align-self: stretch;
+          padding: 8px;
+          border-radius: 40px;
+          background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
+          box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7), 0 24px 60px rgba(18, 22, 26, 0.18);
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .phone {
-          width: 340px;
-          height: 735px;
+          width: 300px;
+          height: 92%;
+          min-height: 700px;
           overflow: hidden;
-          border-radius: 38px;
-          padding: 15px 14px 18px;
-          background: radial-gradient(circle at 50% 19%, rgba(255,255,255,1), transparent 34%), linear-gradient(145deg, #fff, #eef1f3);
-          border: 1px solid rgba(255,255,255,.94);
+          border-radius: 34px;
+          padding: 14px 12px 16px;
+          background: radial-gradient(circle at 50% 19%, rgba(255, 255, 255, 1), transparent 34%), linear-gradient(145deg, #ffffff, #eef1f3);
+          border: 1px solid rgba(255, 255, 255, 0.94);
         }
 
-        .phone-status, .phone-head {
+        .phone-status,
+        .phone-head {
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -1420,43 +1554,49 @@ Cevap: A`;
         }
 
         .phone-status span {
-          width: 88px;
-          height: 26px;
+          width: 82px;
+          height: 24px;
           border-radius: 999px;
           background: #080a0c;
         }
 
-        .phone-head { margin-top: 18px; }
+        .phone-head {
+          margin-top: 14px;
+        }
 
         .phone-head button {
-          width: 34px;
-          height: 34px;
+          width: 32px;
+          height: 32px;
           border-radius: 50%;
-          background: rgba(255,255,255,.9);
+          background: rgba(255, 255, 255, 0.9);
           color: var(--graphite);
           border: 1px solid var(--line);
           font-weight: 950;
         }
 
-        .phone-head strong { font-size: 24px; letter-spacing: .12em; font-weight: 950; }
+        .phone-head strong {
+          font-size: 22px;
+          letter-spacing: 0.1em;
+          font-weight: 950;
+        }
 
         .phone-hero {
           position: relative;
-          height: 205px;
+          height: 190px;
           display: grid;
           place-items: center;
-          margin-top: 6px;
+          margin-top: 4px;
         }
 
         .phone-avatar-video-wrap {
           position: relative;
-          width: 138px;
-          height: 190px;
-          border-radius: 24px;
+          width: 128px;
+          height: 176px;
+          border-radius: 22px;
           overflow: hidden;
-          border: 1px solid rgba(20,24,28,.12);
-          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 14px 32px rgba(18,22,26,.12);
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 14px 32px rgba(18, 22, 26, 0.12);
         }
 
         .phone-controls {
@@ -1466,34 +1606,36 @@ Cevap: A`;
         }
 
         .phone-controls button {
-          min-height: 44px;
+          min-height: 42px;
           border-radius: 16px;
           font-weight: 950;
         }
 
         .phone-controls .selected {
-          background: linear-gradient(145deg, #fff, #e2e6e9);
+          background: linear-gradient(145deg, #ffffff, #e2e6e9);
           border-color: var(--line-strong);
         }
 
-        .phone-live { grid-column: 1 / -1; }
+        .phone-live {
+          grid-column: 1 / -1;
+        }
 
         .phone-input {
-          min-height: 82px;
+          min-height: 74px;
           margin-top: 12px;
-          border-radius: 20px;
-          padding: 14px;
+          border-radius: 18px;
+          padding: 12px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           color: #394047;
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 850;
         }
 
         .phone-input button {
-          width: 38px;
-          height: 38px;
+          width: 36px;
+          height: 36px;
           border-radius: 50%;
           background: var(--glass);
           border: 1px solid var(--line);
@@ -1509,7 +1651,7 @@ Cevap: A`;
         }
 
         .phone-grid button {
-          min-height: 88px;
+          min-height: 82px;
           border-radius: 16px;
           padding: 8px 6px;
           display: flex;
@@ -1519,9 +1661,20 @@ Cevap: A`;
           gap: 4px;
         }
 
-        .phone-grid span { font-size: 23px; line-height: 1; }
-        .phone-grid strong { font-size: 11px; line-height: 1.12; font-weight: 950; }
-        .phone-grid small { font-weight: 950; }
+        .phone-grid span {
+          font-size: 22px;
+          line-height: 1;
+        }
+
+        .phone-grid strong {
+          font-size: 10.5px;
+          line-height: 1.12;
+          font-weight: 950;
+        }
+
+        .phone-grid small {
+          font-weight: 950;
+        }
 
         .modal {
           position: fixed;
@@ -1530,7 +1683,7 @@ Cevap: A`;
           display: grid;
           place-items: center;
           padding: 24px;
-          background: rgba(238,241,244,.72);
+          background: rgba(238, 241, 244, 0.72);
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
         }
@@ -1538,17 +1691,17 @@ Cevap: A`;
         .live-panel {
           position: relative;
           width: min(560px, 100%);
-          border-radius: 38px;
-          padding: 34px;
+          border-radius: 34px;
+          padding: 28px;
           text-align: center;
         }
 
         .close {
           position: absolute;
-          top: 18px;
-          right: 18px;
-          width: 42px;
-          height: 42px;
+          top: 16px;
+          right: 16px;
+          width: 40px;
+          height: 40px;
           border-radius: 50%;
           background: #fff;
           border: 1px solid var(--line);
@@ -1558,19 +1711,19 @@ Cevap: A`;
 
         .live-avatar-video-wrap {
           position: relative;
-          width: 250px;
-          height: 330px;
+          width: 230px;
+          height: 300px;
           margin: 0 auto;
-          border-radius: 28px;
+          border-radius: 26px;
           overflow: hidden;
-          background: radial-gradient(circle at 50% 40%, #fff 0%, #f4f6f7 48%, #e7ebee 100%);
-          border: 1px solid rgba(20,24,28,.12);
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
+          border: 1px solid rgba(20, 24, 28, 0.12);
           box-shadow: var(--shadow);
         }
 
         .live-panel h2 {
-          margin: 22px 0 6px;
-          font-size: 32px;
+          margin: 20px 0 6px;
+          font-size: 30px;
           font-weight: 950;
         }
 
@@ -1581,7 +1734,7 @@ Cevap: A`;
         }
 
         .live-buttons {
-          margin-top: 24px;
+          margin-top: 22px;
           display: flex;
           justify-content: center;
           flex-wrap: wrap;
@@ -1589,7 +1742,7 @@ Cevap: A`;
         }
 
         .live-buttons button {
-          min-height: 46px;
+          min-height: 44px;
           border-radius: 999px;
           padding: 0 18px;
           background: #fff;
@@ -1600,34 +1753,92 @@ Cevap: A`;
         }
 
         @keyframes orbit {
-          0%, 100% { transform: scale(1) translateY(0); }
-          50% { transform: scale(1.03) translateY(-8px); }
+          0%,
+          100% {
+            transform: scale(1) translateY(0);
+          }
+          50% {
+            transform: scale(1.03) translateY(-8px);
+          }
         }
 
-        @media (max-width: 1280px) {
-          .app-layout { grid-template-columns: 220px minmax(620px, 1fr); }
-          .phone-shell { grid-column: 1 / -1; justify-self: center; }
-          .mode-grid { grid-template-columns: repeat(3, 1fr); }
+        @media (max-width: 1420px) {
+          .app-layout {
+            grid-template-columns: 210px minmax(640px, 1fr);
+          }
+
+          .phone-shell {
+            display: none;
+          }
+
+          .mode-grid {
+            grid-template-columns: repeat(4, 1fr);
+          }
         }
 
-        @media (max-width: 860px) {
-          .page { padding: 18px 12px 24px; }
-          .brand-outside { margin: 0 auto 14px; text-align: center; }
-          .app-layout { grid-template-columns: 1fr; }
-          .sidebar, .phone-shell { display: none; }
-          .main-panel { min-height: auto; padding: 18px 14px 20px; border-radius: 26px; }
-          .main-head { justify-content: center; }
-          .main-head h1 { font-size: 18px; text-align: center; }
-          .head-actions { display: none; }
-          .hero { height: 270px; }
-          .orbit-one { width: 250px; height: 250px; }
-          .orbit-two { width: 320px; height: 320px; }
-          .avatar-video-wrap { width: 210px; height: 255px; border-radius: 22px; }
-          .controls { grid-template-columns: 1fr 1fr; margin-top: -4px; }
-          .control.live { grid-column: 1 / -1; }
-          .control { min-height: 50px; padding: 0 14px; font-size: 14px; }
-          .mode-grid { grid-template-columns: repeat(2, 1fr); }
-          .mode-card { min-height: 160px; }
+        @media (max-width: 980px) {
+          .page {
+            padding: 8px;
+          }
+
+          .app-layout {
+            grid-template-columns: 1fr;
+            min-height: auto;
+          }
+
+          .sidebar,
+          .phone-shell {
+            display: none;
+          }
+
+          .main-panel {
+            min-height: calc(100vh - 16px);
+            padding: 12px;
+            border-radius: 22px;
+          }
+
+          .main-head {
+            justify-content: center;
+          }
+
+          .main-head h1 {
+            font-size: 18px;
+            text-align: center;
+          }
+
+          .head-actions {
+            display: none;
+          }
+
+          .avatar-block {
+            height: 180px;
+          }
+
+          .avatar-video-wrap {
+            width: 160px;
+            height: 180px;
+          }
+
+          .controls {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .control.live {
+            grid-column: 1 / -1;
+          }
+
+          .write-box {
+            height: 360px;
+            min-height: 360px;
+          }
+
+          .mode-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .mode-card {
+            min-height: 120px;
+          }
         }
       `}</style>
     </main>
