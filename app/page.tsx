@@ -157,8 +157,8 @@ export default function Page() {
             <div className="avatar-video-wrap">
               <video
                 className="avatar-video"
-                src="/lyra-avatar.mp4"
-                poster="/lyra-avatar.jpg"
+                src="/lyra-avatar-mp4.mp4"
+                poster="/lyra-avatar.jpg.jpeg"
                 autoPlay
                 loop
                 muted
