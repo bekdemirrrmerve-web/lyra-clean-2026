@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'live';
-type NavKey =
-  | 'new'
-  | 'chats'
-  | 'modes'
-  | 'tools'
-  | 'reminders'
-  | 'settings';
+type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'pdf' | 'live';
+type Role = 'user' | 'assistant' | 'system';
+
+type ChatMessage = {
+  id: number;
+  role: Role;
+  text: string;
+};
 
 const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
 const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
@@ -20,7 +20,7 @@ const modes: {
   desc: string;
   icon: string;
   options: string[];
-  prompt: string;
+  starter: string;
 }[] = [
   {
     key: 'research',
@@ -28,7 +28,7 @@ const modes: {
     desc: 'Bilgi bul, analiz et ve net cevaplar üret.',
     icon: '⌕',
     options: ['Derin araştır', 'Kaynaklı özetle', 'Güncel bilgi bul'],
-    prompt: 'Bugün araştırmamı istediğin konuyu yaz, sana net ve düzenli çıkarayım.',
+    starter: 'Araştırma modundayım. Konuyu yaz, sana net ve düzenli çıkarayım.',
   },
   {
     key: 'content',
@@ -36,7 +36,7 @@ const modes: {
     desc: 'Hook, metin, video fikri ve içerik hazırla.',
     icon: '✎',
     options: ['Hook yaz', 'Teleprompter hazırla', 'Video fikri üret'],
-    prompt: 'İçerik fikrini yaz, ben sana hook ve metin çıkarayım.',
+    starter: 'İçerik üretme modundayım. Konuyu yaz, hook ve metin hazırlayayım.',
   },
   {
     key: 'lesson',
@@ -44,7 +44,7 @@ const modes: {
     desc: 'Konu anlat, soru çöz ve öğrenmeyi kolaylaştır.',
     icon: '▰',
     options: ['Konu anlat', 'Test üret', 'Yanlışımı açıkla'],
-    prompt: 'Hangi dersi çalışmak istiyorsun? Konu ya da soru yaz.',
+    starter: 'Ders modundayım. Hangi konuyu çalışıyoruz?',
   },
   {
     key: 'image',
@@ -52,7 +52,7 @@ const modes: {
     desc: 'Fikirleri görsele dönüştür ve tasarla.',
     icon: '▧',
     options: ['Prompt yaz', 'Konsept üret', 'Görsel fikri ver'],
-    prompt: 'Nasıl bir görsel istediğini yaz, birlikte tasarlayalım.',
+    starter: 'Görsel üretme modundayım. Nasıl bir görsel istediğini yaz.',
   },
   {
     key: 'read',
@@ -60,7 +60,15 @@ const modes: {
     desc: 'Görsel, belge ve ekranları analiz et.',
     icon: '◌',
     options: ['Fotoğraf oku', 'Belge analiz et', 'Etiket çöz'],
-    prompt: 'Görsel veya belge içeriğini incelememi istiyorsan anlat.',
+    starter: 'Görselle okut modundayım. Görsel yükleyip analiz ettirebilirsin.',
+  },
+  {
+    key: 'pdf',
+    title: 'PDF Özeti',
+    desc: 'PDF yükle, özetle ve önemli yerleri çıkar.',
+    icon: '▤',
+    options: ['PDF özetle', 'Başlık çıkar', 'Not hazırla'],
+    starter: 'PDF modundayım. PDF yükle, sana özet çıkarayım.',
   },
   {
     key: 'live',
@@ -68,7 +76,7 @@ const modes: {
     desc: 'Gerçek zamanlı konuşma alanına geç.',
     icon: '≋',
     options: ['Canlı konuş', 'Ses seç', 'Sessize al'],
-    prompt: 'Canlı mod açıldı. Sesli görüşme alanına geçebilirsin.',
+    starter: 'Canlı mod açıldı. Konuşmaya başlayabilirsin.',
   },
 ];
 
@@ -77,11 +85,9 @@ const voices = ['Lyra', 'Nova', 'Luna', 'Aura'];
 function AvatarVideo({
   className,
   imageClassName,
-  rounded = false,
 }: {
   className: string;
   imageClassName: string;
-  rounded?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -93,12 +99,12 @@ function AvatarVideo({
 
     const checkLoop = () => {
       if (video && Number.isFinite(video.duration) && video.duration > 0) {
-        // Son karelerdeki siyah frame görünmeden önce tekrar başlat
-        if (video.currentTime >= video.duration - 0.28) {
+        if (video.currentTime >= video.duration - 0.32) {
           video.currentTime = 0.04;
           video.play().catch(() => {});
         }
       }
+
       rafRef.current = requestAnimationFrame(checkLoop);
     };
 
@@ -110,8 +116,9 @@ function AvatarVideo({
   }, []);
 
   return (
-    <div className={`avatar-media-root ${rounded ? 'rounded' : ''}`}>
+    <div className="avatar-media-root">
       <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
+
       <video
         ref={videoRef}
         className={className}
@@ -121,92 +128,330 @@ function AvatarVideo({
         muted
         playsInline
         preload="auto"
-        onLoadedData={(e) => {
+        onLoadedData={(event) => {
           setVideoReady(true);
-          e.currentTarget.play().catch(() => {});
+          event.currentTarget.currentTime = 0.04;
+          event.currentTarget.play().catch(() => {});
         }}
-        onEnded={(e) => {
-          e.currentTarget.currentTime = 0.04;
-          e.currentTarget.play().catch(() => {});
+        onEnded={(event) => {
+          event.currentTarget.currentTime = 0.04;
+          event.currentTarget.play().catch(() => {});
         }}
-        onError={(e) => {
-          e.currentTarget.style.display = 'none';
+        onError={(event) => {
+          event.currentTarget.style.display = 'none';
         }}
       />
+
       {!videoReady && <div className="video-loading">LYRA</div>}
     </div>
   );
 }
 
+async function tryJsonEndpoints(endpoints: string[], body: Record<string, unknown>) {
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json().catch(() => null);
+      const text =
+        data?.answer ||
+        data?.reply ||
+        data?.message ||
+        data?.text ||
+        data?.content ||
+        data?.result;
+
+      if (typeof text === 'string' && text.trim()) return text.trim();
+    } catch {
+      // sıradaki endpoint denensin
+    }
+  }
+
+  return null;
+}
+
+async function tryFormEndpoints(
+  endpoints: string[],
+  file: File,
+  extra: Record<string, string>
+) {
+  for (const endpoint of endpoints) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      Object.entries(extra).forEach(([key, value]) => formData.append(key, value));
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json().catch(() => null);
+      const text =
+        data?.summary ||
+        data?.answer ||
+        data?.reply ||
+        data?.message ||
+        data?.text ||
+        data?.content ||
+        data?.result;
+
+      if (typeof text === 'string' && text.trim()) return text.trim();
+    } catch {
+      // sıradaki endpoint denensin
+    }
+  }
+
+  return null;
+}
+
 export default function Page() {
-  const [activeMode, setActiveMode] = useState<ModeKey | null>(null);
+  const [activeMode, setActiveMode] = useState<ModeKey>('research');
   const [muted, setMuted] = useState(false);
   const [gender, setGender] = useState<'Kadın' | 'Erkek'>('Kadın');
   const [liveOpen, setLiveOpen] = useState(false);
-  const [selectedNav, setSelectedNav] = useState<NavKey>('new');
   const [voiceIndex, setVoiceIndex] = useState(0);
   const [message, setMessage] = useState('');
-  const [chatLog, setChatLog] = useState<string[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 1,
+      role: 'assistant',
+      text: 'Merhaba, ben Lyra. Yazabilir, konuşabilir, PDF ya da görsel yükleyebilirsin.',
+    },
+  ]);
+
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const messageIdRef = useRef(2);
 
   const voice = voices[voiceIndex];
-  const active = useMemo(
-    () => modes.find((item) => item.key === activeMode),
-    [activeMode]
-  );
+  const active = useMemo(() => modes.find((item) => item.key === activeMode), [activeMode]);
+  const placeholderText = active?.starter || 'Lyra’ya bir şey sor veya yaz...';
 
-  const placeholderText = active?.prompt || `Lyra’ya bir şey sor veya yaz...`;
+  const addMessage = (role: Role, text: string) => {
+    const id = messageIdRef.current++;
+    setMessages((prev) => [...prev, { id, role, text }].slice(-14));
+  };
 
-  const handleVoiceChange = () => {
+  const speak = (text: string) => {
+    if (muted || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'tr-TR';
+    utterance.rate = 0.96;
+    utterance.pitch = voice === 'Luna' ? 1.08 : voice === 'Nova' ? 0.92 : 1;
+
+    const availableVoices = window.speechSynthesis.getVoices();
+    const turkishVoice =
+      availableVoices.find((v) => v.lang?.toLowerCase().includes('tr')) ||
+      availableVoices.find((v) => v.name?.toLowerCase().includes('female')) ||
+      availableVoices[0];
+
+    if (turkishVoice) utterance.voice = turkishVoice;
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const getFallbackAnswer = (input: string, mode: ModeKey) => {
+    if (mode === 'research') {
+      return `"${input}" için araştırma modunu açtım. API bağlantın aktifse burada kaynaklı cevap dönecek; şu an ön yüzde demo cevap gösteriyorum.`;
+    }
+
+    if (mode === 'content') {
+      return `"${input}" için içerik taslağı hazırlayabilirim: güçlü hook, kısa açıklama, örnek video metni ve CTA.`;
+    }
+
+    if (mode === 'lesson') {
+      return `"${input}" konusunu önce basit anlatım, sonra örnek soru, sonra kısa tekrar şeklinde çalışabiliriz.`;
+    }
+
+    if (mode === 'image') {
+      return `"${input}" için görsel prompt oluşturabilirim. Stil, renk, kadraj ve gerçekçilik seviyesini yazarsan netleştiririm.`;
+    }
+
+    if (mode === 'read') {
+      return `Görsel okutma için görsel yüklemen gerekiyor. Etiketi, ekran görüntüsünü ya da ürünü analiz edebilirim.`;
+    }
+
+    if (mode === 'pdf') {
+      return `PDF özetlemek için PDF yüklemen gerekiyor. Yüklediğinde ana fikirleri, başlıkları ve önemli notları çıkarırım.`;
+    }
+
+    return `“${input}” mesajını aldım. Canlı mod için mikrofonu başlatabilirsin.`;
+  };
+
+  const sendMessage = async (input?: string) => {
+    const text = (input ?? message).trim();
+    if (!text || isThinking) return;
+
+    setMessage('');
+    addMessage('user', text);
+    setIsThinking(true);
+
+    const aiText =
+      (await tryJsonEndpoints(['/api/chat', '/api/ai', '/api/gemini', '/api/lyra'], {
+        message: text,
+        mode: activeMode,
+        voice,
+        gender,
+      })) || getFallbackAnswer(text, activeMode);
+
+    addMessage('assistant', aiText);
+    speak(aiText);
+    setIsThinking(false);
+  };
+
+  const handleTextareaKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const cycleVoice = () => {
     setVoiceIndex((prev) => (prev + 1) % voices.length);
   };
 
   const openMode = (key: ModeKey) => {
-    if (key === 'live') {
-      setActiveMode('live');
-      setLiveOpen(true);
-      return;
-    }
+    setActiveMode(key);
 
-    setActiveMode((current) => (current === key ? null : key));
+    const mode = modes.find((m) => m.key === key);
+    if (mode) addMessage('system', `${mode.title}: ${mode.starter}`);
+
+    if (key === 'live') setLiveOpen(true);
+    if (key === 'pdf') setTimeout(() => pdfInputRef.current?.click(), 150);
+    if (key === 'read') setTimeout(() => imageInputRef.current?.click(), 150);
   };
 
   const handleQuickOption = (option: string) => {
-    const readyText = `${option} seçildi`;
-    setMessage(readyText);
+    setMessage(option);
+    addMessage('system', `${option} seçildi. Detay yazıp Enter’a basabilirsin.`);
   };
 
-  const handleSend = () => {
-    const trimmed = message.trim();
-    if (!trimmed) return;
+  const startListening = () => {
+    if (typeof window === 'undefined') return;
 
-    const answer =
-      activeMode === 'research'
-        ? `Araştırma modunda "${trimmed}" için çalışmaya hazırım.`
-        : activeMode === 'content'
-        ? `"${trimmed}" için içerik kurgusu hazırlayabilirim.`
-        : activeMode === 'lesson'
-        ? `"${trimmed}" konusu için ders planı çıkarabilirim.`
-        : activeMode === 'image'
-        ? `"${trimmed}" için görsel prompt tasarlayabilirim.`
-        : activeMode === 'read'
-        ? `"${trimmed}" için görsel/belge analizi yapabilirim.`
-        : `“${trimmed}” mesajını aldım.`;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    setChatLog((prev) => [trimmed, answer, ...prev].slice(0, 6));
-    setMessage('');
-  };
-
-  const handleTextareaKeyDown = (
-    event: React.KeyboardEvent<HTMLTextAreaElement>
-  ) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      handleSend();
+    if (!SpeechRecognition) {
+      addMessage(
+        'assistant',
+        'Bu tarayıcı mikrofonla yazıya çevirme özelliğini desteklemiyor. Chrome veya Safari deneyebilirsin.'
+      );
+      return;
     }
+
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'tr-TR';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => setIsListening(true);
+
+    recognition.onresult = (event: any) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+
+      setMessage(transcript);
+
+      const lastResult = event.results[event.results.length - 1];
+      if (lastResult?.isFinal && transcript.trim()) {
+        sendMessage(transcript.trim());
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      addMessage('assistant', 'Mikrofonu duyamadım. İzinleri kontrol edip tekrar deneyelim.');
+    };
+
+    recognition.onend = () => setIsListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.stop?.();
+    recognitionRef.current = null;
+    setIsListening(false);
+  };
+
+  const handlePdfUpload = async (file?: File) => {
+    if (!file) return;
+
+    setActiveMode('pdf');
+    addMessage('user', `PDF yüklendi: ${file.name}`);
+    setIsThinking(true);
+
+    const result =
+      (await tryFormEndpoints(['/api/pdf', '/api/pdf-summary', '/api/upload-pdf'], file, {
+        mode: 'pdf',
+      })) ||
+      `PDF yüklendi ama PDF okuma API bağlantısı bulunamadı. Dosya adı: ${file.name}. Eski çalışan PDF endpoint'in varsa /api/pdf, /api/pdf-summary veya /api/upload-pdf isimlerinden birine bağlayınca özet burada döner.`;
+
+    addMessage('assistant', result);
+    speak(result);
+    setIsThinking(false);
+  };
+
+  const handleImageUpload = async (file?: File) => {
+    if (!file) return;
+
+    setActiveMode('read');
+    addMessage('user', `Görsel yüklendi: ${file.name}`);
+    setIsThinking(true);
+
+    const result =
+      (await tryFormEndpoints(['/api/vision', '/api/image-read', '/api/analyze-image'], file, {
+        mode: 'read',
+      })) ||
+      `Görsel yüklendi ama görsel analiz API bağlantısı bulunamadı. Dosya adı: ${file.name}. Eski çalışan görsel endpoint'in varsa /api/vision, /api/image-read veya /api/analyze-image yoluna bağlayınca analiz burada döner.`;
+
+    addMessage('assistant', result);
+    speak(result);
+    setIsThinking(false);
   };
 
   return (
     <main className="page">
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept="application/pdf"
+        hidden
+        onChange={(event) => handlePdfUpload(event.target.files?.[0])}
+      />
+
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => handleImageUpload(event.target.files?.[0])}
+      />
+
       <section className="brand-outside">
         <div className="brand-star">✦</div>
         <div className="brand-text">LYRA</div>
@@ -221,38 +466,35 @@ export default function Page() {
 
           <nav className="menu">
             <button
-              className={`menu-item ${selectedNav === 'new' ? 'active' : ''}`}
-              onClick={() => setSelectedNav('new')}
+              className="menu-item active"
+              onClick={() => addMessage('system', 'Yeni sohbet başlatıldı.')}
             >
               <span>＋</span> Yeni Sohbet
             </button>
             <button
-              className={`menu-item ${selectedNav === 'chats' ? 'active' : ''}`}
-              onClick={() => setSelectedNav('chats')}
+              className="menu-item"
+              onClick={() => addMessage('system', 'Sohbetler alanı açıldı.')}
             >
               <span>▢</span> Sohbetler
             </button>
-            <button
-              className={`menu-item ${selectedNav === 'modes' ? 'active' : ''}`}
-              onClick={() => setSelectedNav('modes')}
-            >
+            <button className="menu-item" onClick={() => setActiveMode('research')}>
               <span>⌘</span> Modlar
             </button>
             <button
-              className={`menu-item ${selectedNav === 'tools' ? 'active' : ''}`}
-              onClick={() => setSelectedNav('tools')}
+              className="menu-item"
+              onClick={() => addMessage('system', 'Araçlar alanı hazır.')}
             >
               <span>▤</span> Araçlar
             </button>
             <button
-              className={`menu-item ${selectedNav === 'reminders' ? 'active' : ''}`}
-              onClick={() => setSelectedNav('reminders')}
+              className="menu-item"
+              onClick={() => addMessage('system', 'Hatırlatıcılar alanı hazır.')}
             >
               <span>♢</span> Hatırlatıcılar
             </button>
             <button
-              className={`menu-item ${selectedNav === 'settings' ? 'active' : ''}`}
-              onClick={() => setSelectedNav('settings')}
+              className="menu-item"
+              onClick={() => addMessage('system', 'Ayarlar alanı hazır.')}
             >
               <span>⚙</span> Ayarlar
             </button>
@@ -294,8 +536,17 @@ export default function Page() {
             <h1>LYRA AI ASİSTANINIZ</h1>
 
             <div className="head-actions">
-              <button onClick={() => setActiveMode('research')}>ⓘ Lyra Hakkında</button>
-              <button onClick={() => setSelectedNav('settings')}>♢</button>
+              <button
+                onClick={() =>
+                  addMessage(
+                    'assistant',
+                    'Ben Lyra. Araştırma, içerik, ders, PDF ve görsel analiz alanlarında yardımcı olurum.'
+                  )
+                }
+              >
+                ⓘ Lyra Hakkında
+              </button>
+              <button onClick={cycleVoice}>♢</button>
             </div>
           </header>
 
@@ -304,15 +555,12 @@ export default function Page() {
             <div className="silver-orbit orbit-two" />
 
             <div className="avatar-video-wrap">
-              <AvatarVideo
-                className="avatar-video"
-                imageClassName="avatar-poster"
-              />
+              <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
             </div>
           </section>
 
           <section className="controls">
-            <button className="control" onClick={handleVoiceChange}>
+            <button className="control" onClick={cycleVoice}>
               <span className="sound">≋</span>
               Ses: {voice}
               <b>⌄</b>
@@ -349,35 +597,36 @@ export default function Page() {
           </section>
 
           <section className="write-box">
+            <div className="message-list">
+              {messages.map((item) => (
+                <div key={item.id} className={`message ${item.role}`}>
+                  {item.text}
+                </div>
+              ))}
+              {isThinking && <div className="message assistant">Lyra düşünüyor...</div>}
+            </div>
+
             <textarea
               placeholder={placeholderText}
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(event) => setMessage(event.target.value)}
               onKeyDown={handleTextareaKeyDown}
             />
 
             <div className="write-actions">
               <div>
-                <button onClick={() => setActiveMode('research')}>⌘</button>
-                <button onClick={() => setActiveMode('content')}>✧</button>
-                <button onClick={() => setActiveMode('image')}>▧</button>
+                <button onClick={isListening ? stopListening : startListening}>
+                  {isListening ? '■' : '🎙'}
+                </button>
+                <button onClick={() => imageInputRef.current?.click()}>▧</button>
+                <button onClick={() => pdfInputRef.current?.click()}>PDF</button>
               </div>
 
-              <button className="send" onClick={handleSend}>
+              <button className="send" onClick={() => sendMessage()}>
                 ▶
               </button>
             </div>
           </section>
-
-          {chatLog.length > 0 && (
-            <section className="chat-preview">
-              {chatLog.map((item, index) => (
-                <div key={`${item}-${index}`} className="chat-chip">
-                  {item}
-                </div>
-              ))}
-            </section>
-          )}
 
           <section className="mode-grid">
             {modes.map((mode) => (
@@ -417,24 +666,21 @@ export default function Page() {
             </div>
 
             <div className="phone-head">
-              <button onClick={() => setSelectedNav('new')}>☰</button>
+              <button onClick={startListening}>☰</button>
               <strong>
                 <span>✦</span> LYRA
               </strong>
-              <button onClick={() => setSelectedNav('settings')}>♢</button>
+              <button onClick={cycleVoice}>♢</button>
             </div>
 
             <div className="phone-hero">
               <div className="phone-avatar-video-wrap">
-                <AvatarVideo
-                  className="phone-avatar-video"
-                  imageClassName="phone-avatar-poster"
-                />
+                <AvatarVideo className="phone-avatar-video" imageClassName="phone-avatar-poster" />
               </div>
             </div>
 
             <div className="phone-controls">
-              <button onClick={handleVoiceChange}>≋ Ses: {voice}</button>
+              <button onClick={cycleVoice}>≋ Ses: {voice}</button>
               <button onClick={() => setMuted((value) => !value)}>
                 {muted ? 'Sesi Aç' : 'Sessize Al'}
               </button>
@@ -455,9 +701,9 @@ export default function Page() {
               </button>
             </div>
 
-            <div className="phone-input" onClick={() => setSelectedNav('new')}>
+            <div className="phone-input" onClick={() => sendMessage(message || 'Merhaba Lyra')}>
               <span>{message || 'Lyra’ya bir şey sor veya yaz...'}</span>
-              <button onClick={handleSend}>▶</button>
+              <button>▶</button>
             </div>
 
             <div className="phone-grid">
@@ -481,10 +727,7 @@ export default function Page() {
             </button>
 
             <div className="live-avatar-video-wrap">
-              <AvatarVideo
-                className="live-avatar-video"
-                imageClassName="live-avatar-poster"
-              />
+              <AvatarVideo className="live-avatar-video" imageClassName="live-avatar-poster" />
             </div>
 
             <h2>Canlı Konuşma</h2>
@@ -494,8 +737,10 @@ export default function Page() {
             </p>
 
             <div className="live-buttons">
-              <button onClick={() => setMuted(false)}>🎙 Konuşmayı Başlat</button>
-              <button onClick={handleVoiceChange}>≋ Ses Değiştir</button>
+              <button onClick={isListening ? stopListening : startListening}>
+                {isListening ? '■ Dinlemeyi Durdur' : '🎙 Konuşmayı Başlat'}
+              </button>
+              <button onClick={cycleVoice}>≋ Ses Değiştir</button>
               <button onClick={() => setMuted((value) => !value)}>
                 {muted ? 'Sesi Aç' : 'Sessize Al'}
               </button>
@@ -663,14 +908,14 @@ export default function Page() {
         .phone-controls button,
         .phone-input,
         .phone-grid button,
-        .head-actions button,
-        .chat-chip {
+        .head-actions button {
           color: var(--graphite);
-          background: linear-gradient(
-            145deg,
-            rgba(255, 255, 255, 0.98),
-            rgba(239, 242, 244, 0.9)
-          );
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.98),
+              rgba(239, 242, 244, 0.9)
+            );
           border: 1px solid rgba(25, 29, 33, 0.1);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
@@ -806,8 +1051,7 @@ export default function Page() {
         .controls,
         .write-box,
         .mode-grid,
-        .sub-panel,
-        .chat-preview {
+        .sub-panel {
           position: relative;
           z-index: 1;
         }
@@ -841,7 +1085,7 @@ export default function Page() {
         }
 
         .hero {
-          height: 280px;
+          height: 315px;
           display: grid;
           place-items: center;
           isolation: isolate;
@@ -857,14 +1101,14 @@ export default function Page() {
         }
 
         .orbit-one {
-          width: 280px;
-          height: 280px;
+          width: 300px;
+          height: 300px;
           animation: orbit 9s ease-in-out infinite;
         }
 
         .orbit-two {
-          width: 360px;
-          height: 360px;
+          width: 385px;
+          height: 385px;
           opacity: 0.46;
           animation: orbit 12s ease-in-out infinite reverse;
         }
@@ -872,12 +1116,13 @@ export default function Page() {
         .avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 220px;
-          height: 260px;
+          width: 250px;
+          height: 300px;
           border-radius: 28px;
           overflow: hidden;
           border: 1px solid rgba(20, 24, 28, 0.12);
-          background: #f5f6f8;
+          background:
+            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
             0 20px 56px rgba(18, 22, 26, 0.16);
@@ -887,6 +1132,8 @@ export default function Page() {
           position: relative;
           width: 100%;
           height: 100%;
+          display: grid;
+          place-items: center;
         }
 
         .avatar-poster,
@@ -899,9 +1146,10 @@ export default function Page() {
           inset: 0;
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          object-fit: contain;
           object-position: center center;
-          background: transparent;
+          background:
+            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
         }
 
         .avatar-video,
@@ -972,10 +1220,50 @@ export default function Page() {
         }
 
         .write-box {
-          min-height: 128px;
+          min-height: 210px;
           margin-top: 22px;
           border-radius: 26px;
-          padding: 20px 22px 14px;
+          padding: 18px 22px 14px;
+        }
+
+        .message-list {
+          max-height: 90px;
+          overflow: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-bottom: 10px;
+          padding-right: 4px;
+        }
+
+        .message {
+          width: fit-content;
+          max-width: 88%;
+          padding: 8px 12px;
+          border-radius: 16px;
+          font-size: 14px;
+          line-height: 1.35;
+          font-weight: 800;
+        }
+
+        .message.user {
+          align-self: flex-end;
+          background: #111417;
+          color: white;
+        }
+
+        .message.assistant {
+          align-self: flex-start;
+          background: rgba(255, 255, 255, 0.86);
+          color: var(--graphite);
+          border: 1px solid var(--line);
+        }
+
+        .message.system {
+          align-self: center;
+          background: rgba(225, 230, 234, 0.7);
+          color: var(--graphite-soft);
+          border: 1px solid var(--line);
         }
 
         .write-box textarea {
@@ -1007,9 +1295,10 @@ export default function Page() {
         }
 
         .write-actions button {
-          width: 38px;
+          min-width: 38px;
           height: 38px;
-          border-radius: 50%;
+          padding: 0 10px;
+          border-radius: 999px;
           color: var(--graphite);
           background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
           border: 1px solid var(--line);
@@ -1022,33 +1311,20 @@ export default function Page() {
         .write-actions .send {
           width: 46px;
           height: 46px;
-        }
-
-        .chat-preview {
-          margin-top: 12px;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .chat-chip {
-          border-radius: 999px;
-          padding: 8px 14px;
-          font-size: 13px;
-          font-weight: 800;
+          border-radius: 50%;
         }
 
         .mode-grid {
           display: grid;
-          grid-template-columns: repeat(6, 1fr);
+          grid-template-columns: repeat(7, 1fr);
           gap: 12px;
           margin-top: 18px;
         }
 
         .mode-card {
-          min-height: 205px;
+          min-height: 185px;
           border-radius: 24px;
-          padding: 24px 14px 14px;
+          padding: 20px 12px 14px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1062,25 +1338,25 @@ export default function Page() {
         }
 
         .mode-icon {
-          height: 54px;
+          height: 44px;
           display: grid;
           place-items: center;
-          font-size: 48px;
+          font-size: 38px;
           line-height: 1;
           color: var(--graphite);
         }
 
         .mode-card strong {
-          margin-top: 16px;
-          font-size: 17px;
+          margin-top: 12px;
+          font-size: 15px;
           font-weight: 950;
         }
 
         .mode-card small {
-          margin-top: 10px;
+          margin-top: 8px;
           color: var(--graphite-soft);
-          font-size: 13px;
-          line-height: 1.45;
+          font-size: 12px;
+          line-height: 1.35;
           font-weight: 800;
         }
 
@@ -1180,7 +1456,7 @@ export default function Page() {
 
         .phone-hero {
           position: relative;
-          height: 190px;
+          height: 205px;
           display: grid;
           place-items: center;
           margin-top: 6px;
@@ -1188,12 +1464,13 @@ export default function Page() {
 
         .phone-avatar-video-wrap {
           position: relative;
-          width: 126px;
-          height: 176px;
+          width: 138px;
+          height: 190px;
           border-radius: 24px;
           overflow: hidden;
           border: 1px solid rgba(20, 24, 28, 0.12);
-          background: #f5f6f8;
+          background:
+            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
             0 14px 32px rgba(18, 22, 26, 0.12);
@@ -1251,24 +1528,24 @@ export default function Page() {
         }
 
         .phone-grid button {
-          min-height: 102px;
+          min-height: 88px;
           border-radius: 16px;
-          padding: 9px 6px;
+          padding: 8px 6px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 5px;
+          gap: 4px;
         }
 
         .phone-grid span {
-          font-size: 27px;
+          font-size: 23px;
           line-height: 1;
         }
 
         .phone-grid strong {
-          font-size: 12px;
-          line-height: 1.15;
+          font-size: 11px;
+          line-height: 1.12;
           font-weight: 950;
         }
 
@@ -1311,12 +1588,13 @@ export default function Page() {
 
         .live-avatar-video-wrap {
           position: relative;
-          width: 210px;
-          height: 280px;
+          width: 250px;
+          height: 330px;
           margin: 0 auto;
           border-radius: 28px;
           overflow: hidden;
-          background: #f5f6f8;
+          background:
+            radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
           border: 1px solid rgba(20, 24, 28, 0.12);
           box-shadow: var(--shadow);
         }
@@ -1416,22 +1694,22 @@ export default function Page() {
           }
 
           .hero {
-            height: 240px;
+            height: 270px;
           }
 
           .orbit-one {
-            width: 240px;
-            height: 240px;
+            width: 250px;
+            height: 250px;
           }
 
           .orbit-two {
-            width: 310px;
-            height: 310px;
+            width: 320px;
+            height: 320px;
           }
 
           .avatar-video-wrap {
-            width: 180px;
-            height: 225px;
+            width: 210px;
+            height: 255px;
             border-radius: 22px;
           }
 
