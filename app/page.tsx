@@ -24,6 +24,19 @@ const avatarSources = [
   "/avatar.jpg",
 ];
 
+const videoSources = [
+  "/lyra-live.mp4",
+  "/lyra-avatar.mp4",
+  "/avatar-live.mp4",
+  "/live-avatar.mp4",
+  "/lyra-video.mp4",
+  "/avatar-video.mp4",
+  "/lyra.mp4",
+  "/video.mp4",
+  "/lyra-live.webm",
+  "/avatar-live.webm",
+];
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -47,8 +60,12 @@ export default function Home() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
   const [interimText, setInterimText] = useState("");
+
   const [avatarIndex, setAvatarIndex] = useState(0);
   const [avatarVisible, setAvatarVisible] = useState(true);
+
+  const [videoIndex, setVideoIndex] = useState(0);
+  const [videoVisible, setVideoVisible] = useState(true);
 
   const recognitionRef = useRef<any>(null);
   const liveRef = useRef(false);
@@ -81,7 +98,8 @@ export default function Home() {
       const nudgeGap = now - lastNudgeRef.current;
 
       if (idle > 24000 && nudgeGap > 35000) {
-        const text = "Merve, buradayım. Devam etmek istersen seni dinliyorum.";
+        const text =
+          "Merve, buradayım. Devam etmek istersen seni dinliyorum.";
         lastNudgeRef.current = now;
         addLyra(text);
         speak(text);
@@ -114,6 +132,14 @@ export default function Home() {
     }
   }
 
+  function handleVideoError() {
+    if (videoIndex < videoSources.length - 1) {
+      setVideoIndex((i) => i + 1);
+    } else {
+      setVideoVisible(false);
+    }
+  }
+
   function stopListening() {
     try {
       recognitionRef.current?.stop?.();
@@ -131,7 +157,9 @@ export default function Home() {
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      addLyra("Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’dan dene.");
+      addLyra(
+        "Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’dan dene."
+      );
       return;
     }
 
@@ -185,7 +213,11 @@ export default function Home() {
 
       if (liveRef.current && !speakingRef.current && !thinkingRef.current) {
         setTimeout(() => {
-          if (liveRef.current && !speakingRef.current && !thinkingRef.current) {
+          if (
+            liveRef.current &&
+            !speakingRef.current &&
+            !thinkingRef.current
+          ) {
             startListening();
           }
         }, 500);
@@ -230,6 +262,7 @@ export default function Home() {
 
       utterance.onend = () => {
         setIsSpeaking(false);
+
         if (liveRef.current) {
           setTimeout(() => startListening(), 450);
         }
@@ -237,6 +270,7 @@ export default function Home() {
 
       utterance.onerror = () => {
         setIsSpeaking(false);
+
         if (liveRef.current) {
           setTimeout(() => startListening(), 450);
         }
@@ -371,11 +405,16 @@ export default function Home() {
         <aside className="sidebar">
           <h2>✦ LYRA</h2>
 
-          {["＋ Yeni Sohbet", "▢ Sohbetler", "⌘ Modlar", "▤ Araçlar", "♢ Hatırlatıcılar", "⚙ Ayarlar"].map(
-            (item) => (
-              <button key={item}>{item}</button>
-            )
-          )}
+          {[
+            "＋ Yeni Sohbet",
+            "▢ Sohbetler",
+            "⌘ Modlar",
+            "▤ Araçlar",
+            "♢ Hatırlatıcılar",
+            "⚙ Ayarlar",
+          ].map((item) => (
+            <button key={item}>{item}</button>
+          ))}
         </aside>
 
         <section className="center-card">
@@ -515,7 +554,23 @@ export default function Home() {
               ].join(" ")}
             />
 
-            {avatarVisible ? (
+            {videoVisible ? (
+              <video
+                key={videoSources[videoIndex]}
+                className={[
+                  "live-video",
+                  isSpeaking ? "talking" : "",
+                  isListening ? "listening" : "",
+                ].join(" ")}
+                src={videoSources[videoIndex]}
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+                onError={handleVideoError}
+              />
+            ) : avatarVisible ? (
               <img
                 className={[
                   "live-avatar",
@@ -618,9 +673,16 @@ export default function Home() {
           min-height: 100dvh;
           position: relative;
           overflow-x: hidden;
-          background:
-            radial-gradient(circle at 44% 35%, rgba(255, 255, 255, 0.98), transparent 28%),
-            radial-gradient(circle at 55% 50%, rgba(216, 219, 222, 0.75), transparent 28%),
+          background: radial-gradient(
+              circle at 44% 35%,
+              rgba(255, 255, 255, 0.98),
+              transparent 28%
+            ),
+            radial-gradient(
+              circle at 55% 50%,
+              rgba(216, 219, 222, 0.75),
+              transparent 28%
+            ),
             linear-gradient(135deg, #ffffff, #e9ecee);
           padding: 28px 28px 40px;
         }
@@ -664,8 +726,7 @@ export default function Home() {
         .phone-shell {
           background: rgba(255, 255, 255, 0.58);
           border: 1px solid rgba(188, 192, 197, 0.75);
-          box-shadow:
-            0 28px 80px rgba(73, 78, 86, 0.14),
+          box-shadow: 0 28px 80px rgba(73, 78, 86, 0.14),
             inset 0 0 0 1px rgba(255, 255, 255, 0.7);
           backdrop-filter: blur(22px);
         }
@@ -957,9 +1018,16 @@ export default function Home() {
         .live-room {
           position: absolute;
           inset: 0;
-          background:
-            radial-gradient(circle at 18% 35%, rgba(255, 180, 82, 0.38), transparent 18%),
-            radial-gradient(circle at 86% 48%, rgba(255, 195, 116, 0.24), transparent 22%),
+          background: radial-gradient(
+              circle at 18% 35%,
+              rgba(255, 180, 82, 0.38),
+              transparent 18%
+            ),
+            radial-gradient(
+              circle at 86% 48%,
+              rgba(255, 195, 116, 0.24),
+              transparent 22%
+            ),
             linear-gradient(90deg, #150d09, #5a3a25 48%, #100a08);
         }
 
@@ -983,9 +1051,16 @@ export default function Home() {
           width: 125px;
           height: 330px;
           border-radius: 28px;
-          background:
-            radial-gradient(circle at 50% 25%, rgba(255, 205, 119, 0.95), transparent 13%),
-            radial-gradient(circle at 50% 65%, rgba(255, 205, 119, 0.8), transparent 14%),
+          background: radial-gradient(
+              circle at 50% 25%,
+              rgba(255, 205, 119, 0.95),
+              transparent 13%
+            ),
+            radial-gradient(
+              circle at 50% 65%,
+              rgba(255, 205, 119, 0.8),
+              transparent 14%
+            ),
             rgba(255, 255, 255, 0.05);
           opacity: 0.62;
         }
@@ -993,9 +1068,17 @@ export default function Home() {
         .live-shade {
           position: absolute;
           inset: 0;
-          background:
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), transparent 28%, rgba(0, 0, 0, 0.78)),
-            radial-gradient(circle at 50% 42%, transparent 25%, rgba(0, 0, 0, 0.56));
+          background: linear-gradient(
+              to bottom,
+              rgba(0, 0, 0, 0.18),
+              transparent 28%,
+              rgba(0, 0, 0, 0.78)
+            ),
+            radial-gradient(
+              circle at 50% 42%,
+              transparent 25%,
+              rgba(0, 0, 0, 0.56)
+            );
           pointer-events: none;
         }
 
@@ -1077,18 +1160,27 @@ export default function Home() {
           width: min(78vw, 540px);
           height: min(78vw, 540px);
           border-radius: 999px;
-          background: radial-gradient(circle, rgba(255, 225, 181, 0.28), transparent 68%);
+          background: radial-gradient(
+            circle,
+            rgba(255, 225, 181, 0.28),
+            transparent 68%
+          );
           filter: blur(10px);
         }
 
         .live-glow.listen {
-          background: radial-gradient(circle, rgba(178, 255, 225, 0.25), transparent 68%);
+          background: radial-gradient(
+            circle,
+            rgba(178, 255, 225, 0.25),
+            transparent 68%
+          );
         }
 
         .live-glow.speak {
           animation: liveGlow 1.1s ease-in-out infinite;
         }
 
+        .live-video,
         .live-avatar {
           position: relative;
           z-index: 2;
@@ -1101,13 +1193,19 @@ export default function Home() {
           animation: liveIdle 5s ease-in-out infinite;
         }
 
+        .live-video {
+          border-radius: 30px;
+          background: transparent;
+        }
+
+        .live-video.talking,
         .live-avatar.talking {
           animation: liveTalking 0.95s ease-in-out infinite;
         }
 
+        .live-video.listening,
         .live-avatar.listening {
-          filter:
-            drop-shadow(0 32px 70px rgba(0, 0, 0, 0.55))
+          filter: drop-shadow(0 32px 70px rgba(0, 0, 0, 0.55))
             drop-shadow(0 0 22px rgba(168, 85, 247, 0.3));
         }
 
@@ -1376,6 +1474,7 @@ export default function Home() {
             inset: 76px 0 150px;
           }
 
+          .live-video,
           .live-avatar {
             max-height: 70dvh;
           }
