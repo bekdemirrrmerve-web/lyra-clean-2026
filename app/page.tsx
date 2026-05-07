@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+type MessageRole = "user" | "lyra";
+
 type Message = {
-  role: "user" | "lyra";
+  role: MessageRole;
   text: string;
 };
 
@@ -26,6 +28,30 @@ declare global {
 const AVATAR_SRC = "/lyra-avatar.jpg.jpeg";
 const VIDEO_SRC = "/lyra-avatar-mp4.mp4";
 
+const LANGUAGES = [
+  { name: "Otomatik Algıla", code: "auto" },
+  { name: "Türkçe", code: "tr-TR" },
+  { name: "İngilizce", code: "en-US" },
+  { name: "Almanca", code: "de-DE" },
+  { name: "Fransızca", code: "fr-FR" },
+  { name: "İspanyolca", code: "es-ES" },
+  { name: "İtalyanca", code: "it-IT" },
+  { name: "Portekizce", code: "pt-PT" },
+  { name: "Arapça", code: "ar-SA" },
+  { name: "Rusça", code: "ru-RU" },
+  { name: "Japonca", code: "ja-JP" },
+  { name: "Korece", code: "ko-KR" },
+  { name: "Çince", code: "zh-CN" },
+  { name: "Hintçe", code: "hi-IN" },
+  { name: "Felemenkçe", code: "nl-NL" },
+  { name: "Yunanca", code: "el-GR" },
+  { name: "Lehçe", code: "pl-PL" },
+  { name: "İsveççe", code: "sv-SE" },
+  { name: "Norveççe", code: "no-NO" },
+  { name: "Danca", code: "da-DK" },
+  { name: "Fince", code: "fi-FI" },
+];
+
 const TOOL_META: Record<
   ToolKey,
   {
@@ -40,7 +66,7 @@ const TOOL_META: Record<
     title: "Araştırma Modu",
     icon: "⌕",
     placeholder:
-      "Araştırmak istediğin konuyu yaz. Sana net, anlaşılır ve güçlü bir cevap çıkarayım.",
+      "Araştırmak istediğin konuyu yaz. Sana net, sade ve anlaşılır cevap çıkarayım.",
     buttonLabel: "Araştır",
     helper: "Bilgi bul, analiz et ve net cevap üret.",
   },
@@ -56,7 +82,7 @@ const TOOL_META: Record<
     title: "Ders Modu",
     icon: "■",
     placeholder:
-      "Çalışmak istediğin konuyu yaz. Sana sade konu anlatımı ve soru hazırlayayım.",
+      "Çalışmak istediğin konuyu yaz. Sana sade konu anlatımı ve mini soru hazırlayayım.",
     buttonLabel: "Ders Hazırla",
     helper: "Konu anlat, mini özet ve soru üret.",
   },
@@ -64,7 +90,7 @@ const TOOL_META: Record<
     title: "Görsel Üretme",
     icon: "▧",
     placeholder:
-      "Nasıl bir görsel istediğini yaz. Sana güçlü bir prompt ve konsept çıkarayım.",
+      "Nasıl bir görsel istediğini yaz. Sana güçlü bir prompt ve konsept oluşturayım.",
     buttonLabel: "Prompt Oluştur",
     helper: "Görsel promptu ve konsept hazırla.",
   },
@@ -72,7 +98,7 @@ const TOOL_META: Record<
     title: "Görselle Okut",
     icon: "◌",
     placeholder:
-      "Analiz edilmesini istediğin görseli tarif et ya da içeriğini yaz.",
+      "Analiz edilmesini istediğin görseli ya da ekran içeriğini yaz.",
     buttonLabel: "Analiz Et",
     helper: "Görsel, belge ve ekranları analiz et.",
   },
@@ -80,7 +106,7 @@ const TOOL_META: Record<
     title: "PDF Özeti",
     icon: "▤",
     placeholder:
-      "Özetlemek istediğin PDF içeriğini yapıştır ya da konusunu yaz.",
+      "Özetlemek istediğin PDF içeriğini veya konusunu yaz.",
     buttonLabel: "Özet Çıkar",
     helper: "PDF içeriğini özetle ve not çıkar.",
   },
@@ -89,9 +115,13 @@ const TOOL_META: Record<
     icon: "🌐",
     placeholder: "Çevrilecek metni yaz.",
     buttonLabel: "Çevir",
-    helper: "Metin çevir, düzenle ve sadeleştir.",
+    helper: "Metin çevir, düzenle ve sesli okut.",
   },
 };
+
+function getLangCode(languageName: string) {
+  return LANGUAGES.find((lang) => lang.name === languageName)?.code || "tr-TR";
+}
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
@@ -107,7 +137,7 @@ export default function Home() {
     {
       role: "lyra",
       text:
-        "Elbette, Türkçe konuşabiliyorum. Sana nasıl yardımcı olmamı istersin kanka?",
+        "Elbette kanka, buradayım. Sana nasıl yardımcı olmamı istersin?",
     },
   ]);
 
@@ -159,6 +189,21 @@ export default function Home() {
   }, [isThinking]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const loadVoices = () => {
+      window.speechSynthesis.getVoices();
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       if (!liveRef.current) return;
       if (speakingRef.current || thinkingRef.current) return;
@@ -172,7 +217,7 @@ export default function Home() {
           "Merve, buradayım. Devam etmek istersen seni dinliyorum.";
         lastNudgeRef.current = now;
         addLyra(text);
-        speak(text);
+        speak(text, "tr-TR");
       }
     }, 3000);
 
@@ -189,11 +234,13 @@ export default function Home() {
   }, []);
 
   function addUser(text: string) {
-    setMessages((prev) => [...prev, { role: "user", text }].slice(-24));
+    const newMessage: Message = { role: "user", text };
+    setMessages((prev): Message[] => [...prev, newMessage].slice(-24));
   }
 
   function addLyra(text: string) {
-    setMessages((prev) => [...prev, { role: "lyra", text }].slice(-24));
+    const newMessage: Message = { role: "lyra", text };
+    setMessages((prev): Message[] => [...prev, newMessage].slice(-24));
   }
 
   function stopListening() {
@@ -206,7 +253,7 @@ export default function Home() {
     setIsListening(false);
   }
 
-  function startListening() {
+  function startListening(langCode = "tr-TR") {
     if (typeof window === "undefined") return;
 
     const SpeechRecognition =
@@ -214,7 +261,7 @@ export default function Home() {
 
     if (!SpeechRecognition) {
       addLyra(
-        "Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’dan dene."
+        "Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome veya Edge ile dene."
       );
       return;
     }
@@ -226,7 +273,7 @@ export default function Home() {
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
 
-    recognition.lang = "tr-TR";
+    recognition.lang = langCode === "auto" ? "tr-TR" : langCode;
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
@@ -242,8 +289,11 @@ export default function Home() {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
 
-        if (event.results[i].isFinal) finalText += transcript;
-        else tempText += transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript;
+        } else {
+          tempText += transcript;
+        }
       }
 
       if (tempText) setInterimText(tempText);
@@ -271,7 +321,7 @@ export default function Home() {
             !speakingRef.current &&
             !thinkingRef.current
           ) {
-            startListening();
+            startListening("tr-TR");
           }
         }, 500);
       }
@@ -282,11 +332,11 @@ export default function Home() {
     } catch {}
   }
 
-  function speak(text: string) {
+  function speak(text: string, langCode = "tr-TR") {
     if (typeof window === "undefined") return;
 
     if (!voiceOn) {
-      if (liveRef.current) startListening();
+      if (liveRef.current) startListening("tr-TR");
       return;
     }
 
@@ -294,18 +344,22 @@ export default function Home() {
       stopListening();
       window.speechSynthesis.cancel();
 
+      const finalLang = langCode === "auto" ? "tr-TR" : langCode;
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "tr-TR";
-      utterance.rate = 1.06;
-      utterance.pitch = 1.08;
+      utterance.lang = finalLang;
+      utterance.rate = 1.04;
+      utterance.pitch = 1.05;
       utterance.volume = 1;
 
       const voices = window.speechSynthesis.getVoices();
+      const baseLang = finalLang.split("-")[0].toLowerCase();
 
       const selectedVoice =
+        voices.find((v) => v.lang === finalLang) ||
+        voices.find((v) =>
+          v.lang?.toLowerCase().startsWith(baseLang)
+        ) ||
         voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
-        voices.find((v) => v.name?.toLowerCase().includes("female")) ||
-        voices.find((v) => v.name?.toLowerCase().includes("woman")) ||
         voices[0];
 
       if (selectedVoice) utterance.voice = selectedVoice;
@@ -314,18 +368,18 @@ export default function Home() {
 
       utterance.onend = () => {
         setIsSpeaking(false);
-        if (liveRef.current) setTimeout(() => startListening(), 450);
+        if (liveRef.current) setTimeout(() => startListening("tr-TR"), 450);
       };
 
       utterance.onerror = () => {
         setIsSpeaking(false);
-        if (liveRef.current) setTimeout(() => startListening(), 450);
+        if (liveRef.current) setTimeout(() => startListening("tr-TR"), 450);
       };
 
       window.speechSynthesis.speak(utterance);
     } catch {
       setIsSpeaking(false);
-      if (liveRef.current) startListening();
+      if (liveRef.current) startListening("tr-TR");
     }
   }
 
@@ -387,7 +441,9 @@ export default function Home() {
       setIsThinking(false);
       thinkingRef.current = false;
 
-      if (liveRef.current || fromVoice) speak(finalReply);
+      if (liveRef.current || fromVoice) {
+        speak(finalReply, "tr-TR");
+      }
     } catch {
       const fallback =
         "Gemini bağlantısında küçük bir takılma oldu kanka. Ekran çalışıyor, bağlantıyı sonra birlikte düzeltiriz.";
@@ -396,7 +452,9 @@ export default function Home() {
       setIsThinking(false);
       thinkingRef.current = false;
 
-      if (liveRef.current || fromVoice) speak(fallback);
+      if (liveRef.current || fromVoice) {
+        speak(fallback, "tr-TR");
+      }
     }
   }
 
@@ -405,17 +463,17 @@ export default function Home() {
 
     switch (tool) {
       case "research":
-        return `Kullanıcının istediği konuyu sade, net, güncel ve anlaşılır şekilde açıkla. Gereksiz uzatma yapma ama yeterince doyurucu ol. Gerekirse kısa maddeler kullan.\n\nKonu: ${text}`;
+        return `Kullanıcının istediği konuyu sade, net, anlaşılır ve bilgilendirici şekilde açıkla. Çok uzatma ama boş da bırakma. Gerekirse kısa maddeler kullan.\n\nKonu: ${text}`;
       case "content":
-        return `Kullanıcı için içerik üret. Türkçe cevap ver. Çıktı formatı şu olsun: 1) 3 kısa başlık 2) güçlü hook 3) 30-45 saniyelik teleprompter metni 4) CTA. Konu: ${text}`;
+        return `Kullanıcı için içerik üret. Türkçe cevap ver. Çıktı şu formatta olsun: 1) 3 başlık önerisi 2) güçlü hook 3) 30-45 saniyelik teleprompter metni 4) CTA.\n\nKonu: ${text}`;
       case "study":
-        return `Kullanıcı için öğretici bir mini ders hazırla. Türkçe cevap ver. Format: Kısa konu anlatımı, kritik noktalar, mini örnek, 3 pratik soru. Konu: ${text}`;
+        return `Kullanıcı için öğretici mini ders hazırla. Türkçe cevap ver. Format: kısa konu anlatımı, kritik noktalar, mini örnek, 3 pratik soru.\n\nKonu: ${text}`;
       case "image":
-        return `Kullanıcının istediği görsel için güçlü ve profesyonel bir image prompt oluştur. Türkçe açıklama + altında kopyalanabilir prompt ver. İstek: ${text}`;
+        return `Kullanıcının istediği görsel için güçlü ve profesyonel bir image prompt oluştur. Türkçe kısa açıklama + altında kopyalanabilir prompt ver.\n\nİstek: ${text}`;
       case "vision":
-        return `Kullanıcının verdiği görsel/ekran açıklamasını analiz et. Ne anlaşıldığını, önemli noktaları ve kısa yorumunu yaz. Açıklama: ${text}`;
+        return `Kullanıcının verdiği görsel ya da ekran açıklamasını analiz et. Ne anlaşıldığını, önemli noktaları ve kısa yorumunu yaz.\n\nAçıklama: ${text}`;
       case "pdf":
-        return `Kullanıcının verdiği PDF içeriği ya da konusu için düzenli bir özet çıkar. Türkçe cevap ver. Format: Kısa özet, ana noktalar, önemli notlar. İçerik/Konu: ${text}`;
+        return `Kullanıcının verdiği PDF içeriği veya konusu için düzenli özet çıkar. Türkçe cevap ver. Format: kısa özet, ana noktalar, önemli notlar.\n\nİçerik/Konu: ${text}`;
       case "translate":
         return `Şu metni ${targetLang} diline çevir. Kaynak dil: ${sourceLang}. Sadece çeviriyi yaz.\n\n${text}`;
       default:
@@ -435,7 +493,9 @@ export default function Home() {
 
       try {
         const reply = await askGemini(buildToolPrompt("translate", text));
-        setTranslateOutput(String(reply));
+        const finalReply = String(reply);
+        setTranslateOutput(finalReply);
+        speak(finalReply, getLangCode(targetLang));
       } catch {
         setTranslateOutput(
           "Çeviri sırasında küçük bir bağlantı takılması oldu kanka."
@@ -467,7 +527,6 @@ export default function Home() {
 
   function openTool(tool: ToolKey) {
     setActiveTool(tool);
-
     if (tool !== "translate") {
       setToolOutput("");
     }
@@ -485,7 +544,7 @@ export default function Home() {
     const intro = "Canlı mod açıldı Merve. Seni dinliyorum.";
     addLyra(intro);
 
-    setTimeout(() => speak(intro), 250);
+    setTimeout(() => speak(intro, "tr-TR"), 250);
   }
 
   function closeLiveCall() {
@@ -592,7 +651,9 @@ export default function Home() {
 
           <div className="mode-row">
             <button>≋ Ses: Gemini Live</button>
-            <button>♫ Sessize Al</button>
+            <button onClick={() => setVoiceOn((v) => !v)}>
+              {voiceOn ? "♫ Sesi Kapat" : "♫ Sesi Aç"}
+            </button>
             <button>♙ Kadın</button>
             <button>♟ Erkek</button>
             <button onClick={openLiveCall}>≋ Canlı Konuşma</button>
@@ -654,19 +715,20 @@ export default function Home() {
                         value={sourceLang}
                         onChange={(e) => setSourceLang(e.target.value)}
                       >
-                        <option>Otomatik Algıla</option>
-                        <option>Türkçe</option>
-                        <option>İngilizce</option>
-                        <option>Almanca</option>
-                        <option>Fransızca</option>
-                        <option>Arapça</option>
+                        {LANGUAGES.map((lang) => (
+                          <option key={lang.name} value={lang.name}>
+                            {lang.name}
+                          </option>
+                        ))}
                       </select>
 
                       <button
                         onClick={() => {
                           const oldSource = sourceLang;
                           setSourceLang(targetLang);
-                          setTargetLang(oldSource);
+                          setTargetLang(
+                            oldSource === "Otomatik Algıla" ? "Türkçe" : oldSource
+                          );
                         }}
                       >
                         ⇄
@@ -676,11 +738,13 @@ export default function Home() {
                         value={targetLang}
                         onChange={(e) => setTargetLang(e.target.value)}
                       >
-                        <option>Türkçe</option>
-                        <option>İngilizce</option>
-                        <option>Almanca</option>
-                        <option>Fransızca</option>
-                        <option>Arapça</option>
+                        {LANGUAGES.filter(
+                          (lang) => lang.name !== "Otomatik Algıla"
+                        ).map((lang) => (
+                          <option key={lang.name} value={lang.name}>
+                            {lang.name}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
@@ -830,7 +894,9 @@ export default function Home() {
 
             <div className="phone-grid">
               <button>≋ Ses: Gemini Live</button>
-              <button>♫ Sessize Al</button>
+              <button onClick={() => setVoiceOn((v) => !v)}>
+                {voiceOn ? "♫ Sesi Kapat" : "♫ Sesi Aç"}
+              </button>
               <button>Kadın</button>
               <button>Erkek</button>
             </div>
@@ -839,7 +905,10 @@ export default function Home() {
               ≋ Canlı Konuşma ›
             </button>
 
-            <button className="phone-live translate" onClick={() => openTool("translate")}>
+            <button
+              className="phone-live translate"
+              onClick={() => openTool("translate")}
+            >
               🌐 Translate
             </button>
 
@@ -855,6 +924,7 @@ export default function Home() {
               <button onClick={() => openTool("vision")}>Görselle Okut</button>
               <button onClick={() => openTool("pdf")}>PDF Özeti</button>
               <button onClick={openLiveCall}>Canlı Mod</button>
+              <button onClick={() => openTool("translate")}>Translate</button>
             </div>
           </div>
         </aside>
@@ -961,7 +1031,7 @@ export default function Home() {
               className="live-main"
               onClick={() => {
                 if (isListening) stopListening();
-                else startListening();
+                else startListening("tr-TR");
               }}
             >
               <span>{isListening ? "🎙️" : "🎤"}</span>
@@ -1110,6 +1180,8 @@ export default function Home() {
           overflow: hidden;
           border-radius: 999px;
           background: #d9dde1;
+          display: grid;
+          place-items: center;
         }
 
         .profile-avatar img {
@@ -1214,10 +1286,10 @@ export default function Home() {
         }
 
         .mode-row {
-          width: min(880px, 100%);
+          width: min(920px, 100%);
           margin: 0 auto 14px;
           display: grid;
-          grid-template-columns: 1.25fr 1fr 0.75fr 0.75fr 1.2fr 1fr;
+          grid-template-columns: 1.35fr 1fr 0.8fr 0.8fr 1.25fr 1fr;
           gap: 11px;
         }
 
@@ -1237,7 +1309,7 @@ export default function Home() {
         }
 
         .work-area.split {
-          grid-template-columns: minmax(710px, 1.72fr) minmax(305px, 0.66fr);
+          grid-template-columns: minmax(720px, 1.72fr) minmax(305px, 0.66fr);
         }
 
         .chat-box,
@@ -1990,7 +2062,6 @@ export default function Home() {
           100% {
             transform: translateY(0) scale(1);
           }
-
           50% {
             transform: translateY(-5px) scale(1.006);
           }
@@ -2001,7 +2072,6 @@ export default function Home() {
           100% {
             transform: translateY(0) scale(1);
           }
-
           50% {
             transform: translateY(-4px) scale(1.012);
           }
@@ -2013,7 +2083,6 @@ export default function Home() {
             transform: scale(1);
             opacity: 0.72;
           }
-
           50% {
             transform: scale(1.06);
             opacity: 1;
@@ -2025,7 +2094,6 @@ export default function Home() {
           100% {
             transform: scaleY(0.55);
           }
-
           50% {
             transform: scaleY(1.18);
           }
