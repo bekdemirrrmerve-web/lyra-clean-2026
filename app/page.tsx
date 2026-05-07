@@ -184,9 +184,7 @@ async function postGeminiText(body: Record<string, unknown>) {
 
     clearTimeout(timeout);
 
-    if (!res.ok) {
-      return null;
-    }
+    if (!res.ok) return null;
 
     const data = await res.json().catch(() => null);
 
@@ -338,6 +336,7 @@ export default function Page() {
   const [isThinking, setIsThinking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [liveContinuous, setLiveContinuous] = useState(false);
+  const [speakingUi, setSpeakingUi] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
@@ -391,6 +390,7 @@ export default function Page() {
 
     try {
       isSpeakingRef.current = true;
+      setSpeakingUi(true);
 
       if (recognitionRef.current) {
         try {
@@ -426,6 +426,7 @@ export default function Page() {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         isSpeakingRef.current = false;
+        setSpeakingUi(false);
 
         if (liveOpen && shouldRestartRef.current) {
           setTimeout(() => startListening(true), 180);
@@ -435,6 +436,7 @@ export default function Page() {
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
         isSpeakingRef.current = false;
+        setSpeakingUi(false);
 
         if (liveOpen && shouldRestartRef.current) {
           setTimeout(() => startListening(true), 180);
@@ -444,6 +446,8 @@ export default function Page() {
       await audio.play();
     } catch {
       isSpeakingRef.current = false;
+      setSpeakingUi(false);
+
       addMessage(
         'system',
         'Gemini sesi çalışmadı. /api/tts route’unu ve GEMINI_API_KEY env ayarını kontrol et.'
@@ -550,6 +554,7 @@ export default function Page() {
     recognition.onstart = () => {
       setIsListening(true);
       setLiveContinuous(continuous);
+      setLiveOpen(true);
     };
 
     recognition.onresult = (event: any) => {
@@ -980,37 +985,103 @@ export default function Page() {
       </section>
 
       {liveOpen && (
-        <section className="modal">
-          <div className="live-panel glass">
+        <section className="live-room">
+          <div className="live-bg-orb live-bg-one" />
+          <div className="live-bg-orb live-bg-two" />
+
+          <header className="live-topbar">
             <button
-              className="close"
               onClick={() => {
                 setLiveOpen(false);
                 stopListening();
               }}
             >
-              ×
+              ‹
             </button>
 
-            <div className="live-avatar-video-wrap">
-              <AvatarVideo className="live-avatar-video" imageClassName="live-avatar-poster" />
+            <div>
+              <strong>LYRA LIVE</strong>
+              <span>
+                {liveContinuous
+                  ? 'Gemini Live dinliyor'
+                  : isThinking
+                    ? 'Lyra düşünüyor'
+                    : speakingUi
+                      ? 'Lyra konuşuyor'
+                      : 'Canlı konuşmaya hazır'}
+              </span>
             </div>
 
-            <h2>Canlı Konuşma</h2>
-            <p>
-              Ses: <strong>{voice.label}</strong> · {muted ? 'Sessiz mod açık' : 'Ses açık'} ·{' '}
-              {liveContinuous ? 'Gemini Live dinliyor' : 'Hazır'}
-            </p>
+            <button onClick={cycleVoice}>≋</button>
+          </header>
 
-            <div className="live-buttons">
-              <button onClick={() => startListening(true)}>🎙 Gemini Live Başlat</button>
-              <button onClick={stopListening}>■ Durdur</button>
-              <button onClick={cycleVoice}>≋ Ses Değiştir</button>
-              <button onClick={() => setMuted((value) => !value)}>
-                {muted ? 'Sesi Aç' : 'Sessize Al'}
-              </button>
+          <div className="live-stage">
+            <div
+              className={`live-avatar-scene ${liveContinuous ? 'listening' : ''} ${
+                isThinking ? 'thinking' : ''
+              } ${speakingUi ? 'speaking' : ''}`}
+            >
+              <div className="live-ring ring-a" />
+              <div className="live-ring ring-b" />
+              <div className="live-ring ring-c" />
+
+              <div className="live-avatar-card">
+                <AvatarVideo className="live-avatar-video" imageClassName="live-avatar-poster" />
+              </div>
+            </div>
+
+            <div className="live-name">
+              <h2>Lyra</h2>
+              <p>
+                {voice.label} · {gender} avatar · {muted ? 'Sessiz' : 'Ses açık'}
+              </p>
+            </div>
+
+            <div className="live-transcript">
+              {messages.slice(-3).map((item) => (
+                <div key={item.id} className={`live-line ${item.role}`}>
+                  {item.text}
+                </div>
+              ))}
+
+              {isListening && <div className="live-line system">Seni dinliyorum...</div>}
+              {isThinking && <div className="live-line assistant">Cevabı hazırlıyorum...</div>}
             </div>
           </div>
+
+          <footer className="live-controls">
+            <button
+              className={`live-control-btn ${muted ? 'active' : ''}`}
+              onClick={() => setMuted((value) => !value)}
+            >
+              {muted ? '🔇' : '🔊'}
+              <span>{muted ? 'Sesi Aç' : 'Sessiz'}</span>
+            </button>
+
+            <button
+              className={`live-control-btn mic ${liveContinuous ? 'active' : ''}`}
+              onClick={() => startListening(true)}
+            >
+              🎙
+              <span>{liveContinuous ? 'Dinliyor' : 'Konuş'}</span>
+            </button>
+
+            <button
+              className="live-control-btn end"
+              onClick={() => {
+                setLiveOpen(false);
+                stopListening();
+              }}
+            >
+              ✕
+              <span>Kapat</span>
+            </button>
+
+            <button className="live-control-btn" onClick={cycleVoice}>
+              ≋
+              <span>Ses</span>
+            </button>
+          </footer>
         </section>
       )}
 
@@ -1759,80 +1830,303 @@ export default function Page() {
           font-weight: 950;
         }
 
-        .modal {
+        .live-room {
           position: fixed;
           inset: 0;
-          z-index: 20;
+          z-index: 50;
+          overflow: hidden;
           display: grid;
-          place-items: center;
-          padding: 24px;
-          background: rgba(238, 241, 244, 0.72);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
+          grid-template-rows: auto 1fr auto;
+          padding: 20px;
+          color: #111417;
+          background:
+            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.98), transparent 24%),
+            radial-gradient(circle at 48% 45%, rgba(218, 224, 229, 0.78), transparent 36%),
+            linear-gradient(145deg, #ffffff 0%, #eef1f3 46%, #d9dee3 100%);
         }
 
-        .live-panel {
+        .live-room::before {
+          content: '';
+          position: absolute;
+          inset: -20%;
+          pointer-events: none;
+          background:
+            radial-gradient(
+              ellipse at 50% 38%,
+              transparent 0 30%,
+              rgba(255, 255, 255, 0.9) 31%,
+              transparent 32%
+            ),
+            radial-gradient(
+              ellipse at 50% 42%,
+              transparent 0 42%,
+              rgba(170, 178, 186, 0.22) 43%,
+              transparent 44%
+            );
+          opacity: 0.78;
+          animation: liveFloat 12s ease-in-out infinite;
+        }
+
+        .live-bg-orb {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(2px);
+          pointer-events: none;
+        }
+
+        .live-bg-one {
+          width: 340px;
+          height: 340px;
+          left: -120px;
+          top: 120px;
+          background: rgba(255, 255, 255, 0.68);
+        }
+
+        .live-bg-two {
+          width: 420px;
+          height: 420px;
+          right: -160px;
+          bottom: 80px;
+          background: rgba(190, 198, 205, 0.26);
+        }
+
+        .live-topbar {
           position: relative;
-          width: min(560px, 100%);
-          border-radius: 34px;
-          padding: 28px;
+          z-index: 2;
+          height: 58px;
+          display: grid;
+          grid-template-columns: 48px 1fr 48px;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .live-topbar button {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.74);
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          color: #111417;
+          font-size: 30px;
+          font-weight: 900;
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 12px 26px rgba(18, 22, 26, 0.1);
+        }
+
+        .live-topbar div {
           text-align: center;
         }
 
-        .close {
-          position: absolute;
-          top: 16px;
-          right: 16px;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          background: #fff;
-          border: 1px solid var(--line);
-          font-size: 28px;
-          line-height: 1;
-        }
-
-        .live-avatar-video-wrap {
-          position: relative;
-          width: 230px;
-          height: 300px;
-          margin: 0 auto;
-          border-radius: 26px;
-          overflow: hidden;
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          box-shadow: var(--shadow);
-        }
-
-        .live-panel h2 {
-          margin: 20px 0 6px;
-          font-size: 30px;
+        .live-topbar strong {
+          display: block;
+          font-size: 18px;
+          letter-spacing: 0.12em;
           font-weight: 950;
         }
 
-        .live-panel p {
-          margin: 0;
-          color: var(--muted);
-          font-weight: 800;
+        .live-topbar span {
+          display: block;
+          margin-top: 3px;
+          color: #555d64;
+          font-size: 12px;
+          font-weight: 850;
         }
 
-        .live-buttons {
-          margin-top: 22px;
+        .live-stage {
+          position: relative;
+          z-index: 2;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 18px;
+        }
+
+        .live-avatar-scene {
+          position: relative;
+          width: min(420px, 82vw);
+          height: min(520px, 56vh);
+          display: grid;
+          place-items: center;
+          transform: translateY(2px);
+          transition: transform 0.4s ease;
+        }
+
+        .live-avatar-scene.listening {
+          transform: translateY(-8px) scale(1.025);
+        }
+
+        .live-avatar-scene.thinking {
+          transform: translateY(-4px) scale(0.99);
+        }
+
+        .live-avatar-scene.speaking {
+          transform: translateY(-10px) scale(1.035);
+        }
+
+        .live-ring {
+          position: absolute;
+          border-radius: 50%;
+          border: 2px solid rgba(255, 255, 255, 0.95);
+          box-shadow:
+            0 0 28px rgba(255, 255, 255, 0.92),
+            inset 0 0 34px rgba(205, 211, 216, 0.52);
+        }
+
+        .ring-a {
+          width: 265px;
+          height: 265px;
+          animation: pulseRing 2.8s ease-in-out infinite;
+        }
+
+        .ring-b {
+          width: 360px;
+          height: 360px;
+          opacity: 0.55;
+          animation: pulseRing 3.8s ease-in-out infinite reverse;
+        }
+
+        .ring-c {
+          width: 455px;
+          height: 455px;
+          opacity: 0.25;
+          animation: pulseRing 5.4s ease-in-out infinite;
+        }
+
+        .live-avatar-card {
+          position: relative;
+          z-index: 3;
+          width: min(310px, 68vw);
+          height: min(430px, 50vh);
+          border-radius: 34px;
+          overflow: hidden;
+          background: radial-gradient(circle at 50% 35%, #ffffff 0%, #f4f6f7 52%, #e5e9ed 100%);
+          border: 1px solid rgba(20, 24, 28, 0.14);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 28px 80px rgba(18, 22, 26, 0.18);
+        }
+
+        .live-avatar-card .live-avatar-video,
+        .live-avatar-card .live-avatar-poster {
+          object-fit: contain;
+        }
+
+        .live-name {
+          text-align: center;
+        }
+
+        .live-name h2 {
+          margin: 0;
+          font-size: clamp(34px, 5vw, 54px);
+          letter-spacing: 0.02em;
+          font-weight: 950;
+        }
+
+        .live-name p {
+          margin: 6px 0 0;
+          color: #555d64;
+          font-size: 14px;
+          font-weight: 850;
+        }
+
+        .live-transcript {
+          width: min(620px, 92vw);
+          max-height: 118px;
+          overflow: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding: 10px;
+          border-radius: 24px;
+          background: rgba(255, 255, 255, 0.48);
+          border: 1px solid rgba(20, 24, 28, 0.08);
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
+        }
+
+        .live-line {
+          width: fit-content;
+          max-width: 88%;
+          padding: 9px 12px;
+          border-radius: 16px;
+          font-size: 13px;
+          line-height: 1.38;
+          font-weight: 800;
+          white-space: pre-wrap;
+        }
+
+        .live-line.user {
+          align-self: flex-end;
+          background: #111417;
+          color: white;
+        }
+
+        .live-line.assistant {
+          align-self: flex-start;
+          background: rgba(255, 255, 255, 0.92);
+          border: 1px solid rgba(20, 24, 28, 0.08);
+        }
+
+        .live-line.system {
+          align-self: center;
+          background: rgba(226, 231, 235, 0.78);
+          color: #30363b;
+        }
+
+        .live-controls {
+          position: relative;
+          z-index: 2;
           display: flex;
           justify-content: center;
-          flex-wrap: wrap;
-          gap: 10px;
+          align-items: center;
+          gap: 16px;
+          padding: 18px 0 4px;
         }
 
-        .live-buttons button {
-          min-height: 44px;
-          border-radius: 999px;
-          padding: 0 18px;
-          background: #fff;
-          border: 1px solid var(--line);
-          color: var(--graphite);
-          font-weight: 900;
-          box-shadow: var(--shadow-soft);
+        .live-control-btn {
+          width: 72px;
+          height: 72px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          gap: 2px;
+          color: #111417;
+          background: rgba(255, 255, 255, 0.82);
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 18px 34px rgba(18, 22, 26, 0.14);
+          font-size: 23px;
+          font-weight: 950;
+        }
+
+        .live-control-btn span {
+          font-size: 10px;
+          font-weight: 950;
+        }
+
+        .live-control-btn.mic {
+          width: 86px;
+          height: 86px;
+          background: linear-gradient(145deg, #111417, #4a5158);
+          color: white;
+          transform: translateY(-10px);
+        }
+
+        .live-control-btn.mic.active {
+          animation: micPulse 1.25s ease-in-out infinite;
+        }
+
+        .live-control-btn.end {
+          background: linear-gradient(145deg, #ff4b5c, #b80f2c);
+          color: white;
+        }
+
+        .live-control-btn.active {
+          outline: 3px solid rgba(17, 20, 23, 0.12);
         }
 
         @keyframes orbit {
@@ -1842,6 +2136,44 @@ export default function Page() {
           }
           50% {
             transform: scale(1.03) translateY(-6px);
+          }
+        }
+
+        @keyframes liveFloat {
+          0%,
+          100% {
+            transform: rotate(0deg) scale(1);
+          }
+          50% {
+            transform: rotate(-4deg) scale(1.03);
+          }
+        }
+
+        @keyframes pulseRing {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.58;
+          }
+          50% {
+            transform: scale(1.055);
+            opacity: 0.95;
+          }
+        }
+
+        @keyframes micPulse {
+          0%,
+          100% {
+            box-shadow:
+              inset 0 1px 0 rgba(255, 255, 255, 0.25),
+              0 0 0 0 rgba(17, 20, 23, 0.28),
+              0 18px 34px rgba(18, 22, 26, 0.14);
+          }
+          50% {
+            box-shadow:
+              inset 0 1px 0 rgba(255, 255, 255, 0.25),
+              0 0 0 18px rgba(17, 20, 23, 0),
+              0 18px 34px rgba(18, 22, 26, 0.14);
           }
         }
 
@@ -1931,6 +2263,61 @@ export default function Page() {
 
           .mode-card {
             min-height: 108px;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .live-room {
+            padding: 14px;
+          }
+
+          .live-topbar {
+            height: 52px;
+            grid-template-columns: 44px 1fr 44px;
+          }
+
+          .live-topbar button {
+            width: 44px;
+            height: 44px;
+          }
+
+          .live-avatar-scene {
+            height: 48vh;
+          }
+
+          .ring-a {
+            width: 220px;
+            height: 220px;
+          }
+
+          .ring-b {
+            width: 300px;
+            height: 300px;
+          }
+
+          .ring-c {
+            width: 370px;
+            height: 370px;
+          }
+
+          .live-avatar-card {
+            width: min(260px, 72vw);
+            height: min(360px, 46vh);
+          }
+
+          .live-controls {
+            gap: 11px;
+          }
+
+          .live-control-btn {
+            width: 62px;
+            height: 62px;
+            font-size: 20px;
+          }
+
+          .live-control-btn.mic {
+            width: 76px;
+            height: 76px;
           }
         }
       `}</style>
