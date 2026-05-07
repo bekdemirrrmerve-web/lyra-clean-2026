@@ -14,27 +14,8 @@ declare global {
   }
 }
 
-const avatarSources = [
-  "/lyra-avatar.png",
-  "/avatar-lyra.png",
-  "/avatar.png",
-  "/lyra-avatar.jpg",
-  "/avatar.jpg",
-  "/lyra.jpg",
-];
-
-const videoSources = [
-  "/lyra-live.mp4",
-  "/lyra-avatar.mp4",
-  "/avatar-live.mp4",
-  "/live-avatar.mp4",
-  "/lyra-video.mp4",
-  "/avatar-video.mp4",
-  "/lyra.mp4",
-  "/video.mp4",
-  "/lyra-live.webm",
-  "/avatar-live.webm",
-];
+const AVATAR_SRC = "/lyra-avatar.jpg.jpeg";
+const VIDEO_SRC = "/lyra-avatar-mp4.mp4";
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
@@ -56,6 +37,7 @@ export default function Home() {
 
   const [input, setInput] = useState("");
   const [liveOpen, setLiveOpen] = useState(false);
+
   const [translateOpen, setTranslateOpen] = useState(false);
   const [translateInput, setTranslateInput] = useState("");
   const [translateOutput, setTranslateOutput] = useState("");
@@ -68,9 +50,7 @@ export default function Home() {
   const [voiceOn, setVoiceOn] = useState(true);
   const [interimText, setInterimText] = useState("");
 
-  const [avatarIndex, setAvatarIndex] = useState(0);
   const [avatarVisible, setAvatarVisible] = useState(true);
-  const [videoIndex, setVideoIndex] = useState(0);
   const [videoVisible, setVideoVisible] = useState(true);
 
   const recognitionRef = useRef<any>(null);
@@ -125,27 +105,11 @@ export default function Home() {
   }, []);
 
   function addUser(text: string) {
-    setMessages((prev) => [...prev, { role: "user", text }].slice(-18));
+    setMessages((prev) => [...prev, { role: "user", text }].slice(-24));
   }
 
   function addLyra(text: string) {
-    setMessages((prev) => [...prev, { role: "lyra", text }].slice(-18));
-  }
-
-  function handleAvatarError() {
-    if (avatarIndex < avatarSources.length - 1) {
-      setAvatarIndex((i) => i + 1);
-    } else {
-      setAvatarVisible(false);
-    }
-  }
-
-  function handleVideoError() {
-    if (videoIndex < videoSources.length - 1) {
-      setVideoIndex((i) => i + 1);
-    } else {
-      setVideoVisible(false);
-    }
+    setMessages((prev) => [...prev, { role: "lyra", text }].slice(-24));
   }
 
   function stopListening() {
@@ -253,6 +217,7 @@ export default function Home() {
       utterance.volume = 1;
 
       const voices = window.speechSynthesis.getVoices();
+
       const selectedVoice =
         voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
         voices.find((v) => v.name?.toLowerCase().includes("female")) ||
@@ -281,7 +246,7 @@ export default function Home() {
   }
 
   async function askGemini(text: string) {
-    const history = messages.slice(-10).map((m) => ({
+    const history = messages.slice(-12).map((m) => ({
       role: m.role === "user" ? "user" : "assistant",
       content: m.text,
     }));
@@ -431,9 +396,9 @@ export default function Home() {
               <div className="profile-avatar">
                 {avatarVisible ? (
                   <img
-                    src={avatarSources[avatarIndex]}
+                    src={AVATAR_SRC}
                     alt="Merve"
-                    onError={handleAvatarError}
+                    onError={() => setAvatarVisible(false)}
                   />
                 ) : (
                   <span>M</span>
@@ -472,9 +437,9 @@ export default function Home() {
           <div className="avatar-frame">
             {avatarVisible ? (
               <img
-                src={avatarSources[avatarIndex]}
+                src={AVATAR_SRC}
                 alt="Lyra"
-                onError={handleAvatarError}
+                onError={() => setAvatarVisible(false)}
               />
             ) : (
               <div className="avatar-fallback">LYRA</div>
@@ -487,12 +452,15 @@ export default function Home() {
             <button>♙ Kadın</button>
             <button>♟ Erkek</button>
             <button onClick={openLiveCall}>≋ Canlı Konuşma</button>
+            <button onClick={() => setTranslateOpen((v) => !v)}>
+              🌐 Translate
+            </button>
           </div>
 
           <section className="work-area">
             <div className="chat-box">
               <div className="messages">
-                {messages.slice(-5).map((msg, index) => (
+                {messages.map((msg, index) => (
                   <div
                     key={`${msg.role}-${index}-${msg.text}`}
                     className={msg.role === "user" ? "msg user" : "msg lyra"}
@@ -672,9 +640,9 @@ export default function Home() {
             <div className="phone-avatar">
               {avatarVisible ? (
                 <img
-                  src={avatarSources[avatarIndex]}
+                  src={AVATAR_SRC}
                   alt="Lyra"
-                  onError={handleAvatarError}
+                  onError={() => setAvatarVisible(false)}
                 />
               ) : (
                 <div className="avatar-fallback">LYRA</div>
@@ -749,19 +717,18 @@ export default function Home() {
 
             {videoVisible ? (
               <video
-                key={videoSources[videoIndex]}
                 className={[
                   "live-video",
                   isSpeaking ? "talking" : "",
                   isListening ? "listening" : "",
                 ].join(" ")}
-                src={videoSources[videoIndex]}
+                src={VIDEO_SRC}
                 autoPlay
                 muted
                 loop
                 playsInline
                 preload="auto"
-                onError={handleVideoError}
+                onError={() => setVideoVisible(false)}
               />
             ) : avatarVisible ? (
               <img
@@ -770,12 +737,12 @@ export default function Home() {
                   isSpeaking ? "talking" : "",
                   isListening ? "listening" : "",
                 ].join(" ")}
-                src={avatarSources[avatarIndex]}
+                src={AVATAR_SRC}
                 alt="Lyra avatar"
-                onError={handleAvatarError}
+                onError={() => setAvatarVisible(false)}
               />
             ) : (
-              <div className="live-avatar live-fallback">Lyra</div>
+              <div className="live-avatar live-fallback">LYRA</div>
             )}
           </section>
 
@@ -878,7 +845,7 @@ export default function Home() {
 
         .layout {
           display: grid;
-          grid-template-columns: 250px minmax(720px, 1fr) 360px;
+          grid-template-columns: 250px minmax(820px, 1fr) 360px;
           gap: 16px;
           width: min(1760px, 100%);
           margin: 0 auto;
@@ -1068,13 +1035,14 @@ export default function Home() {
           letter-spacing: 0.12em;
           font-weight: 950;
           background: #edf0f2;
+          color: #11151c;
         }
 
         .mode-row {
-          width: min(760px, 100%);
+          width: min(880px, 100%);
           margin: 0 auto 14px;
           display: grid;
-          grid-template-columns: 1.35fr 1fr 0.75fr 0.75fr 1.25fr;
+          grid-template-columns: 1.25fr 1fr 0.75fr 0.75fr 1.2fr 1fr;
           gap: 11px;
         }
 
@@ -1094,12 +1062,11 @@ export default function Home() {
         }
 
         .work-area:has(.translate-box) {
-          grid-template-columns: minmax(460px, 1fr) minmax(360px, 0.78fr);
+          grid-template-columns: minmax(620px, 1.45fr) minmax(330px, 0.7fr);
         }
 
         .chat-box,
         .translate-box {
-          min-height: 325px;
           border-radius: 24px;
           padding: 16px;
           background: rgba(255, 255, 255, 0.58);
@@ -1107,10 +1074,18 @@ export default function Home() {
           box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
         }
 
+        .chat-box {
+          min-height: 420px;
+          display: flex;
+          flex-direction: column;
+        }
+
         .messages {
-          height: 165px;
+          flex: 1;
+          min-height: 250px;
+          max-height: 360px;
           overflow-y: auto;
-          padding-right: 6px;
+          padding-right: 8px;
           display: flex;
           flex-direction: column;
           gap: 12px;
@@ -1121,7 +1096,7 @@ export default function Home() {
           padding: 12px 14px;
           border-radius: 15px;
           font-size: 14px;
-          line-height: 1.36;
+          line-height: 1.42;
           font-weight: 850;
         }
 
@@ -1150,9 +1125,9 @@ export default function Home() {
         }
 
         .chat-box textarea {
-          min-height: 82px;
-          margin-top: 14px;
-          font-size: 19px;
+          min-height: 98px;
+          margin-top: 16px;
+          font-size: 20px;
           font-weight: 950;
         }
 
@@ -1165,6 +1140,7 @@ export default function Home() {
           justify-content: space-between;
           align-items: center;
           gap: 12px;
+          margin-top: 8px;
         }
 
         .chat-bottom div {
@@ -1185,6 +1161,10 @@ export default function Home() {
         .chat-bottom .send {
           width: 48px;
           height: 48px;
+        }
+
+        .translate-box {
+          min-height: 420px;
         }
 
         .translate-head {
@@ -1234,7 +1214,7 @@ export default function Home() {
         }
 
         .translate-input {
-          min-height: 90px;
+          min-height: 96px;
           padding: 12px;
           border-radius: 16px;
           background: rgba(255, 255, 255, 0.62);
@@ -1261,7 +1241,7 @@ export default function Home() {
         }
 
         .translate-output {
-          min-height: 78px;
+          min-height: 86px;
           padding: 12px;
           border-radius: 16px;
           background: rgba(255, 255, 255, 0.62);
@@ -1646,13 +1626,17 @@ export default function Home() {
 
         .live-fallback {
           width: min(80vw, 430px);
-          aspect-ratio: 0.74;
+          height: min(80vw, 430px);
           display: grid;
           place-items: center;
-          border-radius: 44% 44% 28% 28%;
-          background: linear-gradient(145deg, #f4ddc5, #111);
-          font-size: 40px;
-          font-weight: 900;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.12);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          font-size: 46px;
+          letter-spacing: 0.16em;
+          font-weight: 950;
+          color: white;
+          backdrop-filter: blur(18px);
         }
 
         .live-caption {
@@ -1857,7 +1841,7 @@ export default function Home() {
 
         @media (max-width: 1380px) {
           .layout {
-            grid-template-columns: 230px minmax(680px, 1fr);
+            grid-template-columns: 230px minmax(760px, 1fr);
           }
 
           .phone-preview {
@@ -1923,8 +1907,12 @@ export default function Home() {
             grid-template-columns: 1fr 1fr;
           }
 
-          .mode-row button:last-child {
-            grid-column: 1 / -1;
+          .chat-box {
+            min-height: 460px;
+          }
+
+          .messages {
+            min-height: 280px;
           }
 
           .tool-grid {
