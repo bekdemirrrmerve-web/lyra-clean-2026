@@ -185,8 +185,7 @@ async function postGeminiText(body: Record<string, unknown>) {
     clearTimeout(timeout);
 
     if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(detail || 'Gemini text route failed');
+      throw new Error('Gemini text route failed');
     }
 
     const data = await res.json().catch(() => null);
@@ -276,6 +275,7 @@ function AvatarVideo({
           video.play().catch(() => {});
         }
       }
+
       frame = requestAnimationFrame(keepAlive);
     };
 
@@ -294,6 +294,7 @@ function AvatarVideo({
   return (
     <div className="avatar-media-root">
       <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
+
       {!videoFailed && (
         <video
           ref={videoRef}
@@ -321,6 +322,7 @@ function AvatarVideo({
           onError={() => setVideoFailed(true)}
         />
       )}
+
       {!videoReady && !videoFailed && <div className="video-loading">LYRA</div>}
     </div>
   );
@@ -420,6 +422,7 @@ export default function Page() {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         isSpeakingRef.current = false;
+
         if (liveOpen && shouldRestartRef.current) {
           setTimeout(() => startListening(true), 180);
         }
@@ -428,6 +431,7 @@ export default function Page() {
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
         isSpeakingRef.current = false;
+
         if (liveOpen && shouldRestartRef.current) {
           setTimeout(() => startListening(true), 180);
         }
@@ -619,10 +623,12 @@ export default function Page() {
 
   const quickAction = (action: string) => {
     const text = message.trim();
+
     if (!text) {
       setMessage(action);
       return;
     }
+
     sendMessage(text, action);
   };
 
@@ -852,19 +858,13 @@ export default function Page() {
                   <button onClick={() => quickAction('Konu formülleri ve kuralları çıkar')}>
                     Konu Formülleri
                   </button>
-                  <button onClick={() => quickAction('Sınav ipuçları ver')}>
-                    Sınav İpuçları
-                  </button>
+                  <button onClick={() => quickAction('Sınav ipuçları ver')}>Sınav İpuçları</button>
                   <button onClick={() => quickAction('Çözümlü sorular üret')}>
                     Çözümlü Sorular
                   </button>
                   <button onClick={() => quickAction('Şıklı test üret')}>Test Üret</button>
-                  <button onClick={() => quickAction('Yanlışımı açıkla')}>
-                    Yanlışımı Açıkla
-                  </button>
-                  <button onClick={() => imageInputRef.current?.click()}>
-                    Soru Görseli Yükle
-                  </button>
+                  <button onClick={() => quickAction('Yanlışımı açıkla')}>Yanlışımı Açıkla</button>
+                  <button onClick={() => imageInputRef.current?.click()}>Soru Görseli Yükle</button>
                 </div>
               </>
             )}
@@ -875,9 +875,7 @@ export default function Page() {
                 <div>
                   <button onClick={() => quickAction('Derin araştırma yap')}>Derin Araştır</button>
                   <button onClick={() => quickAction('Kaynaklı özet çıkar')}>Kaynaklı Özet</button>
-                  <button onClick={() => quickAction('Karşılaştırmalı analiz yap')}>
-                    Karşılaştır
-                  </button>
+                  <button onClick={() => quickAction('Karşılaştırmalı analiz yap')}>Karşılaştır</button>
                 </div>
               </>
             )}
@@ -909,12 +907,8 @@ export default function Page() {
                 <strong>PDF Özeti</strong>
                 <div>
                   <button onClick={() => pdfInputRef.current?.click()}>PDF Yükle</button>
-                  <button onClick={() => quickAction('PDF ana başlıkları çıkar')}>
-                    Başlık Çıkar
-                  </button>
-                  <button onClick={() => quickAction('PDF çalışma notu hazırla')}>
-                    Not Hazırla
-                  </button>
+                  <button onClick={() => quickAction('PDF ana başlıkları çıkar')}>Başlık Çıkar</button>
+                  <button onClick={() => quickAction('PDF çalışma notu hazırla')}>Not Hazırla</button>
                 </div>
               </>
             )}
@@ -1074,8 +1068,8 @@ export default function Page() {
           min-height: 100dvh;
           overflow-x: hidden;
           overflow-y: auto;
-          padding: 24px 10px 12px;
-          scroll-padding-top: 24px;
+          padding: 14px 10px 10px;
+          scroll-padding-top: 14px;
         }
 
         .page::before,
@@ -1109,7 +1103,7 @@ export default function Page() {
           position: relative;
           z-index: 2;
           width: 100%;
-          min-height: calc(100dvh - 36px);
+          min-height: calc(100dvh - 24px);
           margin: 0 auto;
           display: grid;
           grid-template-columns: 220px minmax(620px, 1fr) 320px;
@@ -1126,7 +1120,7 @@ export default function Page() {
         }
 
         .sidebar {
-          min-height: calc(100dvh - 36px);
+          min-height: calc(100dvh - 24px);
           border-radius: 28px;
           padding: 18px 14px;
           display: flex;
@@ -1202,6 +1196,21 @@ export default function Page() {
           padding: 14px;
         }
 
+        .mini-box strong,
+        .profile-box strong,
+        .usage-box strong {
+          display: block;
+          font-weight: 950;
+        }
+
+        .mini-box small,
+        .profile-box small,
+        .usage-box small {
+          display: block;
+          color: var(--muted);
+          font-weight: 750;
+        }
+
         .profile-box {
           display: grid;
           grid-template-columns: 42px 1fr auto;
@@ -1241,12 +1250,12 @@ export default function Page() {
 
         .main-panel {
           position: relative;
-          min-height: calc(100dvh - 36px);
+          min-height: calc(100dvh - 24px);
           border-radius: 28px;
-          padding: 18px 18px 14px;
+          padding: 14px 18px;
           overflow: hidden;
-          display: grid;
-          grid-template-rows: 56px 228px minmax(360px, auto) 118px auto;
+          display: flex;
+          flex-direction: column;
           gap: 10px;
         }
 
@@ -1270,10 +1279,12 @@ export default function Page() {
         }
 
         .main-head {
-          min-height: 56px;
+          min-height: 48px;
           display: flex;
           align-items: center;
           justify-content: center;
+          position: relative;
+          flex-shrink: 0;
         }
 
         .main-head h1 {
@@ -1305,15 +1316,17 @@ export default function Page() {
           justify-content: flex-start;
           gap: 8px;
           overflow: visible;
+          flex-shrink: 0;
         }
 
         .avatar-block {
           position: relative;
           width: 100%;
-          height: 156px;
+          height: 150px;
           display: grid;
           place-items: center;
           isolation: isolate;
+          flex-shrink: 0;
         }
 
         .silver-orbit {
@@ -1326,14 +1339,14 @@ export default function Page() {
         }
 
         .orbit-one {
-          width: 180px;
-          height: 180px;
+          width: 175px;
+          height: 175px;
           animation: orbit 9s ease-in-out infinite;
         }
 
         .orbit-two {
-          width: 230px;
-          height: 230px;
+          width: 220px;
+          height: 220px;
           opacity: 0.42;
           animation: orbit 12s ease-in-out infinite reverse;
         }
@@ -1341,8 +1354,8 @@ export default function Page() {
         .avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 126px;
-          height: 154px;
+          width: 128px;
+          height: 156px;
           border-radius: 20px;
           overflow: hidden;
           border: 1px solid rgba(20, 24, 28, 0.12);
@@ -1350,6 +1363,7 @@ export default function Page() {
           box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 1),
             0 16px 36px rgba(18, 22, 26, 0.12);
+          flex-shrink: 0;
         }
 
         .avatar-media-root {
@@ -1406,6 +1420,7 @@ export default function Page() {
           grid-template-columns: repeat(5, minmax(100px, auto));
           justify-content: center;
           gap: 10px;
+          flex-shrink: 0;
         }
 
         .control {
@@ -1443,7 +1458,8 @@ export default function Page() {
         }
 
         .write-box {
-          min-height: 360px;
+          min-height: 330px;
+          flex: 1;
           border-radius: 24px;
           padding: 14px 16px 12px;
           display: flex;
@@ -1452,7 +1468,7 @@ export default function Page() {
 
         .message-list {
           flex: 1;
-          min-height: 0;
+          min-height: 220px;
           overflow: auto;
           display: flex;
           flex-direction: column;
@@ -1545,13 +1561,13 @@ export default function Page() {
           display: grid;
           grid-template-columns: repeat(7, 1fr);
           gap: 10px;
-          min-height: 0;
+          flex-shrink: 0;
         }
 
         .mode-card {
-          min-height: 108px;
+          min-height: 96px;
           border-radius: 20px;
-          padding: 12px 9px 9px;
+          padding: 10px 8px 8px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1565,25 +1581,25 @@ export default function Page() {
         }
 
         .mode-icon {
-          height: 28px;
+          height: 24px;
           display: grid;
           place-items: center;
-          font-size: 25px;
+          font-size: 23px;
           line-height: 1;
           color: var(--graphite);
         }
 
         .mode-card strong {
-          margin-top: 7px;
+          margin-top: 6px;
           font-size: 12px;
           font-weight: 950;
         }
 
         .mode-card small {
-          margin-top: 5px;
+          margin-top: 4px;
           color: var(--graphite-soft);
-          font-size: 9.5px;
-          line-height: 1.22;
+          font-size: 9px;
+          line-height: 1.2;
           font-weight: 800;
         }
 
@@ -1594,14 +1610,15 @@ export default function Page() {
 
         .sub-panel {
           border-radius: 20px;
-          padding: 12px 14px;
+          padding: 10px 14px;
           background: rgba(255, 255, 255, 0.74);
           border: 1px solid var(--line);
           display: flex;
           align-items: center;
           flex-wrap: wrap;
-          gap: 14px;
+          gap: 12px;
           overflow: auto;
+          flex-shrink: 0;
         }
 
         .sub-panel strong {
@@ -1626,7 +1643,7 @@ export default function Page() {
 
         .phone-shell {
           align-self: start;
-          min-height: calc(100dvh - 36px);
+          min-height: calc(100dvh - 24px);
           padding: 8px;
           border-radius: 40px;
           background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
@@ -1641,7 +1658,7 @@ export default function Page() {
 
         .phone {
           width: 300px;
-          height: calc(100dvh - 60px);
+          height: calc(100dvh - 42px);
           max-height: 820px;
           overflow: hidden;
           border-radius: 34px;
@@ -1884,20 +1901,16 @@ export default function Page() {
           .mode-grid {
             grid-template-columns: repeat(4, 1fr);
           }
-
-          .main-panel {
-            grid-template-rows: 56px 220px minmax(360px, auto) auto auto;
-          }
         }
 
         @media (max-width: 980px) {
           .page {
-            padding: 12px 8px;
+            padding: 10px 8px;
           }
 
           .app-layout {
             grid-template-columns: 1fr;
-            min-height: calc(100dvh - 24px);
+            min-height: calc(100dvh - 20px);
           }
 
           .sidebar,
@@ -1906,7 +1919,7 @@ export default function Page() {
           }
 
           .main-panel {
-            min-height: calc(100dvh - 24px);
+            min-height: calc(100dvh - 20px);
             padding: 14px 12px;
             border-radius: 22px;
             display: flex;
@@ -1928,22 +1941,22 @@ export default function Page() {
           }
 
           .avatar-block {
-            height: 148px;
+            height: 142px;
           }
 
           .avatar-video-wrap {
-            width: 120px;
-            height: 146px;
+            width: 118px;
+            height: 144px;
           }
 
           .orbit-one {
-            width: 168px;
-            height: 168px;
+            width: 160px;
+            height: 160px;
           }
 
           .orbit-two {
-            width: 210px;
-            height: 210px;
+            width: 205px;
+            height: 205px;
           }
 
           .controls {
@@ -1955,7 +1968,7 @@ export default function Page() {
           }
 
           .write-box {
-            min-height: 360px;
+            min-height: 340px;
           }
 
           .mode-grid {
@@ -1963,7 +1976,7 @@ export default function Page() {
           }
 
           .mode-card {
-            min-height: 115px;
+            min-height: 108px;
           }
         }
       `}</style>
