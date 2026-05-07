@@ -100,13 +100,6 @@ const modes: {
   },
 ];
 
-function nowTime() {
-  return new Date().toLocaleTimeString('tr-TR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 function buildPrompt(mode: ModeKey, input: string, action?: string) {
   if (mode === 'content') {
     return `
@@ -280,57 +273,73 @@ function AvatarVideo({
   imageClassName: string;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const rafRef = useRef<number | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const loopBeforeBlackFrame = () => {
+    let frame = 0;
+
+    const keepAlive = () => {
       if (video && Number.isFinite(video.duration) && video.duration > 0) {
-        if (video.currentTime >= video.duration - 0.3) {
+        if (video.currentTime >= video.duration - 0.28) {
           video.currentTime = 0.04;
           video.play().catch(() => {});
         }
       }
 
-      rafRef.current = requestAnimationFrame(loopBeforeBlackFrame);
+      frame = requestAnimationFrame(keepAlive);
     };
 
-    rafRef.current = requestAnimationFrame(loopBeforeBlackFrame);
+    frame = requestAnimationFrame(keepAlive);
+
+    const playTimer = setTimeout(() => {
+      video.play().catch(() => {});
+    }, 300);
 
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      cancelAnimationFrame(frame);
+      clearTimeout(playTimer);
     };
   }, []);
 
   return (
     <div className="avatar-media-root">
       <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
-      <video
-        ref={videoRef}
-        className={className}
-        src={AVATAR_VIDEO}
-        poster={AVATAR_IMAGE}
-        autoPlay
-        muted
-        playsInline
-        preload="auto"
-        onLoadedData={(event) => {
-          setVideoReady(true);
-          event.currentTarget.currentTime = 0.04;
-          event.currentTarget.play().catch(() => {});
-        }}
-        onEnded={(event) => {
-          event.currentTarget.currentTime = 0.04;
-          event.currentTarget.play().catch(() => {});
-        }}
-        onError={(event) => {
-          event.currentTarget.style.display = 'none';
-        }}
-      />
-      {!videoReady && <div className="video-loading">LYRA</div>}
+
+      {!videoFailed && (
+        <video
+          ref={videoRef}
+          className={className}
+          src={AVATAR_VIDEO}
+          poster={AVATAR_IMAGE}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          onCanPlay={(event) => {
+            setVideoReady(true);
+            event.currentTarget.play().catch(() => {});
+          }}
+          onLoadedData={(event) => {
+            setVideoReady(true);
+            event.currentTarget.currentTime = 0.04;
+            event.currentTarget.play().catch(() => {});
+          }}
+          onEnded={(event) => {
+            event.currentTarget.currentTime = 0.04;
+            event.currentTarget.play().catch(() => {});
+          }}
+          onError={() => {
+            setVideoFailed(true);
+          }}
+        />
+      )}
+
+      {!videoReady && !videoFailed && <div className="video-loading">LYRA</div>}
     </div>
   );
 }
@@ -419,9 +428,7 @@ export default function Page() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Gemini TTS çalışmadı');
-      }
+      if (!response.ok) throw new Error('Gemini TTS çalışmadı');
 
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
@@ -472,7 +479,7 @@ export default function Page() {
     }
   };
 
-  const fallbackAnswer = (input: string, mode: ModeKey, action?: string) => {
+  const fallbackAnswer = (input: string, mode: ModeKey) => {
     if (mode === 'content') {
       return `Video Konu Başlıkları:
 1. ${input} hakkında herkesin yanlış bildiği şey
@@ -552,7 +559,7 @@ Cevap: A`;
         provider: 'gemini',
         model: 'gemini-2.5-flash',
         realtime: true,
-      })) || fallbackAnswer(raw, activeMode, action);
+      })) || fallbackAnswer(raw, activeMode);
 
     setIsThinking(false);
     addMessage('assistant', aiText);
@@ -1111,7 +1118,9 @@ Cevap: A`;
         html,
         body {
           margin: 0;
-          min-height: 100%;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
           font-family:
             Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
             'Segoe UI', sans-serif;
@@ -1133,7 +1142,8 @@ Cevap: A`;
 
         .page {
           position: relative;
-          min-height: 100vh;
+          width: 100vw;
+          height: 100dvh;
           overflow: hidden;
           padding: 10px;
         }
@@ -1169,13 +1179,13 @@ Cevap: A`;
           position: relative;
           z-index: 2;
           width: 100%;
-          max-width: 100%;
-          min-height: calc(100vh - 20px);
+          height: calc(100dvh - 20px);
           margin: 0 auto;
           display: grid;
-          grid-template-columns: 220px minmax(700px, 1fr) 320px;
+          grid-template-columns: 220px minmax(620px, 1fr) 320px;
           gap: 14px;
           align-items: stretch;
+          overflow: hidden;
         }
 
         .glass {
@@ -1187,18 +1197,19 @@ Cevap: A`;
         }
 
         .sidebar {
-          min-height: calc(100vh - 20px);
+          height: 100%;
           border-radius: 28px;
           padding: 18px 14px;
           display: flex;
           flex-direction: column;
+          overflow: hidden;
         }
 
         .logo-row {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 2px 12px 18px;
+          padding: 2px 12px 16px;
           font-size: 28px;
           letter-spacing: 0.08em;
         }
@@ -1232,7 +1243,7 @@ Cevap: A`;
         }
 
         .menu-item {
-          min-height: 46px;
+          min-height: 44px;
           border-radius: 18px;
           padding: 0 16px;
           display: flex;
@@ -1264,7 +1275,7 @@ Cevap: A`;
         .profile-box,
         .usage-box {
           border-radius: 18px;
-          padding: 16px;
+          padding: 14px;
         }
 
         .mini-box strong,
@@ -1313,7 +1324,7 @@ Cevap: A`;
         .usage-line {
           display: block;
           height: 7px;
-          margin: 12px 0 8px;
+          margin: 10px 0 6px;
           overflow: hidden;
           border-radius: 999px;
           background: #d8dde1;
@@ -1329,12 +1340,13 @@ Cevap: A`;
 
         .main-panel {
           position: relative;
-          min-height: calc(100vh - 20px);
+          height: 100%;
           border-radius: 28px;
-          padding: 14px 18px 16px;
+          padding: 14px 18px;
           overflow: hidden;
-          display: flex;
-          flex-direction: column;
+          display: grid;
+          grid-template-rows: 42px 255px minmax(0, 1fr) 126px auto;
+          gap: 10px;
         }
 
         .main-panel::before {
@@ -1357,11 +1369,10 @@ Cevap: A`;
         }
 
         .main-head {
-          min-height: 44px;
+          min-height: 42px;
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 4px;
         }
 
         .main-head h1 {
@@ -1379,7 +1390,7 @@ Cevap: A`;
         }
 
         .head-actions button {
-          min-height: 38px;
+          min-height: 36px;
           border-radius: 999px;
           padding: 0 14px;
           font-weight: 950;
@@ -1389,14 +1400,14 @@ Cevap: A`;
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 12px;
-          margin-bottom: 10px;
+          gap: 8px;
+          overflow: visible;
         }
 
         .avatar-block {
           position: relative;
           width: 100%;
-          height: 210px;
+          height: 194px;
           display: grid;
           place-items: center;
           isolation: isolate;
@@ -1412,14 +1423,14 @@ Cevap: A`;
         }
 
         .orbit-one {
-          width: 220px;
-          height: 220px;
+          width: 210px;
+          height: 210px;
           animation: orbit 9s ease-in-out infinite;
         }
 
         .orbit-two {
-          width: 290px;
-          height: 290px;
+          width: 270px;
+          height: 270px;
           opacity: 0.42;
           animation: orbit 12s ease-in-out infinite reverse;
         }
@@ -1427,9 +1438,9 @@ Cevap: A`;
         .avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 180px;
-          height: 210px;
-          border-radius: 24px;
+          width: 150px;
+          height: 190px;
+          border-radius: 22px;
           overflow: hidden;
           border: 1px solid rgba(20, 24, 28, 0.12);
           background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
@@ -1456,7 +1467,7 @@ Cevap: A`;
           inset: 0;
           width: 100%;
           height: 100%;
-          object-fit: contain;
+          object-fit: cover;
           object-position: center center;
           background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
         }
@@ -1479,7 +1490,7 @@ Cevap: A`;
           z-index: 3;
           display: grid;
           place-items: center;
-          font-size: 24px;
+          font-size: 22px;
           letter-spacing: 0.16em;
           font-weight: 950;
           color: #2b2f34;
@@ -1495,14 +1506,14 @@ Cevap: A`;
         }
 
         .control {
-          min-height: 52px;
-          border-radius: 20px;
-          padding: 0 18px;
+          min-height: 46px;
+          border-radius: 19px;
+          padding: 0 16px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 10px;
-          font-size: 15px;
+          gap: 9px;
+          font-size: 14px;
           font-weight: 950;
           transition: 0.2s ease;
         }
@@ -1520,20 +1531,19 @@ Cevap: A`;
         }
 
         .control.live {
-          min-width: 190px;
+          min-width: 180px;
         }
 
         .sound {
-          font-size: 22px;
+          font-size: 21px;
           line-height: 1;
         }
 
         .write-box {
-          min-height: 400px;
-          height: 400px;
-          margin-top: 2px;
+          min-height: 0;
+          height: 100%;
           border-radius: 24px;
-          padding: 16px 18px 12px;
+          padding: 14px 16px 12px;
           display: flex;
           flex-direction: column;
         }
@@ -1552,10 +1562,10 @@ Cevap: A`;
         .message {
           width: fit-content;
           max-width: 92%;
-          padding: 11px 14px;
+          padding: 10px 13px;
           border-radius: 16px;
-          font-size: 14px;
-          line-height: 1.45;
+          font-size: 13px;
+          line-height: 1.42;
           font-weight: 800;
           white-space: pre-wrap;
         }
@@ -1582,14 +1592,14 @@ Cevap: A`;
 
         .write-box textarea {
           width: 100%;
-          height: 68px;
-          min-height: 68px;
+          height: 54px;
+          min-height: 54px;
           border: 0;
           outline: 0;
           resize: none;
           background: transparent;
           color: var(--graphite);
-          font-size: 17px;
+          font-size: 16px;
           font-weight: 850;
         }
 
@@ -1610,8 +1620,8 @@ Cevap: A`;
         }
 
         .write-actions button {
-          min-width: 38px;
-          height: 38px;
+          min-width: 36px;
+          height: 36px;
           padding: 0 10px;
           border-radius: 999px;
           color: var(--graphite);
@@ -1624,8 +1634,8 @@ Cevap: A`;
         }
 
         .write-actions .send {
-          width: 46px;
-          height: 46px;
+          width: 44px;
+          height: 44px;
           border-radius: 50%;
         }
 
@@ -1633,13 +1643,13 @@ Cevap: A`;
           display: grid;
           grid-template-columns: repeat(7, 1fr);
           gap: 10px;
-          margin-top: 12px;
+          min-height: 0;
         }
 
         .mode-card {
-          min-height: 130px;
+          min-height: 116px;
           border-radius: 20px;
-          padding: 14px 10px 10px;
+          padding: 12px 9px 9px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1653,25 +1663,25 @@ Cevap: A`;
         }
 
         .mode-icon {
-          height: 32px;
+          height: 28px;
           display: grid;
           place-items: center;
-          font-size: 28px;
+          font-size: 25px;
           line-height: 1;
           color: var(--graphite);
         }
 
         .mode-card strong {
-          margin-top: 8px;
-          font-size: 13px;
+          margin-top: 7px;
+          font-size: 12px;
           font-weight: 950;
         }
 
         .mode-card small {
-          margin-top: 6px;
+          margin-top: 5px;
           color: var(--graphite-soft);
-          font-size: 10.5px;
-          line-height: 1.25;
+          font-size: 9.5px;
+          line-height: 1.22;
           font-weight: 800;
         }
 
@@ -1681,15 +1691,15 @@ Cevap: A`;
         }
 
         .sub-panel {
-          margin-top: 10px;
           border-radius: 20px;
-          padding: 14px;
+          padding: 12px 14px;
           background: rgba(255, 255, 255, 0.74);
           border: 1px solid var(--line);
           display: flex;
           align-items: center;
           flex-wrap: wrap;
           gap: 14px;
+          overflow: auto;
         }
 
         .sub-panel strong {
@@ -1703,9 +1713,9 @@ Cevap: A`;
         }
 
         .sub-panel button {
-          min-height: 38px;
+          min-height: 34px;
           border-radius: 999px;
-          padding: 0 15px;
+          padding: 0 14px;
           background: #fff;
           border: 1px solid var(--line);
           color: var(--graphite);
@@ -1723,12 +1733,13 @@ Cevap: A`;
           display: flex;
           align-items: center;
           justify-content: center;
+          overflow: hidden;
         }
 
         .phone {
           width: 300px;
-          height: 92%;
-          min-height: 700px;
+          height: calc(100dvh - 48px);
+          max-height: 820px;
           overflow: hidden;
           border-radius: 34px;
           padding: 14px 12px 16px;
@@ -1775,7 +1786,7 @@ Cevap: A`;
 
         .phone-hero {
           position: relative;
-          height: 190px;
+          height: 176px;
           display: grid;
           place-items: center;
           margin-top: 4px;
@@ -1783,8 +1794,8 @@ Cevap: A`;
 
         .phone-avatar-video-wrap {
           position: relative;
-          width: 128px;
-          height: 176px;
+          width: 122px;
+          height: 166px;
           border-radius: 22px;
           overflow: hidden;
           border: 1px solid rgba(20, 24, 28, 0.12);
@@ -1801,9 +1812,10 @@ Cevap: A`;
         }
 
         .phone-controls button {
-          min-height: 42px;
+          min-height: 40px;
           border-radius: 16px;
           font-weight: 950;
+          font-size: 12px;
         }
 
         .phone-controls .selected {
@@ -1816,21 +1828,21 @@ Cevap: A`;
         }
 
         .phone-input {
-          min-height: 74px;
-          margin-top: 12px;
+          min-height: 68px;
+          margin-top: 10px;
           border-radius: 18px;
           padding: 12px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           color: #394047;
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 850;
         }
 
         .phone-input button {
-          width: 36px;
-          height: 36px;
+          width: 34px;
+          height: 34px;
           border-radius: 50%;
           background: var(--glass);
           border: 1px solid var(--line);
@@ -1842,13 +1854,13 @@ Cevap: A`;
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 8px;
-          margin-top: 12px;
+          margin-top: 10px;
         }
 
         .phone-grid button {
-          min-height: 82px;
+          min-height: 76px;
           border-radius: 16px;
-          padding: 8px 6px;
+          padding: 7px 5px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1857,13 +1869,13 @@ Cevap: A`;
         }
 
         .phone-grid span {
-          font-size: 22px;
+          font-size: 20px;
           line-height: 1;
         }
 
         .phone-grid strong {
-          font-size: 10.5px;
-          line-height: 1.12;
+          font-size: 9.5px;
+          line-height: 1.1;
           font-weight: 950;
         }
 
@@ -1969,16 +1981,29 @@ Cevap: A`;
           .mode-grid {
             grid-template-columns: repeat(4, 1fr);
           }
+
+          .main-panel {
+            grid-template-rows: 42px 250px minmax(0, 1fr) auto auto;
+          }
         }
 
         @media (max-width: 980px) {
+          html,
+          body {
+            overflow: auto;
+          }
+
           .page {
+            height: auto;
+            min-height: 100dvh;
+            overflow: auto;
             padding: 8px;
           }
 
           .app-layout {
             grid-template-columns: 1fr;
-            min-height: auto;
+            height: auto;
+            min-height: calc(100dvh - 16px);
           }
 
           .sidebar,
@@ -1987,9 +2012,12 @@ Cevap: A`;
           }
 
           .main-panel {
-            min-height: calc(100vh - 16px);
+            min-height: calc(100dvh - 16px);
+            height: auto;
             padding: 12px;
             border-radius: 22px;
+            display: flex;
+            flex-direction: column;
           }
 
           .main-head {
@@ -2006,12 +2034,12 @@ Cevap: A`;
           }
 
           .avatar-block {
-            height: 180px;
+            height: 170px;
           }
 
           .avatar-video-wrap {
-            width: 160px;
-            height: 180px;
+            width: 140px;
+            height: 170px;
           }
 
           .controls {
@@ -2032,7 +2060,7 @@ Cevap: A`;
           }
 
           .mode-card {
-            min-height: 120px;
+            min-height: 115px;
           }
         }
       `}</style>
