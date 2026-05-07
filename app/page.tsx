@@ -240,6 +240,19 @@ function makeImageUrl(prompt: string) {
   return `https://image.pollinations.ai/prompt/${cleanPrompt}?width=768&height=768&nologo=true&private=true&seed=${Date.now()}`;
 }
 
+function isQuotaText(value: string) {
+  const lower = String(value || "").toLowerCase();
+
+  return (
+    lower.includes("quota") ||
+    lower.includes("exceeded") ||
+    lower.includes("rate limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("free_tier") ||
+    lower.includes("retry in")
+  );
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -533,12 +546,13 @@ export default function Home() {
     const res = await fetch("/api/gemini", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(body),
     });
 
     const rawText = await res.text();
+
     let data: any = null;
 
     try {
@@ -547,25 +561,45 @@ export default function Home() {
       data = rawText;
     }
 
+    const extracted = extractTextFromGemini(data);
+
+    const possibleText =
+      extracted ||
+      data?.answer ||
+      data?.reply ||
+      data?.text ||
+      data?.message ||
+      data?.content ||
+      data?.output ||
+      data?.result ||
+      data?.response ||
+      data?.error ||
+      "";
+
     if (!res.ok) {
-      throw new Error(
-        typeof data?.error === "string"
-          ? data.error
-          : "Gemini cevabı alınamadı."
-      );
+      const errorMessage =
+        typeof possibleText === "string" && possibleText.trim()
+          ? possibleText.trim()
+          : rawText || "Gemini cevabı alınamadı.";
+
+      throw new Error(errorMessage);
     }
 
-    const finalText = extractTextFromGemini(data);
-
-    if (!finalText || !finalText.trim()) {
-      if (typeof rawText === "string" && rawText.trim()) {
-        return rawText.trim();
-      }
-
-      throw new Error("Gemini boş cevap döndürdü.");
+    if (typeof possibleText === "string" && possibleText.trim()) {
+      return possibleText.trim();
     }
 
-    return finalText.trim();
+    if (typeof data === "string" && data.trim()) {
+      return data.trim();
+    }
+
+    if (typeof rawText === "string" && rawText.trim()) {
+      return rawText.trim();
+    }
+
+    throw new Error(
+      "Gemini boş cevap döndürdü. Route answer, reply veya text alanı döndürmeli."
+    );
   }
 
   async function sendMessage(value?: string, fromVoice = false) {
@@ -573,6 +607,7 @@ export default function Home() {
     if (!text || isThinking) return;
 
     lastActivityRef.current = Date.now();
+
     setInput("");
     addUser(text);
     setIsThinking(true);
@@ -582,18 +617,25 @@ export default function Home() {
       stopListening();
 
       const reply = await askGemini(text);
+
       addLyra(reply);
+
       setIsThinking(false);
       thinkingRef.current = false;
 
       if (liveRef.current || fromVoice) {
         speak(reply, "tr-TR");
       }
-    } catch {
-      const fallback =
-        "Cevabı alamadım kanka. Gemini route çalışıyor ama POST cevabı boş ya da farklı isimle dönüyor olabilir. Route içinde answer, reply veya text alanı döndürmen gerekiyor.";
+    } catch (error: any) {
+      const realError =
+        error?.message || "Gemini bağlantısında bilinmeyen bir hata oldu.";
+
+      const fallback = isQuotaText(realError)
+        ? `Gemini kotası doldu kanka. Detay: ${realError}`
+        : `Cevabı alamadım kanka. Detay: ${realError}`;
 
       addLyra(fallback);
+
       setIsThinking(false);
       thinkingRef.current = false;
 
@@ -788,9 +830,14 @@ Konu: ${text}`;
         const finalReply = String(reply);
         setTranslateOutput(finalReply);
         speak(finalReply, getLangCode(targetLang));
-      } catch {
+      } catch (error: any) {
+        const realError =
+          error?.message || "Translate sırasında bilinmeyen hata oldu.";
+
         setTranslateOutput(
-          "Çeviri sırasında küçük bir bağlantı takılması oldu kanka."
+          isQuotaText(realError)
+            ? `Gemini kotası doldu kanka. Detay: ${realError}`
+            : `Çeviri sırasında hata oldu kanka. Detay: ${realError}`
         );
       } finally {
         setToolBusy(false);
@@ -870,12 +917,16 @@ Bu düzenleme için net, İngilizce, profesyonel image edit promptu yaz. Açıkl
           setToolOutput(finalReply);
         }
       }
-    } catch {
+    } catch (error: any) {
+      const realError = error?.message || "Bilinmeyen hata oldu.";
+
       if (activeTool === "study") {
         setStudySections({
-          summary: "Ders hazırlanırken bağlantı takıldı kanka.",
+          summary: isQuotaText(realError)
+            ? `Gemini kotası doldu kanka. Detay: ${realError}`
+            : `Ders hazırlanırken hata oldu kanka. Detay: ${realError}`,
           solved: "Tekrar deneyelim.",
-          test: "Gemini cevabı alınamadı.",
+          test: "Cevap alınamadı.",
           raw: "",
         });
       } else if (activeTool === "image") {
@@ -887,13 +938,17 @@ Bu düzenleme için net, İngilizce, profesyonel image edit promptu yaz. Açıkl
 
         setGeneratedImageUrl(imageUrl);
         setToolOutput(
-          uploadedEditImage
+          isQuotaText(realError)
+            ? `Gemini kotası doldu kanka. Ama görsel üretme bağlantısı yine de denendi. Detay: ${realError}`
+            : uploadedEditImage
             ? "Fotoğraf düzenleme isteği gönderildi. Oluşturulan görsel aşağıda görünecek."
             : "Görsel üretme isteği gönderildi. Oluşturulan görsel aşağıda görünecek."
         );
       } else {
         setToolOutput(
-          "Bu araç çalışırken küçük bir bağlantı takılması oldu kanka. Tekrar deneyelim."
+          isQuotaText(realError)
+            ? `Gemini kotası doldu kanka. Detay: ${realError}`
+            : `Bu araç çalışırken hata oldu kanka. Detay: ${realError}`
         );
       }
     } finally {
@@ -2890,6 +2945,7 @@ ${bodyContent}
           100% {
             transform: translateY(0) scale(1);
           }
+
           50% {
             transform: translateY(-5px) scale(1.006);
           }
@@ -2900,6 +2956,7 @@ ${bodyContent}
           100% {
             transform: translateY(0) scale(1);
           }
+
           50% {
             transform: translateY(-4px) scale(1.012);
           }
@@ -2911,6 +2968,7 @@ ${bodyContent}
             transform: scale(1);
             opacity: 0.72;
           }
+
           50% {
             transform: scale(1.06);
             opacity: 1;
@@ -2922,6 +2980,7 @@ ${bodyContent}
           100% {
             transform: scaleY(0.55);
           }
+
           50% {
             transform: scaleY(1.18);
           }
