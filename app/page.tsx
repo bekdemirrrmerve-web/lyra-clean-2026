@@ -2,10 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type MessageRole = "user" | "lyra";
-
 type Message = {
-  role: MessageRole;
+  role: string;
   text: string;
 };
 
@@ -114,13 +112,11 @@ export default function Home() {
   }, []);
 
   function addUser(text: string) {
-    const newMessage: Message = { role: "user", text };
-    setMessages((prev): Message[] => [...prev, newMessage].slice(-14));
+    setMessages((prev) => [...prev, { role: "user", text }].slice(-14));
   }
 
   function addLyra(text: string) {
-    const newMessage: Message = { role: "lyra", text };
-    setMessages((prev): Message[] => [...prev, newMessage].slice(-14));
+    setMessages((prev) => [...prev, { role: "lyra", text }].slice(-14));
   }
 
   function stopListening() {
@@ -912,12 +908,12 @@ export default function Home() {
           place-items: center;
           border-radius: 46% 46% 28% 28%;
           background: radial-gradient(
-              circle at 50% 24%,
-              rgba(255, 228, 200, 1),
-              rgba(225, 178, 140, 0.9) 32%,
-              rgba(20, 20, 20, 1) 33%,
-              rgba(8, 8, 8, 1) 80%
-            );
+            circle at 50% 24%,
+            rgba(255, 228, 200, 1),
+            rgba(225, 178, 140, 0.9) 32%,
+            rgba(20, 20, 20, 1) 33%,
+            rgba(8, 8, 8, 1) 80%
+          );
         }
 
         .fallback-face {
