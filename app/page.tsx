@@ -2,15 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-type ModeKey =
-  | 'research'
-  | 'content'
-  | 'lesson'
-  | 'image'
-  | 'read'
-  | 'pdf'
-  | 'live';
-
+type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'pdf' | 'live';
 type Role = 'user' | 'assistant' | 'system';
 
 type ChatMessage = {
@@ -22,14 +14,14 @@ type ChatMessage = {
 const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
 const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
 
-const GEMINI_ENDPOINTS = [
-  '/api/gemini-live',
-  '/api/gemini',
-  '/api/gemini-chat',
-  '/api/chat',
-  '/api/lyra',
-  '/api/ai',
-];
+/*
+  ÖNEMLİ:
+  Bot mesaja düşmesin diye eski /api/chat, /api/lyra, /api/ai fallbacklerini kaldırdım.
+  Mesaj sadece Gemini route'a gider.
+  Eğer app/api/gemini/route.ts yoksa bu route'u oluşturman gerekir.
+*/
+const GEMINI_TEXT_ENDPOINT = '/api/gemini';
+const GEMINI_TTS_ENDPOINT = '/api/tts';
 
 const PDF_ENDPOINTS = ['/api/pdf', '/api/pdf-summary', '/api/upload-pdf'];
 const IMAGE_ENDPOINTS = ['/api/vision', '/api/image-read', '/api/analyze-image'];
@@ -103,7 +95,7 @@ const modes: {
 function buildPrompt(mode: ModeKey, input: string, action?: string) {
   if (mode === 'content') {
     return `
-Sen Lyra'sın. Türkçe, akıcı ve sosyal medya odaklı içerik üret.
+Sen Lyra'sın. Türkçe, akıcı, sıcak ve sosyal medya odaklı içerik üret.
 Konu: ${input}
 İstenen aksiyon: ${action || 'tam içerik paketi'}
 
@@ -137,7 +129,8 @@ Konu/Soru: ${input}
     return `
 Sen Lyra'sın. Konuyu sade, net ve düzenli anlat.
 Konu: ${input}
-Format:
+
+Şu formatta cevap ver:
 1) Kısa cevap
 2) Detaylı açıklama
 3) Önemli maddeler
@@ -150,7 +143,8 @@ Format:
     return `
 Sen Lyra'sın. Görsel üretim promptu hazırlıyorsun.
 İstek: ${input}
-Format:
+
+Şu formatta cevap ver:
 1) Kısa konsept
 2) Detaylı prompt
 3) Renk paleti
@@ -182,44 +176,43 @@ Kısa başla, gerekirse detaylandır.
 `;
 }
 
-async function postJsonFast(endpoints: string[], body: Record<string, unknown>) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 22000);
+async function postGeminiText(body: Record<string, unknown>) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 22000);
 
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+    const res = await fetch(GEMINI_TEXT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
 
-      if (!res.ok) continue;
+    clearTimeout(timeout);
 
-      const data = await res.json().catch(() => null);
-
-      const text =
-        data?.answer ||
-        data?.reply ||
-        data?.message ||
-        data?.text ||
-        data?.content ||
-        data?.result ||
-        data?.response ||
-        data?.output;
-
-      if (typeof text === 'string' && text.trim()) {
-        clearTimeout(timeout);
-        return text.trim();
-      }
-    } catch {
-      continue;
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(detail || 'Gemini text route failed');
     }
-  }
 
-  clearTimeout(timeout);
-  return null;
+    const data = await res.json().catch(() => null);
+
+    const text =
+      data?.answer ||
+      data?.reply ||
+      data?.message ||
+      data?.text ||
+      data?.content ||
+      data?.result ||
+      data?.response ||
+      data?.output;
+
+    if (typeof text === 'string' && text.trim()) return text.trim();
+
+    throw new Error('Gemini cevabı boş döndü.');
+  } catch {
+    return null;
+  }
 }
 
 async function postFileFast(endpoints: string[], file: File, extra: Record<string, string>) {
@@ -358,7 +351,7 @@ export default function Page() {
     {
       id: 1,
       role: 'assistant',
-      text: 'Merhaba, ben Lyra. Konu yaz; içerik, ders, araştırma, PDF veya görsel alanında hemen çalışayım.',
+      text: 'Merhaba, ben Lyra. Gemini bağlantısı hazırsa direkt ondan cevap vereceğim. Konu yaz; içerik, ders, araştırma, PDF veya görsel alanında çalışayım.',
     },
   ]);
 
@@ -381,7 +374,7 @@ export default function Page() {
 
   const addMessage = (role: Role, text: string) => {
     const id = messageIdRef.current++;
-    setMessages((prev) => [...prev, { id, role, text }].slice(-18));
+    setMessages((prev) => [...prev, { id, role, text }].slice(-24));
   };
 
   const stopListening = () => {
@@ -419,7 +412,7 @@ export default function Page() {
         window.speechSynthesis.cancel();
       }
 
-      const response = await fetch('/api/tts', {
+      const response = await fetch(GEMINI_TTS_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -458,83 +451,15 @@ export default function Page() {
     } catch {
       isSpeakingRef.current = false;
 
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+      addMessage(
+        'system',
+        'Gemini sesi çalışmadı. /api/tts route’unu ve GEMINI_API_KEY env ayarını kontrol et.'
+      );
 
-        const fallback = new SpeechSynthesisUtterance(cleanText);
-        fallback.lang = 'tr-TR';
-        fallback.rate = 1.04;
-        fallback.pitch = 1.05;
-
-        fallback.onend = () => {
-          if (liveOpen && shouldRestartRef.current) {
-            setTimeout(() => startListening(true), 220);
-          }
-        };
-
-        window.speechSynthesis.speak(fallback);
-      } else if (liveOpen && shouldRestartRef.current) {
+      if (liveOpen && shouldRestartRef.current) {
         setTimeout(() => startListening(true), 220);
       }
     }
-  };
-
-  const fallbackAnswer = (input: string, mode: ModeKey) => {
-    if (mode === 'content') {
-      return `Video Konu Başlıkları:
-1. ${input} hakkında herkesin yanlış bildiği şey
-2. ${input} için 3 adımlı mini rehber
-3. ${input} kullanırken yapılan hata
-4. ${input} gerçek mi abartı mı?
-5. ${input} için 45 saniyelik pratik anlatım
-
-Hook:
-“Bunu yapıyorsan sonucu fark etmeden bozuyor olabilirsin.”
-
-Teleprompter Metni:
-“Bugün sana ${input} konusunu çok basit anlatacağım. Çünkü çoğu kişi burada yanlış noktaya odaklanıyor. Aslında işin özü çok daha net. Önce problemi anlayacağız, sonra doğru adımı seçeceğiz ve sonunda bunu nasıl uygulayacağını konuşacağız.”
-
-CTA:
-“Kaydet, sonra birlikte tekrar bakalım.”`;
-    }
-
-    if (mode === 'lesson') {
-      return `Konu Özeti:
-${input} konusunu temel mantık + örnek + tekrar şeklinde çalışmalısın.
-
-Formüller / Kurallar:
-- Ana formül
-- Gerekli kural
-- Uygulama sırası
-- Birim kontrolü
-
-Sınav İpuçları:
-- Sorunun istediğini bul
-- Verilenleri ayır
-- Hızlı çözüm yolunu seç
-- Sonucu kontrol et
-
-Çözümlü Soru:
-Örnek soru + çözüm mantığı.
-
-Mini Test:
-1) Bu konuda ilk yapılacak şey nedir?
-A) Verilenleri ayırmak
-B) Şıkları ezberlemek
-C) Rastgele işlem yapmak
-D) Sonucu tahmin etmek
-Cevap: A`;
-    }
-
-    if (mode === 'research') {
-      return `${input} için hızlı araştırma özeti:
-- Ana fikir
-- Alt başlıklar
-- Önemli noktalar
-- Kısa sonuç`;
-    }
-
-    return `“${input}” için ${active?.title || 'Lyra'} modunda çalışmaya hazırım.`;
   };
 
   const sendMessage = async (input?: string, action?: string) => {
@@ -547,21 +472,29 @@ Cevap: A`;
 
     const prompt = buildPrompt(activeMode, raw, action);
 
-    const aiText =
-      (await postJsonFast(GEMINI_ENDPOINTS, {
-        message: prompt,
-        rawMessage: raw,
-        mode: activeMode,
-        action: action || null,
-        voice: voice.label,
-        gender,
-        live: liveOpen,
-        provider: 'gemini',
-        model: 'gemini-2.5-flash',
-        realtime: true,
-      })) || fallbackAnswer(raw, activeMode);
+    const aiText = await postGeminiText({
+      message: prompt,
+      rawMessage: raw,
+      mode: activeMode,
+      action: action || null,
+      voice: voice.label,
+      gender,
+      live: liveOpen,
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+      realtime: true,
+    });
 
     setIsThinking(false);
+
+    if (!aiText) {
+      addMessage(
+        'assistant',
+        'Gemini bağlantısı çalışmadı kanka. Eski bot route’a düşürmedim; böylece yanlış bot cevap vermez. app/api/gemini/route.ts ve Vercel GEMINI_API_KEY ayarını kontrol edelim.'
+      );
+      return;
+    }
+
     addMessage('assistant', aiText);
     await speak(aiText);
   };
@@ -735,7 +668,18 @@ Cevap: A`;
           </div>
 
           <nav className="menu">
-            <button className="menu-item active" onClick={() => setMessages([])}>
+            <button
+              className="menu-item active"
+              onClick={() =>
+                setMessages([
+                  {
+                    id: messageIdRef.current++,
+                    role: 'assistant',
+                    text: 'Yeni sohbet açıldı. Gemini bağlantısı hazırsa direkt ona bağlanacağım.',
+                  },
+                ])
+              }
+            >
               <span>＋</span> Yeni Sohbet
             </button>
             <button className="menu-item">
@@ -794,7 +738,7 @@ Cevap: A`;
                 onClick={() =>
                   addMessage(
                     'assistant',
-                    'Ben Lyra. Gemini destekli konuşma, içerik, ders, PDF ve görsel analiz modlarıyla çalışırım.'
+                    'Ben Lyra. Bu sürümde eski bot fallback kapalı. Mesajlar sadece Gemini route’a gider.'
                   )
                 }
               >
@@ -859,7 +803,7 @@ Cevap: A`;
                   {item.text}
                 </div>
               ))}
-              {isThinking && <div className="message assistant">Lyra cevaplıyor...</div>}
+              {isThinking && <div className="message assistant">Gemini cevaplıyor...</div>}
               <div ref={messagesEndRef} />
             </div>
 
@@ -1119,8 +1063,9 @@ Cevap: A`;
         body {
           margin: 0;
           width: 100%;
-          height: 100%;
-          overflow: hidden;
+          min-height: 100%;
+          overflow-x: hidden;
+          overflow-y: auto;
           font-family:
             Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
             'Segoe UI', sans-serif;
@@ -1142,9 +1087,10 @@ Cevap: A`;
 
         .page {
           position: relative;
-          width: 100vw;
-          height: 100dvh;
-          overflow: hidden;
+          width: 100%;
+          min-height: 100dvh;
+          overflow-x: hidden;
+          overflow-y: auto;
           padding: 10px;
         }
 
@@ -1179,13 +1125,12 @@ Cevap: A`;
           position: relative;
           z-index: 2;
           width: 100%;
-          height: calc(100dvh - 20px);
+          min-height: calc(100dvh - 20px);
           margin: 0 auto;
           display: grid;
           grid-template-columns: 220px minmax(620px, 1fr) 320px;
           gap: 14px;
           align-items: stretch;
-          overflow: hidden;
         }
 
         .glass {
@@ -1197,7 +1142,7 @@ Cevap: A`;
         }
 
         .sidebar {
-          height: 100%;
+          min-height: calc(100dvh - 20px);
           border-radius: 28px;
           padding: 18px 14px;
           display: flex;
@@ -1260,11 +1205,6 @@ Cevap: A`;
           transform: translateY(-1px);
         }
 
-        .menu-item span {
-          font-size: 18px;
-          font-weight: 950;
-        }
-
         .side-bottom {
           margin-top: auto;
           display: grid;
@@ -1276,22 +1216,6 @@ Cevap: A`;
         .usage-box {
           border-radius: 18px;
           padding: 14px;
-        }
-
-        .mini-box strong,
-        .profile-box strong,
-        .usage-box strong {
-          display: block;
-          font-weight: 950;
-        }
-
-        .mini-box small,
-        .profile-box small,
-        .usage-box small {
-          display: block;
-          margin-top: 3px;
-          color: var(--muted);
-          font-weight: 750;
         }
 
         .profile-box {
@@ -1314,13 +1238,6 @@ Cevap: A`;
           font-weight: 950;
         }
 
-        .usage-box > div {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          font-weight: 900;
-        }
-
         .usage-line {
           display: block;
           height: 7px;
@@ -1340,12 +1257,12 @@ Cevap: A`;
 
         .main-panel {
           position: relative;
-          height: 100%;
+          min-height: calc(100dvh - 20px);
           border-radius: 28px;
           padding: 14px 18px;
           overflow: hidden;
           display: grid;
-          grid-template-rows: 42px 255px minmax(0, 1fr) 126px auto;
+          grid-template-rows: 42px 255px minmax(360px, auto) 126px auto;
           gap: 10px;
         }
 
@@ -1540,8 +1457,7 @@ Cevap: A`;
         }
 
         .write-box {
-          min-height: 0;
-          height: 100%;
+          min-height: 360px;
           border-radius: 24px;
           padding: 14px 16px 12px;
           display: flex;
@@ -1723,7 +1639,8 @@ Cevap: A`;
         }
 
         .phone-shell {
-          align-self: stretch;
+          align-self: start;
+          min-height: calc(100dvh - 20px);
           padding: 8px;
           border-radius: 40px;
           background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
@@ -1983,26 +1900,17 @@ Cevap: A`;
           }
 
           .main-panel {
-            grid-template-rows: 42px 250px minmax(0, 1fr) auto auto;
+            grid-template-rows: 42px 250px minmax(360px, auto) auto auto;
           }
         }
 
         @media (max-width: 980px) {
-          html,
-          body {
-            overflow: auto;
-          }
-
           .page {
-            height: auto;
-            min-height: 100dvh;
-            overflow: auto;
             padding: 8px;
           }
 
           .app-layout {
             grid-template-columns: 1fr;
-            height: auto;
             min-height: calc(100dvh - 16px);
           }
 
@@ -2013,7 +1921,6 @@ Cevap: A`;
 
           .main-panel {
             min-height: calc(100dvh - 16px);
-            height: auto;
             padding: 12px;
             border-radius: 22px;
             display: flex;
@@ -2051,7 +1958,6 @@ Cevap: A`;
           }
 
           .write-box {
-            height: 360px;
             min-height: 360px;
           }
 
