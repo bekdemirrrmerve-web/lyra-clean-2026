@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+type MessageRole = "user" | "lyra";
+
 type Message = {
-  role: "user" | "lyra";
+  role: MessageRole;
   text: string;
 };
 
@@ -104,16 +106,21 @@ export default function Home() {
   useEffect(() => {
     return () => {
       stopListening();
-      window.speechSynthesis?.cancel();
+
+      if (typeof window !== "undefined") {
+        window.speechSynthesis?.cancel();
+      }
     };
   }, []);
 
   function addUser(text: string) {
-    setMessages((prev) => [...prev, { role: "user", text }].slice(-14));
+    const newMessage: Message = { role: "user", text };
+    setMessages((prev): Message[] => [...prev, newMessage].slice(-14));
   }
 
   function addLyra(text: string) {
-    setMessages((prev) => [...prev, { role: "lyra", text }].slice(-14));
+    const newMessage: Message = { role: "lyra", text };
+    setMessages((prev): Message[] => [...prev, newMessage].slice(-14));
   }
 
   function stopListening() {
@@ -133,7 +140,9 @@ export default function Home() {
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      addLyra("Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’dan dene.");
+      addLyra(
+        "Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’dan dene."
+      );
       return;
     }
 
@@ -167,7 +176,9 @@ export default function Home() {
         }
       }
 
-      if (tempText) setInterimText(tempText);
+      if (tempText) {
+        setInterimText(tempText);
+      }
 
       const clean = finalText.trim();
 
@@ -200,7 +211,9 @@ export default function Home() {
   }
 
   function speak(text: string) {
-    if (!voiceOn || typeof window === "undefined") {
+    if (typeof window === "undefined") return;
+
+    if (!voiceOn) {
       if (liveRef.current) startListening();
       return;
     }
@@ -223,7 +236,9 @@ export default function Home() {
         voices.find((v) => v.name?.toLowerCase().includes("woman")) ||
         voices[0];
 
-      if (selectedVoice) utterance.voice = selectedVoice;
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
 
       utterance.onstart = () => {
         setIsSpeaking(true);
@@ -231,6 +246,7 @@ export default function Home() {
 
       utterance.onend = () => {
         setIsSpeaking(false);
+
         if (liveRef.current) {
           setTimeout(() => startListening(), 450);
         }
@@ -238,6 +254,7 @@ export default function Home() {
 
       utterance.onerror = () => {
         setIsSpeaking(false);
+
         if (liveRef.current) {
           setTimeout(() => startListening(), 450);
         }
@@ -246,7 +263,10 @@ export default function Home() {
       window.speechSynthesis.speak(utterance);
     } catch {
       setIsSpeaking(false);
-      if (liveRef.current) startListening();
+
+      if (liveRef.current) {
+        startListening();
+      }
     }
   }
 
@@ -322,6 +342,8 @@ export default function Home() {
   }
 
   function toggleLive() {
+    if (typeof window === "undefined") return;
+
     if (isLive) {
       setIsLive(false);
       liveRef.current = false;
@@ -370,7 +392,7 @@ export default function Home() {
     ? interimText
     : isThinking
     ? "Düşünüyorum..."
-    : lastMessage?.text;
+    : lastMessage?.text || "Buradayım.";
 
   return (
     <main className="screen">
@@ -437,7 +459,8 @@ export default function Home() {
         ) : (
           <div
             className={[
-              "avatar fallback-avatar",
+              "avatar",
+              "fallback-avatar",
               isSpeaking ? "talking" : "",
               isListening ? "hearing" : "",
             ].join(" ")}
@@ -505,7 +528,7 @@ export default function Home() {
           <div className="chat-list">
             {messages.slice(-6).map((msg, index) => (
               <div
-                key={`${msg.role}-${index}`}
+                key={`${msg.role}-${index}-${msg.text}`}
                 className={msg.role === "user" ? "bubble user" : "bubble lyra"}
               >
                 <b>{msg.role === "user" ? "Sen" : "Lyra"}</b>
@@ -535,7 +558,10 @@ export default function Home() {
           <small>Yazış</small>
         </button>
 
-        <button className={isLive ? "end-btn live" : "end-btn"} onClick={toggleLive}>
+        <button
+          className={isLive ? "end-btn live" : "end-btn"}
+          onClick={toggleLive}
+        >
           <span>{isLive ? "☎" : "▶"}</span>
           <small>{isLive ? "Bitir" : "Başlat"}</small>
         </button>
@@ -595,11 +621,27 @@ export default function Home() {
           position: absolute;
           inset: 0;
           z-index: 0;
-          background:
-            radial-gradient(circle at 18% 38%, rgba(255, 177, 76, 0.4), transparent 18%),
-            radial-gradient(circle at 86% 48%, rgba(255, 183, 96, 0.24), transparent 20%),
-            radial-gradient(circle at 72% 20%, rgba(255, 221, 174, 0.14), transparent 20%),
-            linear-gradient(90deg, rgba(26, 15, 10, 1), rgba(82, 56, 39, 0.7), rgba(16, 10, 8, 1));
+          background: radial-gradient(
+              circle at 18% 38%,
+              rgba(255, 177, 76, 0.4),
+              transparent 18%
+            ),
+            radial-gradient(
+              circle at 86% 48%,
+              rgba(255, 183, 96, 0.24),
+              transparent 20%
+            ),
+            radial-gradient(
+              circle at 72% 20%,
+              rgba(255, 221, 174, 0.14),
+              transparent 20%
+            ),
+            linear-gradient(
+              90deg,
+              rgba(26, 15, 10, 1),
+              rgba(82, 56, 39, 0.7),
+              rgba(16, 10, 8, 1)
+            );
         }
 
         .room-art::before {
@@ -623,10 +665,20 @@ export default function Home() {
           width: 132px;
           height: 340px;
           border-radius: 26px;
-          background:
-            radial-gradient(circle at 50% 25%, rgba(255, 202, 112, 0.92), transparent 12%),
-            radial-gradient(circle at 50% 65%, rgba(255, 202, 112, 0.82), transparent 13%),
-            linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+          background: radial-gradient(
+              circle at 50% 25%,
+              rgba(255, 202, 112, 0.92),
+              transparent 12%
+            ),
+            radial-gradient(
+              circle at 50% 65%,
+              rgba(255, 202, 112, 0.82),
+              transparent 13%
+            ),
+            linear-gradient(
+              rgba(255, 255, 255, 0.08),
+              rgba(255, 255, 255, 0.03)
+            );
           border: 1px solid rgba(255, 255, 255, 0.08);
           filter: blur(0.4px);
           opacity: 0.68;
@@ -636,9 +688,19 @@ export default function Home() {
           position: absolute;
           inset: 0;
           z-index: 1;
-          background:
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.24), transparent 24%, rgba(0, 0, 0, 0.28) 65%, rgba(0, 0, 0, 0.82)),
-            radial-gradient(circle at 50% 42%, transparent 26%, rgba(0, 0, 0, 0.16) 58%, rgba(0, 0, 0, 0.7));
+          background: linear-gradient(
+              to bottom,
+              rgba(0, 0, 0, 0.24),
+              transparent 24%,
+              rgba(0, 0, 0, 0.28) 65%,
+              rgba(0, 0, 0, 0.82)
+            ),
+            radial-gradient(
+              circle at 50% 42%,
+              transparent 26%,
+              rgba(0, 0, 0, 0.16) 58%,
+              rgba(0, 0, 0, 0.7)
+            );
           pointer-events: none;
         }
 
@@ -797,14 +859,22 @@ export default function Home() {
           width: min(88vw, 560px);
           height: min(88vw, 560px);
           border-radius: 999px;
-          background: radial-gradient(circle, rgba(255, 222, 177, 0.25), transparent 68%);
+          background: radial-gradient(
+            circle,
+            rgba(255, 222, 177, 0.25),
+            transparent 68%
+          );
           filter: blur(8px);
           opacity: 0.84;
           transform: translateY(-16px);
         }
 
         .avatar-light.listening {
-          background: radial-gradient(circle, rgba(173, 255, 221, 0.24), transparent 68%);
+          background: radial-gradient(
+            circle,
+            rgba(173, 255, 221, 0.24),
+            transparent 68%
+          );
         }
 
         .avatar-light.speaking {
@@ -819,10 +889,8 @@ export default function Home() {
           max-height: 78dvh;
           object-fit: contain;
           object-position: center bottom;
-          filter:
-            drop-shadow(0 30px 70px rgba(0, 0, 0, 0.5))
-            saturate(1.04)
-            contrast(1.02);
+          filter: drop-shadow(0 30px 70px rgba(0, 0, 0, 0.5))
+            saturate(1.04) contrast(1.02);
           transform-origin: center bottom;
           animation: idleMove 6s ease-in-out infinite;
         }
@@ -832,10 +900,8 @@ export default function Home() {
         }
 
         .avatar.hearing {
-          filter:
-            drop-shadow(0 30px 70px rgba(0, 0, 0, 0.5))
-            drop-shadow(0 0 22px rgba(178, 111, 255, 0.22))
-            saturate(1.04)
+          filter: drop-shadow(0 30px 70px rgba(0, 0, 0, 0.5))
+            drop-shadow(0 0 22px rgba(178, 111, 255, 0.22)) saturate(1.04)
             contrast(1.02);
         }
 
@@ -845,8 +911,13 @@ export default function Home() {
           display: grid;
           place-items: center;
           border-radius: 46% 46% 28% 28%;
-          background:
-            radial-gradient(circle at 50% 24%, rgba(255, 228, 200, 1), rgba(225, 178, 140, 0.9) 32%, rgba(20, 20, 20, 1) 33%, rgba(8, 8, 8, 1) 80%);
+          background: radial-gradient(
+              circle at 50% 24%,
+              rgba(255, 228, 200, 1),
+              rgba(225, 178, 140, 0.9) 32%,
+              rgba(20, 20, 20, 1) 33%,
+              rgba(8, 8, 8, 1) 80%
+            );
         }
 
         .fallback-face {
@@ -968,15 +1039,19 @@ export default function Home() {
         .wave span:nth-child(1) {
           height: 8px;
         }
+
         .wave span:nth-child(3) {
           height: 34px;
         }
+
         .wave span:nth-child(5) {
           height: 56px;
         }
+
         .wave span:nth-child(7) {
           height: 30px;
         }
+
         .wave span:nth-child(9) {
           height: 26px;
         }
@@ -1154,9 +1229,11 @@ export default function Home() {
           0% {
             box-shadow: 0 0 0 0 rgba(94, 255, 146, 0.55);
           }
+
           80% {
             box-shadow: 0 0 0 12px rgba(94, 255, 146, 0);
           }
+
           100% {
             box-shadow: 0 0 0 0 rgba(94, 255, 146, 0);
           }
@@ -1167,6 +1244,7 @@ export default function Home() {
           100% {
             transform: translateY(0) scale(1);
           }
+
           50% {
             transform: translateY(-5px) scale(1.006);
           }
@@ -1177,6 +1255,7 @@ export default function Home() {
           100% {
             transform: translateY(0) scale(1);
           }
+
           45% {
             transform: translateY(-4px) scale(1.012);
           }
@@ -1188,6 +1267,7 @@ export default function Home() {
             transform: translateY(-16px) scale(1);
             opacity: 0.75;
           }
+
           50% {
             transform: translateY(-16px) scale(1.06);
             opacity: 1;
@@ -1199,6 +1279,7 @@ export default function Home() {
           100% {
             transform: scaleY(0.55);
           }
+
           50% {
             transform: scaleY(1.15);
           }
