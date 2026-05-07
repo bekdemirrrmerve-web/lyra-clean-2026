@@ -1,586 +1,1109 @@
-"use client";
+'use client';
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-type Role = "user" | "assistant";
+type ModeKey =
+  | 'research'
+  | 'content'
+  | 'lesson'
+  | 'image'
+  | 'read'
+  | 'pdf'
+  | 'live';
+
+type Role = 'user' | 'assistant' | 'system';
 
 type ChatMessage = {
-  id: string;
+  id: number;
   role: Role;
-  content: string;
+  text: string;
 };
 
-type ListenMode = "write" | "send" | "live";
+const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
+const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
 
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
+const GEMINI_ENDPOINTS = [
+  '/api/gemini-live',
+  '/api/gemini',
+  '/api/gemini-chat',
+  '/api/chat',
+  '/api/lyra',
+  '/api/ai',
+];
 
-const starterMessages: ChatMessage[] = [
+const PDF_ENDPOINTS = ['/api/pdf', '/api/pdf-summary', '/api/upload-pdf'];
+const IMAGE_ENDPOINTS = ['/api/vision', '/api/image-read', '/api/analyze-image'];
+
+const voices = [
+  { label: 'Gemini Live', voiceName: 'Kore' },
+  { label: 'Kadın - Nazik', voiceName: 'Kore' },
+  { label: 'Kadın - Enerjik', voiceName: 'Aoede' },
+  { label: 'Doğal', voiceName: 'Puck' },
+  { label: 'Sakin', voiceName: 'Leda' },
+];
+
+const modes: {
+  key: ModeKey;
+  title: string;
+  desc: string;
+  icon: string;
+  starter: string;
+}[] = [
   {
-    id: "starter-1",
-    role: "assistant",
-    content:
-      "Merhaba kanka, ben Lyra. Burası beyaz-gümüş ana sohbet alanın. İstersen yaz, istersen canlı konuşmayı aç.",
+    key: 'research',
+    title: 'Araştırma Modu',
+    desc: 'Bilgi bul, analiz et ve net cevaplar üret.',
+    icon: '⌕',
+    starter: 'Araştırılacak konuyu yaz.',
+  },
+  {
+    key: 'content',
+    title: 'İçerik Üretme',
+    desc: 'Hook, başlık, video metni ve teleprompter hazırla.',
+    icon: '✎',
+    starter: 'Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım.',
+  },
+  {
+    key: 'lesson',
+    title: 'Ders Modu',
+    desc: 'Konu anlat, test üret, yanlış açıkla.',
+    icon: '▰',
+    starter: 'Çalışmak istediğin konuyu, soruyu ya da görseli gönder.',
+  },
+  {
+    key: 'image',
+    title: 'Görsel Üretme',
+    desc: 'Görsel promptu ve konsept hazırla.',
+    icon: '▧',
+    starter: 'Nasıl bir görsel istediğini yaz.',
+  },
+  {
+    key: 'read',
+    title: 'Görselle Okut',
+    desc: 'Görsel, belge ve ekranları analiz et.',
+    icon: '◌',
+    starter: 'Görsel yükle veya ne okutmak istediğini yaz.',
+  },
+  {
+    key: 'pdf',
+    title: 'PDF Özeti',
+    desc: 'PDF yükle, özetle ve not çıkar.',
+    icon: '▤',
+    starter: 'PDF yükle, sana özet ve önemli notlar çıkarayım.',
+  },
+  {
+    key: 'live',
+    title: 'Canlı Mod',
+    desc: 'Gerçek zamanlı konuşma alanı.',
+    icon: '≋',
+    starter: 'Canlı konuşma açık. Konuşmaya başlayabilirsin.',
   },
 ];
 
-const tools = [
-  "Canlı Konuş",
-  "Sesle Yaz",
-  "PDF Özet",
-  "İçerik Fikri",
-  "Teleprompter",
-  "DGS Planı",
-  "Kozmetik",
-  "Foto Analiz",
-  "Araştır",
-  "Notlar",
-];
-
-function makeId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return `${Date.now()}-${Math.random()}`;
+function nowTime() {
+  return new Date().toLocaleTimeString('tr-TR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
-export default function Page() {
-  const [messages, setMessages] = useState<ChatMessage[]>(starterMessages);
-  const [input, setInput] = useState("");
-  const [status, setStatus] = useState("Hazır");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [liveMode, setLiveMode] = useState(false);
-  const [muted, setMuted] = useState(false);
+function buildPrompt(mode: ModeKey, input: string, action?: string) {
+  if (mode === 'content') {
+    return `
+Sen Lyra'sın. Türkçe, akıcı ve sosyal medya odaklı içerik üret.
+Konu: ${input}
+İstenen aksiyon: ${action || 'tam içerik paketi'}
 
-  const recognitionRef = useRef<any>(null);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const liveModeRef = useRef(false);
-  const loadingRef = useRef(false);
-
-  useEffect(() => {
-    liveModeRef.current = liveMode;
-  }, [liveMode]);
-
-  useEffect(() => {
-    loadingRef.current = isLoading;
-  }, [isLoading]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
-
-  useEffect(() => {
-    return () => {
-      stopListening();
-      stopSpeaking();
-    };
-  }, []);
-
-  function stopSpeaking() {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+Şu formatta cevap ver:
+1) Video Konu Başlıkları: 5 fikir
+2) İlk 3 Saniye Hook: 5 seçenek
+3) Teleprompter Metni: 45-60 saniyelik, konuşur gibi
+4) Ekran Yazıları
+5) CTA
+6) Çekim Notu
+`;
   }
 
-  function speak(text: string, afterEnd?: () => void) {
-    if (muted) {
-      afterEnd?.();
-      return;
-    }
+  if (mode === 'lesson') {
+    return `
+Sen Lyra'sın. Öğretmen gibi ama çok anlaşılır anlat.
+Konu/Soru: ${input}
+İstenen aksiyon: ${action || 'ders anlatımı'}
 
-    if (typeof window === "undefined") {
-      afterEnd?.();
-      return;
-    }
-
-    if (!("speechSynthesis" in window)) {
-      afterEnd?.();
-      return;
-    }
-
-    stopSpeaking();
-
-    const cleanText = text
-      .replace(/[*_`#>]/g, "")
-      .replace(/\n+/g, ". ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    if (!cleanText) {
-      afterEnd?.();
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-
-    utterance.lang = "tr-TR";
-    utterance.rate = 1.02;
-    utterance.pitch = 1.08;
-    utterance.volume = 1;
-
-    const voices = window.speechSynthesis.getVoices();
-
-    const trVoice =
-      voices.find((v) => v.lang?.toLowerCase() === "tr-tr") ||
-      voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
-      voices.find((v) => v.name?.toLowerCase().includes("turkish")) ||
-      voices[0];
-
-    if (trVoice) utterance.voice = trVoice;
-
-    utterance.onstart = () => {
-      setStatus("Lyra konuşuyor...");
-    };
-
-    utterance.onend = () => {
-      setStatus(liveModeRef.current ? "Tekrar dinliyorum..." : "Hazır");
-      afterEnd?.();
-    };
-
-    utterance.onerror = () => {
-      setStatus("Hazır");
-      afterEnd?.();
-    };
-
-    window.speechSynthesis.speak(utterance);
+Şu formatta cevap ver:
+1) Konu Özeti
+2) Bilmen Gereken Formüller / Kurallar
+3) Sınav İpuçları
+4) Çözümlü Örnek Sorular
+5) Şıklı Mini Test
+6) Yanlış Yapılırsa Nasıl Düşünülmeli?
+`;
   }
 
-  function stopListening() {
+  if (mode === 'research') {
+    return `
+Sen Lyra'sın. Konuyu sade, net ve düzenli anlat.
+Konu: ${input}
+Format:
+1) Kısa cevap
+2) Detaylı açıklama
+3) Önemli maddeler
+4) Dikkat edilmesi gerekenler
+5) Sonuç
+`;
+  }
+
+  if (mode === 'image') {
+    return `
+Sen Lyra'sın. Görsel üretim promptu hazırlıyorsun.
+İstek: ${input}
+Format:
+1) Kısa konsept
+2) Detaylı prompt
+3) Renk paleti
+4) Kadraj
+5) Stil alternatifleri
+`;
+  }
+
+  if (mode === 'read') {
+    return `
+Sen Lyra'sın. Görsel okuma/analiz modundasın.
+Kullanıcı isteği: ${input}
+Görsel yüklendiyse analiz et; yüklenmediyse ne yüklemesi gerektiğini söyle.
+`;
+  }
+
+  if (mode === 'pdf') {
+    return `
+Sen Lyra'sın. PDF özetleme modundasın.
+Kullanıcı isteği: ${input}
+PDF yüklendiyse özetle; yüklenmediyse PDF yüklemesini iste.
+`;
+  }
+
+  return `
+Sen Lyra'sın. Türkçe, doğal, sıcak ve hızlı cevap veren bir AI asistansın.
+Kullanıcı mesajı: ${input}
+Kısa başla, gerekirse detaylandır.
+`;
+}
+
+async function postJsonFast(endpoints: string[], body: Record<string, unknown>) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 22000);
+
+  for (const endpoint of endpoints) {
     try {
-      recognitionRef.current?.stop?.();
-    } catch {}
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-    recognitionRef.current = null;
-    setIsListening(false);
+      if (!res.ok) continue;
 
-    if (!liveModeRef.current) {
-      setStatus("Hazır");
+      const data = await res.json().catch(() => null);
+
+      const text =
+        data?.answer ||
+        data?.reply ||
+        data?.message ||
+        data?.text ||
+        data?.content ||
+        data?.result ||
+        data?.response ||
+        data?.output;
+
+      if (typeof text === 'string' && text.trim()) {
+        clearTimeout(timeout);
+        return text.trim();
+      }
+    } catch {
+      continue;
     }
   }
 
-  function startListening(mode: ListenMode) {
-    if (typeof window === "undefined") return;
+  clearTimeout(timeout);
+  return null;
+}
 
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+async function postFileFast(endpoints: string[], file: File, extra: Record<string, string>) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 26000);
 
-    if (!SpeechRecognition) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: makeId(),
-          role: "assistant",
-          content:
-            "Kanka bu tarayıcı ses algılamayı desteklemiyor olabilir. Chrome’da denersen daha sağlıklı çalışır.",
-        },
-      ]);
-      return;
+  for (const endpoint of endpoints) {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      Object.entries(extra).forEach(([key, value]) => form.append(key, value));
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json().catch(() => null);
+
+      const text =
+        data?.summary ||
+        data?.answer ||
+        data?.reply ||
+        data?.message ||
+        data?.text ||
+        data?.content ||
+        data?.result ||
+        data?.response;
+
+      if (typeof text === 'string' && text.trim()) {
+        clearTimeout(timeout);
+        return text.trim();
+      }
+    } catch {
+      continue;
     }
+  }
 
-    stopSpeaking();
-    stopListening();
+  clearTimeout(timeout);
+  return null;
+}
 
-    const recognition = new SpeechRecognition();
+function AvatarVideo({
+  className,
+  imageClassName,
+}: {
+  className: string;
+  imageClassName: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
 
-    recognition.lang = "tr-TR";
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
 
-    recognitionRef.current = recognition;
-
-    let finalTranscript = "";
-
-    recognition.onstart = () => {
-      setIsListening(true);
-
-      if (mode === "live") setStatus("Canlı mod dinliyor...");
-      else if (mode === "write") setStatus("Sesini yazıya çeviriyorum...");
-      else setStatus("Dinliyorum...");
-    };
-
-    recognition.onresult = (event: any) => {
-      let interim = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0]?.transcript || "";
-
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        } else {
-          interim += transcript;
+    const loopBeforeBlackFrame = () => {
+      if (video && Number.isFinite(video.duration) && video.duration > 0) {
+        if (video.currentTime >= video.duration - 0.3) {
+          video.currentTime = 0.04;
+          video.play().catch(() => {});
         }
       }
 
-      const visible = (finalTranscript || interim).trim();
+      rafRef.current = requestAnimationFrame(loopBeforeBlackFrame);
+    };
 
-      if (mode === "write" || mode === "live") {
-        setInput(visible);
+    rafRef.current = requestAnimationFrame(loopBeforeBlackFrame);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  return (
+    <div className="avatar-media-root">
+      <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
+      <video
+        ref={videoRef}
+        className={className}
+        src={AVATAR_VIDEO}
+        poster={AVATAR_IMAGE}
+        autoPlay
+        muted
+        playsInline
+        preload="auto"
+        onLoadedData={(event) => {
+          setVideoReady(true);
+          event.currentTarget.currentTime = 0.04;
+          event.currentTarget.play().catch(() => {});
+        }}
+        onEnded={(event) => {
+          event.currentTarget.currentTime = 0.04;
+          event.currentTarget.play().catch(() => {});
+        }}
+        onError={(event) => {
+          event.currentTarget.style.display = 'none';
+        }}
+      />
+      {!videoReady && <div className="video-loading">LYRA</div>}
+    </div>
+  );
+}
+
+export default function Page() {
+  const [activeMode, setActiveMode] = useState<ModeKey>('content');
+  const [muted, setMuted] = useState(false);
+  const [gender, setGender] = useState<'Kadın' | 'Erkek'>('Kadın');
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [voiceIndex, setVoiceIndex] = useState(0);
+  const [message, setMessage] = useState('');
+  const [isThinking, setIsThinking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [liveContinuous, setLiveContinuous] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 1,
+      role: 'assistant',
+      text: 'Merhaba, ben Lyra. Konu yaz; içerik, ders, araştırma, PDF veya görsel alanında hemen çalışayım.',
+    },
+  ]);
+
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const shouldRestartRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const messageIdRef = useRef(2);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const voice = voices[voiceIndex];
+  const active = useMemo(() => modes.find((item) => item.key === activeMode), [activeMode]);
+  const placeholderText = active?.starter || 'Lyra’ya bir şey sor veya yaz...';
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isThinking]);
+
+  const addMessage = (role: Role, text: string) => {
+    const id = messageIdRef.current++;
+    setMessages((prev) => [...prev, { id, role, text }].slice(-18));
+  };
+
+  const stopListening = () => {
+    shouldRestartRef.current = false;
+    recognitionRef.current?.stop?.();
+    recognitionRef.current = null;
+    setIsListening(false);
+    setLiveContinuous(false);
+  };
+
+  const speak = async (text: string) => {
+    if (muted || typeof window === 'undefined') return;
+
+    const cleanText = text
+      .replace(/\*\*/g, '')
+      .replace(/[#>`]/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .slice(0, 3600);
+
+    try {
+      isSpeakingRef.current = true;
+
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText,
+          voice: voice.voiceName,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Gemini TTS çalışmadı');
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        isSpeakingRef.current = false;
+
+        if (liveOpen && shouldRestartRef.current) {
+          setTimeout(() => startListening(true), 180);
+        }
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        isSpeakingRef.current = false;
+
+        if (liveOpen && shouldRestartRef.current) {
+          setTimeout(() => startListening(true), 180);
+        }
+      };
+
+      await audio.play();
+    } catch {
+      isSpeakingRef.current = false;
+
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+
+        const fallback = new SpeechSynthesisUtterance(cleanText);
+        fallback.lang = 'tr-TR';
+        fallback.rate = 1.04;
+        fallback.pitch = 1.05;
+
+        fallback.onend = () => {
+          if (liveOpen && shouldRestartRef.current) {
+            setTimeout(() => startListening(true), 220);
+          }
+        };
+
+        window.speechSynthesis.speak(fallback);
+      } else if (liveOpen && shouldRestartRef.current) {
+        setTimeout(() => startListening(true), 220);
+      }
+    }
+  };
+
+  const fallbackAnswer = (input: string, mode: ModeKey, action?: string) => {
+    if (mode === 'content') {
+      return `Video Konu Başlıkları:
+1. ${input} hakkında herkesin yanlış bildiği şey
+2. ${input} için 3 adımlı mini rehber
+3. ${input} kullanırken yapılan hata
+4. ${input} gerçek mi abartı mı?
+5. ${input} için 45 saniyelik pratik anlatım
+
+Hook:
+“Bunu yapıyorsan sonucu fark etmeden bozuyor olabilirsin.”
+
+Teleprompter Metni:
+“Bugün sana ${input} konusunu çok basit anlatacağım. Çünkü çoğu kişi burada yanlış noktaya odaklanıyor. Aslında işin özü çok daha net. Önce problemi anlayacağız, sonra doğru adımı seçeceğiz ve sonunda bunu nasıl uygulayacağını konuşacağız.”
+
+CTA:
+“Kaydet, sonra birlikte tekrar bakalım.”`;
+    }
+
+    if (mode === 'lesson') {
+      return `Konu Özeti:
+${input} konusunu temel mantık + örnek + tekrar şeklinde çalışmalısın.
+
+Formüller / Kurallar:
+- Ana formül
+- Gerekli kural
+- Uygulama sırası
+- Birim kontrolü
+
+Sınav İpuçları:
+- Sorunun istediğini bul
+- Verilenleri ayır
+- Hızlı çözüm yolunu seç
+- Sonucu kontrol et
+
+Çözümlü Soru:
+Örnek soru + çözüm mantığı.
+
+Mini Test:
+1) Bu konuda ilk yapılacak şey nedir?
+A) Verilenleri ayırmak
+B) Şıkları ezberlemek
+C) Rastgele işlem yapmak
+D) Sonucu tahmin etmek
+Cevap: A`;
+    }
+
+    if (mode === 'research') {
+      return `${input} için hızlı araştırma özeti:
+- Ana fikir
+- Alt başlıklar
+- Önemli noktalar
+- Kısa sonuç`;
+    }
+
+    return `“${input}” için ${active?.title || 'Lyra'} modunda çalışmaya hazırım.`;
+  };
+
+  const sendMessage = async (input?: string, action?: string) => {
+    const raw = (input ?? message).trim();
+    if (!raw || isThinking) return;
+
+    setMessage('');
+    addMessage('user', raw);
+    setIsThinking(true);
+
+    const prompt = buildPrompt(activeMode, raw, action);
+
+    const aiText =
+      (await postJsonFast(GEMINI_ENDPOINTS, {
+        message: prompt,
+        rawMessage: raw,
+        mode: activeMode,
+        action: action || null,
+        voice: voice.label,
+        gender,
+        live: liveOpen,
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        realtime: true,
+      })) || fallbackAnswer(raw, activeMode, action);
+
+    setIsThinking(false);
+    addMessage('assistant', aiText);
+    await speak(aiText);
+  };
+
+  const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const cycleVoice = () => {
+    setVoiceIndex((prev) => (prev + 1) % voices.length);
+  };
+
+  const openMode = (key: ModeKey) => {
+    setActiveMode(key);
+
+    if (key === 'live') {
+      setLiveOpen(true);
+      return;
+    }
+
+    if (key === 'pdf') {
+      setTimeout(() => pdfInputRef.current?.click(), 120);
+      return;
+    }
+
+    if (key === 'read') {
+      setTimeout(() => imageInputRef.current?.click(), 120);
+    }
+  };
+
+  const startListening = (continuous = false) => {
+    if (typeof window === 'undefined') return;
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      addMessage('assistant', 'Bu tarayıcı mikrofonla konuşmayı desteklemiyor. Chrome veya Safari dene.');
+      return;
+    }
+
+    if (isSpeakingRef.current) return;
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'tr-TR';
+    recognition.continuous = continuous;
+    recognition.interimResults = true;
+
+    shouldRestartRef.current = continuous;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setLiveContinuous(continuous);
+    };
+
+    recognition.onresult = (event: any) => {
+      let finalTranscript = '';
+      let interimTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalTranscript += transcript;
+        else interimTranscript += transcript;
+      }
+
+      setMessage(finalTranscript || interimTranscript);
+
+      if (finalTranscript.trim()) {
+        recognition.stop();
+        sendMessage(finalTranscript.trim());
       }
     };
 
     recognition.onerror = () => {
       setIsListening(false);
-      setStatus("Ses algılama hatası");
+      setLiveContinuous(false);
 
-      if (mode === "live" && liveModeRef.current) {
-        setTimeout(() => startListening("live"), 700);
+      if (continuous && shouldRestartRef.current && !isSpeakingRef.current) {
+        setTimeout(() => startListening(true), 450);
       }
     };
 
     recognition.onend = () => {
       setIsListening(false);
 
-      const clean = finalTranscript.trim();
-
-      if (!clean) {
-        setStatus(liveModeRef.current ? "Tekrar dinliyorum..." : "Hazır");
-
-        if (mode === "live" && liveModeRef.current) {
-          setTimeout(() => startListening("live"), 650);
-        }
-
-        return;
-      }
-
-      if (mode === "write") {
-        setInput(clean);
-        setStatus("Hazır");
-        return;
-      }
-
-      if (mode === "send") {
-        sendMessage(clean, false);
-        return;
-      }
-
-      if (mode === "live") {
-        sendMessage(clean, true);
+      if (continuous && shouldRestartRef.current && !isSpeakingRef.current && !isThinking) {
+        setTimeout(() => startListening(true), 350);
+      } else {
+        setLiveContinuous(false);
       }
     };
 
-    try {
-      recognition.start();
-    } catch {
-      setIsListening(false);
-      setStatus("Ses başlatılamadı");
-    }
-  }
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
 
-  async function getReply(userText: string, history: ChatMessage[]) {
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: userText,
-          messages: history.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        }),
-      });
+  const handlePdfUpload = async (file?: File) => {
+    if (!file) return;
 
-      const data = await response.json().catch(() => null);
+    setActiveMode('pdf');
+    addMessage('user', `PDF yüklendi: ${file.name}`);
+    setIsThinking(true);
 
-      if (!response.ok) {
-        return (
-          data?.message ||
-          data?.error ||
-          "Kanka cevap motoruna bağlanırken takıldım. /api/chat tarafını kontrol edelim."
-        );
-      }
+    const result =
+      (await postFileFast(PDF_ENDPOINTS, file, { mode: 'pdf', provider: 'gemini' })) ||
+      `PDF yüklendi. PDF API bağlantısı bulunamadı ama dosya alındı: ${file.name}.`;
 
-      return (
-        data?.message ||
-        data?.reply ||
-        data?.answer ||
-        data?.content ||
-        "Kanka cevap geldi ama ekrana düzgün aktarılamadı."
-      );
-    } catch {
-      return "Kanka bağlantı tarafında takıldım. Tasarım sağlam; sorun büyük ihtimalle /api/chat route’unda.";
-    }
-  }
+    setIsThinking(false);
+    addMessage('assistant', result);
+    await speak(result);
+  };
 
-  async function sendMessage(forcedText?: string, fromLive = false) {
-    const text = (forcedText ?? input).trim();
+  const handleImageUpload = async (file?: File) => {
+    if (!file) return;
 
-    if (!text || loadingRef.current) return;
+    setActiveMode('read');
+    addMessage('user', `Görsel yüklendi: ${file.name}`);
+    setIsThinking(true);
 
-    setInput("");
-    setIsLoading(true);
-    setStatus("Lyra düşünüyor...");
+    const result =
+      (await postFileFast(IMAGE_ENDPOINTS, file, { mode: 'read', provider: 'gemini' })) ||
+      `Görsel yüklendi. Görsel analiz API bağlantısı bulunamadı ama dosya alındı: ${file.name}.`;
 
-    const userMessage: ChatMessage = {
-      id: makeId(),
-      role: "user",
-      content: text,
-    };
+    setIsThinking(false);
+    addMessage('assistant', result);
+    await speak(result);
+  };
 
-    const newHistory = [...messages, userMessage];
+  const quickAction = (action: string) => {
+    const text = message.trim();
 
-    setMessages(newHistory);
-
-    const reply = await getReply(text, newHistory);
-
-    const assistantMessage: ChatMessage = {
-      id: makeId(),
-      role: "assistant",
-      content: reply,
-    };
-
-    setMessages((prev) => [...prev, assistantMessage]);
-    setIsLoading(false);
-
-    speak(reply, () => {
-      if (fromLive && liveModeRef.current) {
-        setTimeout(() => startListening("live"), 450);
-      }
-    });
-  }
-
-  function toggleLiveMode() {
-    if (liveMode) {
-      setLiveMode(false);
-      liveModeRef.current = false;
-      stopListening();
-      stopSpeaking();
-      setStatus("Hazır");
+    if (!text) {
+      setMessage(action);
       return;
     }
 
-    setLiveMode(true);
-    liveModeRef.current = true;
-    startListening("live");
-  }
-
-  function handleTool(tool: string) {
-    if (tool === "Canlı Konuş") {
-      toggleLiveMode();
-      return;
-    }
-
-    if (tool === "Sesle Yaz") {
-      startListening("write");
-      return;
-    }
-
-    const prompts: Record<string, string> = {
-      "PDF Özet": "PDF özetleme alanını aç. PDF içeriğini kısa, net ve başlıklarla özetle.",
-      "İçerik Fikri":
-        "Bana keşfete düşebilecek 10 içerik fikri ver. Her biri için hook, kısa akış ve CTA yaz.",
-      Teleprompter:
-        "Bana 40 saniyelik teleprompter metni yaz. İlk 3 saniyesi güçlü hook olsun.",
-      "DGS Planı": "Bugün için gerçekçi 1 günlük DGS çalışma planı oluştur.",
-      Kozmetik:
-        "Kimyager gözüyle kozmetik içerik fikri üret. INCI mantığını sade anlat.",
-      "Foto Analiz":
-        "Fotoğraf analizi yaparken ışık, renk, kadraj ve stil açısından nelere bakmam gerektiğini anlat.",
-      Araştır:
-        "Bu konuyu araştırma modunda açıkla; sade, net ve güncel olacak şekilde toparla.",
-      Notlar:
-        "Bu konuşmadan kısa not çıkar ve yapılacaklar listesine çevir.",
-    };
-
-    sendMessage(prompts[tool] || tool);
-  }
-
-  function clearChat() {
-    stopListening();
-    stopSpeaking();
-    setMessages(starterMessages);
-    setInput("");
-    setLiveMode(false);
-    liveModeRef.current = false;
-    setStatus("Hazır");
-  }
+    sendMessage(text, action);
+  };
 
   return (
     <main className="page">
-      <div className="shell">
-        <header className="top">
-          <div className="brand">
-            <div className="mini-avatar">
-              <span>L</span>
-            </div>
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept="application/pdf"
+        hidden
+        onChange={(event) => handlePdfUpload(event.target.files?.[0])}
+      />
 
-            <div>
-              <h1>Lyra Clean 2026</h1>
-              <p>Beyaz-gümüş avatarlı ana sohbet ekranı</p>
-            </div>
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => handleImageUpload(event.target.files?.[0])}
+      />
+
+      <section className="app-layout">
+        <aside className="sidebar glass">
+          <div className="logo-row">
+            <strong>LYRA</strong>
           </div>
 
-          <div className="status-pill">
-            <span className={isListening ? "status-dot listening" : "status-dot"} />
-            {status}
-          </div>
-        </header>
+          <nav className="menu">
+            <button className="menu-item active" onClick={() => setMessages([])}>
+              <span>＋</span> Yeni Sohbet
+            </button>
+            <button className="menu-item">
+              <span>▢</span> Sohbetler
+            </button>
+            <button className="menu-item" onClick={() => setActiveMode('content')}>
+              <span>⌘</span> Modlar
+            </button>
+            <button className="menu-item">
+              <span>▤</span> Araçlar
+            </button>
+            <button className="menu-item">
+              <span>♢</span> Hatırlatıcılar
+            </button>
+            <button className="menu-item">
+              <span>⚙</span> Ayarlar
+            </button>
+          </nav>
 
-        <section className="hero">
-          <aside className="avatar-card">
-            <div
-              className={`avatar-frame ${isListening ? "listening" : ""} ${
-                liveMode ? "live" : ""
-              }`}
-            >
-              <video
-                className="avatar-video"
-                src="/avatar/lyra-avatar.mp4"
-                poster="/avatar/lyra-avatar.jpg"
-                autoPlay
-                loop
-                muted
-                playsInline
-              />
-
-              <div className="avatar-placeholder">
-                <div className="hair" />
-                <div className="face">
-                  <div className="eyes">
-                    <i />
-                    <i />
-                  </div>
-                  <div className="mouth" />
-                </div>
-              </div>
-
-              <div className="silver-ring" />
-              <div className="avatar-label">
-                {liveMode
-                  ? "Canlı Mod"
-                  : isListening
-                  ? "Dinliyorum"
-                  : status.includes("konuşuyor")
-                  ? "Konuşuyorum"
-                  : "Hazırım"}
-              </div>
-            </div>
-
-            <div className="avatar-info">
-              <h2>Lyra</h2>
-              <p>Sesli, yazılı ve canlı sohbet asistanın.</p>
-            </div>
-
-            <div className="avatar-buttons">
-              <button
-                className={liveMode ? "primary active" : "primary"}
-                onClick={toggleLiveMode}
-              >
-                {liveMode ? "Canlı Açık" : "Canlı Konuş"}
-              </button>
-
-              <button onClick={() => startListening("write")}>
-                {isListening ? "Dinliyor" : "Sesle Yaz"}
-              </button>
-
-              <button
-                onClick={() => {
-                  setMuted((prev) => !prev);
-                  if (!muted) stopSpeaking();
-                }}
-              >
-                {muted ? "Sessiz" : "Ses Açık"}
-              </button>
-            </div>
-          </aside>
-
-          <section className="chat-card">
-            <div className="chat-top">
+          <div className="side-bottom">
+            <div className="mini-box">
               <div>
-                <h2>Mesajlaşma Alanı</h2>
-                <p>Geniş sohbet ekranı burada. Yaz, sesle yaz veya canlı konuş.</p>
+                <strong>LYRA PRO</strong>
+                <small>AI Asistan</small>
               </div>
-
-              <button onClick={clearChat}>Temizle</button>
             </div>
 
-            <div className="messages">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`message-row ${
-                    message.role === "user" ? "user-row" : "assistant-row"
-                  }`}
-                >
-                  <div
-                    className={`bubble ${
-                      message.role === "user" ? "user" : "assistant"
-                    }`}
-                  >
-                    <strong>{message.role === "user" ? "Sen" : "Lyra"}</strong>
-                    <p>{message.content}</p>
-                  </div>
-                </div>
-              ))}
-
-              {isLoading && (
-                <div className="message-row assistant-row">
-                  <div className="bubble assistant typing">
-                    <strong>Lyra</strong>
-                    <p>Düşünüyorum kanka...</p>
-                  </div>
-                </div>
-              )}
-
-              <div ref={chatEndRef} />
+            <div className="profile-box">
+              <div className="profile-dot">M</div>
+              <div>
+                <strong>Merve</strong>
+                <small>Pro Üye</small>
+              </div>
+              <span>⌄</span>
             </div>
 
-            <div className="composer">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  isListening
-                    ? "Konuşuyorsun, buraya yazıyorum..."
-                    : "Lyra’ya yaz..."
+            <div className="usage-box">
+              <div>
+                <strong>Aylık Kullanım</strong>
+                <b>%68</b>
+              </div>
+              <span className="usage-line">
+                <i />
+              </span>
+              <small>6.8 / 10 saat</small>
+            </div>
+          </div>
+        </aside>
+
+        <section className="main-panel glass">
+          <header className="main-head">
+            <h1>LYRA AI ASİSTANINIZ</h1>
+
+            <div className="head-actions">
+              <button
+                onClick={() =>
+                  addMessage(
+                    'assistant',
+                    'Ben Lyra. Gemini destekli konuşma, içerik, ders, PDF ve görsel analiz modlarıyla çalışırım.'
+                  )
                 }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                  }
-                }}
-              />
+              >
+                Lyra Hakkında
+              </button>
+              <button onClick={cycleVoice}>⌄</button>
+            </div>
+          </header>
+
+          <section className="top-zone">
+            <div className="avatar-block">
+              <div className="silver-orbit orbit-one" />
+              <div className="silver-orbit orbit-two" />
+
+              <div className="avatar-video-wrap">
+                <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
+              </div>
+            </div>
+
+            <div className="controls">
+              <button className="control" onClick={cycleVoice}>
+                <span className="sound">≋</span>
+                Ses: {voice.label}
+                <b>⌄</b>
+              </button>
 
               <button
-                onClick={() => sendMessage()}
-                disabled={!input.trim() || isLoading}
+                className={`control ${muted ? 'selected' : ''}`}
+                onClick={() => setMuted((value) => !value)}
               >
-                Gönder
+                <span>♬</span>
+                {muted ? 'Sesi Aç' : 'Sessize Al'}
+              </button>
+
+              <button
+                className={`control ${gender === 'Kadın' ? 'selected' : ''}`}
+                onClick={() => setGender('Kadın')}
+              >
+                <span>♙</span>
+                Kadın
+              </button>
+
+              <button
+                className={`control ${gender === 'Erkek' ? 'selected' : ''}`}
+                onClick={() => setGender('Erkek')}
+              >
+                <span>♙</span>
+                Erkek
+              </button>
+
+              <button className="control live" onClick={() => setLiveOpen(true)}>
+                <span className="sound">≋</span>
+                Canlı Konuşma
               </button>
             </div>
           </section>
+
+          <section className="write-box">
+            <div className="message-list">
+              {messages.map((item) => (
+                <div key={item.id} className={`message ${item.role}`}>
+                  {item.text}
+                </div>
+              ))}
+              {isThinking && <div className="message assistant">Lyra cevaplıyor...</div>}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <textarea
+              placeholder={placeholderText}
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={handleTextareaKeyDown}
+            />
+
+            <div className="write-actions">
+              <div>
+                <button onClick={() => startListening(false)}>{isListening ? '■' : '🎙'}</button>
+                <button onClick={() => imageInputRef.current?.click()}>▧</button>
+                <button onClick={() => pdfInputRef.current?.click()}>PDF</button>
+              </div>
+
+              <button className="send" onClick={() => sendMessage()}>
+                ▶
+              </button>
+            </div>
+          </section>
+
+          <section className="mode-grid">
+            {modes.map((mode) => (
+              <button
+                key={mode.key}
+                className={`mode-card ${activeMode === mode.key ? 'active' : ''}`}
+                onClick={() => openMode(mode.key)}
+              >
+                <span className="mode-icon">{mode.icon}</span>
+                <strong>{mode.title}</strong>
+                <small>{mode.desc}</small>
+                <b>⌄</b>
+              </button>
+            ))}
+          </section>
+
+          <section className="sub-panel">
+            {activeMode === 'content' && (
+              <>
+                <strong>İçerik Üretme</strong>
+                <div>
+                  <button onClick={() => quickAction('Video konu başlıkları üret')}>
+                    Video Konu Başlıkları
+                  </button>
+                  <button onClick={() => quickAction('Hook yaz')}>Hook Alanı</button>
+                  <button onClick={() => quickAction('Teleprompter video metni yaz')}>
+                    Teleprompter Metni
+                  </button>
+                  <button onClick={() => quickAction('Ekran yazıları ve CTA üret')}>
+                    Ekran Yazısı + CTA
+                  </button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'lesson' && (
+              <>
+                <strong>Ders Modu</strong>
+                <div>
+                  <button onClick={() => quickAction('Konu özeti çıkar')}>Konu Özeti</button>
+                  <button onClick={() => quickAction('Konu formülleri ve kuralları çıkar')}>
+                    Konu Formülleri
+                  </button>
+                  <button onClick={() => quickAction('Sınav ipuçları ver')}>
+                    Sınav İpuçları
+                  </button>
+                  <button onClick={() => quickAction('Çözümlü sorular üret')}>
+                    Çözümlü Sorular
+                  </button>
+                  <button onClick={() => quickAction('Şıklı test üret')}>Test Üret</button>
+                  <button onClick={() => quickAction('Yanlışımı açıkla')}>
+                    Yanlışımı Açıkla
+                  </button>
+                  <button onClick={() => imageInputRef.current?.click()}>
+                    Soru Görseli Yükle
+                  </button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'research' && (
+              <>
+                <strong>Araştırma Modu</strong>
+                <div>
+                  <button onClick={() => quickAction('Derin araştırma yap')}>Derin Araştır</button>
+                  <button onClick={() => quickAction('Kaynaklı özet çıkar')}>Kaynaklı Özet</button>
+                  <button onClick={() => quickAction('Karşılaştırmalı analiz yap')}>
+                    Karşılaştır
+                  </button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'image' && (
+              <>
+                <strong>Görsel Üretme</strong>
+                <div>
+                  <button onClick={() => quickAction('Görsel promptu yaz')}>Prompt Yaz</button>
+                  <button onClick={() => quickAction('Konsept tasarla')}>Konsept Tasarla</button>
+                  <button onClick={() => quickAction('Renk paleti oluştur')}>Renk Paleti</button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'read' && (
+              <>
+                <strong>Görselle Okut</strong>
+                <div>
+                  <button onClick={() => imageInputRef.current?.click()}>Görsel Yükle</button>
+                  <button onClick={() => quickAction('Görseldeki yazıyı oku')}>Yazıyı Oku</button>
+                  <button onClick={() => quickAction('Görseli analiz et')}>Analiz Et</button>
+                </div>
+              </>
+            )}
+
+            {activeMode === 'pdf' && (
+              <>
+                <strong>PDF Özeti</strong>
+                <div>
+                  <button onClick={() => pdfInputRef.current?.click()}>PDF Yükle</button>
+                  <button onClick={() => quickAction('PDF ana başlıkları çıkar')}>
+                    Başlık Çıkar
+                  </button>
+                  <button onClick={() => quickAction('PDF çalışma notu hazırla')}>
+                    Not Hazırla
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
         </section>
 
-        <nav className="bottom-bar">
-          {tools.map((tool) => (
+        <aside className="phone-shell">
+          <div className="phone">
+            <div className="phone-status">
+              <strong>9:41</strong>
+              <span />
+              <b>▮▮▮</b>
+            </div>
+
+            <div className="phone-head">
+              <button onClick={() => startListening(false)}>☰</button>
+              <strong>LYRA</strong>
+              <button onClick={cycleVoice}>⌄</button>
+            </div>
+
+            <div className="phone-hero">
+              <div className="phone-avatar-video-wrap">
+                <AvatarVideo className="phone-avatar-video" imageClassName="phone-avatar-poster" />
+              </div>
+            </div>
+
+            <div className="phone-controls">
+              <button onClick={cycleVoice}>≋ Ses: {voice.label}</button>
+              <button onClick={() => setMuted((value) => !value)}>
+                {muted ? 'Sesi Aç' : 'Sessize Al'}
+              </button>
+              <button
+                className={gender === 'Kadın' ? 'selected' : ''}
+                onClick={() => setGender('Kadın')}
+              >
+                Kadın
+              </button>
+              <button
+                className={gender === 'Erkek' ? 'selected' : ''}
+                onClick={() => setGender('Erkek')}
+              >
+                Erkek
+              </button>
+              <button className="phone-live" onClick={() => setLiveOpen(true)}>
+                ≋ Canlı Konuşma ›
+              </button>
+            </div>
+
+            <div className="phone-input" onClick={() => sendMessage(message || 'Merhaba Lyra')}>
+              <span>{message || 'Lyra’ya bir şey sor veya yaz...'}</span>
+              <button>▶</button>
+            </div>
+
+            <div className="phone-grid">
+              {modes.map((mode) => (
+                <button key={mode.key} onClick={() => openMode(mode.key)}>
+                  <span>{mode.icon}</span>
+                  <strong>{mode.title}</strong>
+                  <small>⌄</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      {liveOpen && (
+        <section className="modal">
+          <div className="live-panel glass">
             <button
-              key={tool}
-              onClick={() => handleTool(tool)}
-              className={
-                tool === "Canlı Konuş" && liveMode
-                  ? "tool active"
-                  : tool === "Sesle Yaz" && isListening
-                  ? "tool active"
-                  : "tool"
-              }
+              className="close"
+              onClick={() => {
+                setLiveOpen(false);
+                stopListening();
+              }}
             >
-              {tool === "Canlı Konuş" && liveMode ? "Canlı Açık" : tool}
+              ×
             </button>
-          ))}
-        </nav>
-      </div>
+
+            <div className="live-avatar-video-wrap">
+              <AvatarVideo className="live-avatar-video" imageClassName="live-avatar-poster" />
+            </div>
+
+            <h2>Canlı Konuşma</h2>
+            <p>
+              Ses: <strong>{voice.label}</strong> · {muted ? 'Sessiz mod açık' : 'Ses açık'} ·{' '}
+              {liveContinuous ? 'Gemini Live dinliyor' : 'Hazır'}
+            </p>
+
+            <div className="live-buttons">
+              <button onClick={() => startListening(true)}>🎙 Gemini Live Başlat</button>
+              <button onClick={stopListening}>■ Durdur</button>
+              <button onClick={cycleVoice}>≋ Ses Değiştir</button>
+              <button onClick={() => setMuted((value) => !value)}>
+                {muted ? 'Sesi Aç' : 'Sessize Al'}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <style jsx global>{`
+        :root {
+          --white: #ffffff;
+          --silver-1: #f8f9fa;
+          --silver-2: #eef1f3;
+          --silver-3: #dfe3e7;
+          --silver-4: #c5cbd1;
+          --graphite: #111417;
+          --graphite-soft: #30363b;
+          --muted: #555d64;
+          --line: rgba(20, 24, 28, 0.13);
+          --line-strong: rgba(20, 24, 28, 0.22);
+          --shadow: 0 20px 70px rgba(18, 22, 26, 0.12);
+          --shadow-soft: 0 12px 30px rgba(18, 22, 26, 0.08);
+          --glass: linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.95),
+            rgba(235, 238, 241, 0.8),
+            rgba(255, 255, 255, 0.9)
+          );
+        }
+
         * {
           box-sizing: border-box;
         }
@@ -588,705 +1111,928 @@ export default function Page() {
         html,
         body {
           margin: 0;
-          padding: 0;
           min-height: 100%;
-          background: #f6f7fb;
+          font-family:
+            Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+            'Segoe UI', sans-serif;
+          color: var(--graphite);
+          background:
+            radial-gradient(circle at 48% 22%, rgba(255, 255, 255, 1), transparent 32%),
+            linear-gradient(135deg, #ffffff 0%, #f5f7f8 44%, #e6eaee 100%);
         }
 
         button,
         textarea {
-          font-family: inherit;
+          font: inherit;
+        }
+
+        button {
+          cursor: pointer;
+          border: 0;
         }
 
         .page {
-          width: 100vw;
-          height: 100dvh;
+          position: relative;
+          min-height: 100vh;
           overflow: hidden;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-          color: #26222f;
+          padding: 10px;
+        }
+
+        .page::before,
+        .page::after {
+          content: '';
+          position: absolute;
+          inset: -12%;
+          pointer-events: none;
           background:
-            radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 1), transparent 24%),
-            radial-gradient(circle at 24% 10%, rgba(226, 232, 255, 0.9), transparent 31%),
-            radial-gradient(circle at 88% 12%, rgba(255, 231, 246, 0.95), transparent 34%),
-            radial-gradient(circle at 50% 110%, rgba(229, 255, 248, 0.9), transparent 38%),
-            linear-gradient(135deg, #ffffff 0%, #f7f8fc 42%, #eef1f8 100%);
+            radial-gradient(
+              ellipse at 50% 40%,
+              transparent 0 28%,
+              rgba(255, 255, 255, 0.92) 29%,
+              transparent 30%
+            ),
+            radial-gradient(
+              ellipse at 48% 44%,
+              transparent 0 36%,
+              rgba(218, 224, 229, 0.48) 37%,
+              transparent 38%
+            );
+          opacity: 0.7;
         }
 
-        .shell {
+        .page::after {
+          transform: rotate(-15deg) scale(1.05);
+          opacity: 0.22;
+        }
+
+        .app-layout {
+          position: relative;
+          z-index: 2;
           width: 100%;
-          height: 100%;
-          padding: 16px;
+          max-width: 100%;
+          min-height: calc(100vh - 20px);
+          margin: 0 auto;
           display: grid;
-          grid-template-rows: auto minmax(0, 1fr) auto;
-          gap: 12px;
+          grid-template-columns: 220px minmax(700px, 1fr) 320px;
+          gap: 14px;
+          align-items: stretch;
         }
 
-        .top {
-          min-height: 76px;
-          border-radius: 30px;
-          padding: 13px 16px;
+        .glass {
+          background: var(--glass);
+          border: 1px solid var(--line);
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(22px);
+          -webkit-backdrop-filter: blur(22px);
+        }
+
+        .sidebar {
+          min-height: calc(100vh - 20px);
+          border-radius: 28px;
+          padding: 18px 14px;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .logo-row {
           display: flex;
           align-items: center;
+          gap: 10px;
+          padding: 2px 12px 18px;
+          font-size: 28px;
+          letter-spacing: 0.08em;
+        }
+
+        .logo-row strong {
+          font-weight: 950;
+        }
+
+        .menu {
+          display: grid;
+          gap: 10px;
+        }
+
+        .menu-item,
+        .mini-box,
+        .profile-box,
+        .usage-box,
+        .control,
+        .write-box,
+        .mode-card,
+        .phone-controls button,
+        .phone-input,
+        .phone-grid button,
+        .head-actions button {
+          color: var(--graphite);
+          background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 242, 244, 0.9));
+          border: 1px solid rgba(25, 29, 33, 0.1);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 8px 20px rgba(18, 22, 26, 0.07);
+        }
+
+        .menu-item {
+          min-height: 46px;
+          border-radius: 18px;
+          padding: 0 16px;
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          text-align: left;
+          font-weight: 900;
+          transition: 0.2s ease;
+        }
+
+        .menu-item.active,
+        .menu-item:hover {
+          border-color: var(--line-strong);
+          transform: translateY(-1px);
+        }
+
+        .menu-item span {
+          font-size: 18px;
+          font-weight: 950;
+        }
+
+        .side-bottom {
+          margin-top: auto;
+          display: grid;
+          gap: 10px;
+        }
+
+        .mini-box,
+        .profile-box,
+        .usage-box {
+          border-radius: 18px;
+          padding: 16px;
+        }
+
+        .mini-box strong,
+        .profile-box strong,
+        .usage-box strong {
+          display: block;
+          font-weight: 950;
+        }
+
+        .mini-box small,
+        .profile-box small,
+        .usage-box small {
+          display: block;
+          margin-top: 3px;
+          color: var(--muted);
+          font-weight: 750;
+        }
+
+        .profile-box {
+          display: grid;
+          grid-template-columns: 42px 1fr auto;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .profile-dot {
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          background:
+            radial-gradient(circle at 30% 22%, #ffffff, transparent 28%),
+            linear-gradient(145deg, #202428, #7e858b);
+          color: #ffffff;
+          font-weight: 950;
+        }
+
+        .usage-box > div {
+          display: flex;
           justify-content: space-between;
           gap: 12px;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(255, 255, 255, 0.96);
-          box-shadow:
-            0 24px 70px rgba(115, 112, 140, 0.13),
-            inset 0 1px 0 rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(24px);
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          min-width: 0;
-        }
-
-        .mini-avatar {
-          width: 52px;
-          height: 52px;
-          border-radius: 20px;
-          display: grid;
-          place-items: center;
-          background:
-            linear-gradient(135deg, #fefefe, #dfe5f4 38%, #ffffff 68%, #d2d6df);
-          box-shadow:
-            0 14px 34px rgba(113, 112, 138, 0.2),
-            inset 0 1px 0 rgba(255, 255, 255, 1);
-          border: 1px solid rgba(255, 255, 255, 0.9);
-        }
-
-        .mini-avatar span {
-          width: 38px;
-          height: 38px;
-          border-radius: 15px;
-          display: grid;
-          place-items: center;
-          font-weight: 950;
-          color: #fff;
-          background: linear-gradient(135deg, #b7bfd4, #f1d7e7);
-        }
-
-        h1,
-        h2,
-        p {
-          margin: 0;
-        }
-
-        h1 {
-          font-size: clamp(24px, 2.3vw, 34px);
-          letter-spacing: -0.055em;
-          color: #282431;
-        }
-
-        .brand p {
-          margin-top: 3px;
-          font-size: 13px;
-          color: #817b8b;
-          font-weight: 650;
-        }
-
-        .status-pill {
-          height: 40px;
-          padding: 0 14px;
-          border-radius: 999px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          white-space: nowrap;
-          font-size: 13px;
           font-weight: 900;
-          color: #6a6475;
-          background: rgba(255, 255, 255, 0.7);
-          border: 1px solid rgba(230, 231, 239, 0.95);
-          box-shadow: 0 12px 28px rgba(115, 112, 140, 0.08);
         }
 
-        .status-dot {
-          width: 9px;
-          height: 9px;
-          border-radius: 999px;
-          background: #a6e9cc;
-        }
-
-        .status-dot.listening {
-          background: #ff9dcc;
-          box-shadow: 0 0 0 7px rgba(255, 157, 204, 0.18);
-        }
-
-        .hero {
-          min-height: 0;
-          display: grid;
-          grid-template-columns: minmax(250px, 330px) minmax(0, 1fr);
-          gap: 12px;
-        }
-
-        .avatar-card,
-        .chat-card,
-        .bottom-bar {
-          background: rgba(255, 255, 255, 0.68);
-          border: 1px solid rgba(255, 255, 255, 0.96);
-          box-shadow:
-            0 28px 80px rgba(115, 112, 140, 0.14),
-            inset 0 1px 0 rgba(255, 255, 255, 0.98);
-          backdrop-filter: blur(26px);
-        }
-
-        .avatar-card {
-          min-height: 0;
-          border-radius: 34px;
-          padding: 16px;
-          display: grid;
-          grid-template-rows: minmax(0, 1fr) auto auto;
-          gap: 14px;
+        .usage-line {
+          display: block;
+          height: 7px;
+          margin: 12px 0 8px;
           overflow: hidden;
+          border-radius: 999px;
+          background: #d8dde1;
         }
 
-        .avatar-frame {
+        .usage-line i {
+          display: block;
+          width: 68%;
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #70777e, #c9ced2);
+        }
+
+        .main-panel {
+          position: relative;
+          min-height: calc(100vh - 20px);
+          border-radius: 28px;
+          padding: 14px 18px 16px;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .main-panel::before {
+          content: '';
+          position: absolute;
+          inset: -20%;
+          pointer-events: none;
+          background:
+            radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.95), transparent 20%),
+            radial-gradient(circle at 50% 30%, rgba(226, 231, 235, 0.52), transparent 36%);
+        }
+
+        .main-head,
+        .top-zone,
+        .write-box,
+        .mode-grid,
+        .sub-panel {
+          position: relative;
+          z-index: 1;
+        }
+
+        .main-head {
+          min-height: 44px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 4px;
+        }
+
+        .main-head h1 {
+          margin: 0;
+          font-size: clamp(20px, 2vw, 28px);
+          letter-spacing: 0.12em;
+          font-weight: 950;
+        }
+
+        .head-actions {
+          position: absolute;
+          right: 0;
+          display: flex;
+          gap: 10px;
+        }
+
+        .head-actions button {
+          min-height: 38px;
+          border-radius: 999px;
+          padding: 0 14px;
+          font-weight: 950;
+        }
+
+        .top-zone {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+
+        .avatar-block {
           position: relative;
           width: 100%;
-          min-height: 260px;
-          border-radius: 34px;
-          overflow: hidden;
+          height: 210px;
           display: grid;
           place-items: center;
-          background:
-            radial-gradient(circle at 28% 20%, rgba(255, 255, 255, 1), transparent 30%),
-            linear-gradient(145deg, #ffffff 0%, #eef1f8 48%, #fdfcff 100%);
-          border: 1px solid rgba(255, 255, 255, 0.92);
+          isolation: isolate;
+        }
+
+        .silver-orbit {
+          position: absolute;
+          border-radius: 50%;
+          border: 2px solid rgba(255, 255, 255, 0.92);
           box-shadow:
-            0 22px 60px rgba(126, 126, 150, 0.18),
-            inset 0 1px 0 rgba(255, 255, 255, 1);
+            0 0 24px rgba(255, 255, 255, 0.9),
+            inset 0 0 26px rgba(205, 211, 216, 0.48);
         }
 
-        .avatar-frame.listening {
-          animation: avatarPulse 1.35s ease-in-out infinite;
+        .orbit-one {
+          width: 220px;
+          height: 220px;
+          animation: orbit 9s ease-in-out infinite;
         }
 
-        .avatar-frame.live {
+        .orbit-two {
+          width: 290px;
+          height: 290px;
+          opacity: 0.42;
+          animation: orbit 12s ease-in-out infinite reverse;
+        }
+
+        .avatar-video-wrap {
+          position: relative;
+          z-index: 2;
+          width: 180px;
+          height: 210px;
+          border-radius: 24px;
+          overflow: hidden;
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
           box-shadow:
-            0 0 0 8px rgba(255, 157, 204, 0.12),
-            0 24px 70px rgba(126, 126, 150, 0.22);
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 16px 36px rgba(18, 22, 26, 0.12);
         }
 
-        @keyframes avatarPulse {
-          0%,
-          100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.018);
-          }
+        .avatar-media-root {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: grid;
+          place-items: center;
         }
 
-        .avatar-video {
+        .avatar-poster,
+        .avatar-video,
+        .phone-avatar-poster,
+        .phone-avatar-video,
+        .live-avatar-poster,
+        .live-avatar-video {
           position: absolute;
           inset: 0;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          z-index: 4;
+          object-fit: contain;
+          object-position: center center;
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
         }
 
-        .avatar-placeholder {
-          position: relative;
+        .avatar-video,
+        .phone-avatar-video,
+        .live-avatar-video {
           z-index: 2;
-          width: 170px;
-          height: 210px;
+        }
+
+        .avatar-poster,
+        .phone-avatar-poster,
+        .live-avatar-poster {
+          z-index: 1;
+        }
+
+        .video-loading {
+          position: absolute;
+          inset: 0;
+          z-index: 3;
           display: grid;
           place-items: center;
+          font-size: 24px;
+          letter-spacing: 0.16em;
+          font-weight: 950;
+          color: #2b2f34;
+          background: linear-gradient(145deg, #ffffff, #edf1f4);
         }
 
-        .hair {
-          position: absolute;
-          width: 145px;
-          height: 180px;
-          border-radius: 70px 70px 55px 55px;
-          background:
-            radial-gradient(circle at 34% 20%, rgba(255, 255, 255, 0.35), transparent 18%),
-            linear-gradient(145deg, #9a6d5f, #d49b83 48%, #805548);
-          box-shadow: 0 18px 46px rgba(129, 98, 124, 0.18);
+        .controls {
+          width: 100%;
+          display: grid;
+          grid-template-columns: repeat(5, minmax(100px, auto));
+          justify-content: center;
+          gap: 10px;
         }
 
-        .face {
-          position: relative;
-          width: 104px;
-          height: 124px;
-          margin-top: 18px;
-          border-radius: 48px 48px 44px 44px;
-          background: linear-gradient(145deg, #fff2e9, #f4c8b8);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        .control {
+          min-height: 52px;
+          border-radius: 20px;
+          padding: 0 18px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          font-size: 15px;
+          font-weight: 950;
+          transition: 0.2s ease;
         }
 
-        .eyes {
-          position: absolute;
-          top: 44px;
-          left: 23px;
-          right: 23px;
+        .control:hover,
+        .mode-card:hover,
+        .phone-grid button:hover {
+          transform: translateY(-2px);
+          border-color: var(--line-strong);
+        }
+
+        .control.selected {
+          background: linear-gradient(145deg, #ffffff, rgba(222, 226, 230, 0.94));
+          border-color: var(--line-strong);
+        }
+
+        .control.live {
+          min-width: 190px;
+        }
+
+        .sound {
+          font-size: 22px;
+          line-height: 1;
+        }
+
+        .write-box {
+          min-height: 400px;
+          height: 400px;
+          margin-top: 2px;
+          border-radius: 24px;
+          padding: 16px 18px 12px;
           display: flex;
+          flex-direction: column;
+        }
+
+        .message-list {
+          flex: 1;
+          min-height: 0;
+          overflow: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-bottom: 10px;
+          padding-right: 4px;
+        }
+
+        .message {
+          width: fit-content;
+          max-width: 92%;
+          padding: 11px 14px;
+          border-radius: 16px;
+          font-size: 14px;
+          line-height: 1.45;
+          font-weight: 800;
+          white-space: pre-wrap;
+        }
+
+        .message.user {
+          align-self: flex-end;
+          background: #111417;
+          color: white;
+        }
+
+        .message.assistant {
+          align-self: flex-start;
+          background: rgba(255, 255, 255, 0.88);
+          color: var(--graphite);
+          border: 1px solid var(--line);
+        }
+
+        .message.system {
+          align-self: center;
+          background: rgba(225, 230, 234, 0.7);
+          color: var(--graphite-soft);
+          border: 1px solid var(--line);
+        }
+
+        .write-box textarea {
+          width: 100%;
+          height: 68px;
+          min-height: 68px;
+          border: 0;
+          outline: 0;
+          resize: none;
+          background: transparent;
+          color: var(--graphite);
+          font-size: 17px;
+          font-weight: 850;
+        }
+
+        .write-box textarea::placeholder {
+          color: #394047;
+          opacity: 0.9;
+        }
+
+        .write-actions {
+          display: flex;
+          align-items: center;
           justify-content: space-between;
         }
 
-        .eyes i {
-          width: 9px;
-          height: 9px;
+        .write-actions div {
+          display: flex;
+          gap: 10px;
+        }
+
+        .write-actions button {
+          min-width: 38px;
+          height: 38px;
+          padding: 0 10px;
           border-radius: 999px;
-          background: #65473d;
-          display: block;
+          color: var(--graphite);
+          background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
+          border: 1px solid var(--line);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 7px 18px rgba(18, 22, 26, 0.1);
+          font-weight: 950;
         }
 
-        .mouth {
-          position: absolute;
-          left: 50%;
-          bottom: 30px;
-          width: 25px;
-          height: 9px;
-          border-radius: 0 0 18px 18px;
-          border-bottom: 3px solid #a76473;
-          transform: translateX(-50%);
+        .write-actions .send {
+          width: 46px;
+          height: 46px;
+          border-radius: 50%;
         }
 
-        .silver-ring {
-          position: absolute;
-          inset: 18px;
-          z-index: 3;
-          border-radius: 28px;
-          border: 1px solid rgba(255, 255, 255, 0.72);
-          pointer-events: none;
+        .mode-grid {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 10px;
+          margin-top: 12px;
         }
 
-        .avatar-label {
-          position: absolute;
-          left: 50%;
-          bottom: 14px;
-          z-index: 6;
-          transform: translateX(-50%);
-          min-width: 116px;
-          height: 35px;
-          border-radius: 999px;
+        .mode-card {
+          min-height: 130px;
+          border-radius: 20px;
+          padding: 14px 10px 10px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          transition: 0.2s ease;
+        }
+
+        .mode-card.active {
+          border-color: var(--line-strong);
+          outline: 2px solid rgba(18, 22, 26, 0.08);
+        }
+
+        .mode-icon {
+          height: 32px;
           display: grid;
           place-items: center;
-          padding: 0 13px;
-          font-size: 12px;
-          font-weight: 950;
-          color: #625d6b;
-          background: rgba(255, 255, 255, 0.84);
-          border: 1px solid rgba(255, 255, 255, 0.95);
-          box-shadow: 0 14px 30px rgba(115, 112, 140, 0.14);
+          font-size: 28px;
+          line-height: 1;
+          color: var(--graphite);
         }
 
-        .avatar-info {
+        .mode-card strong {
+          margin-top: 8px;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .mode-card small {
+          margin-top: 6px;
+          color: var(--graphite-soft);
+          font-size: 10.5px;
+          line-height: 1.25;
+          font-weight: 800;
+        }
+
+        .mode-card b {
+          margin-top: auto;
+          font-weight: 950;
+        }
+
+        .sub-panel {
+          margin-top: 10px;
+          border-radius: 20px;
+          padding: 14px;
+          background: rgba(255, 255, 255, 0.74);
+          border: 1px solid var(--line);
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 14px;
+        }
+
+        .sub-panel strong {
+          font-weight: 950;
+        }
+
+        .sub-panel div {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        .sub-panel button {
+          min-height: 38px;
+          border-radius: 999px;
+          padding: 0 15px;
+          background: #fff;
+          border: 1px solid var(--line);
+          color: var(--graphite);
+          font-weight: 900;
+        }
+
+        .phone-shell {
+          align-self: stretch;
+          padding: 8px;
+          border-radius: 40px;
+          background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
+          box-shadow:
+            inset 0 0 0 2px rgba(255, 255, 255, 0.7),
+            0 24px 60px rgba(18, 22, 26, 0.18);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .phone {
+          width: 300px;
+          height: 92%;
+          min-height: 700px;
+          overflow: hidden;
+          border-radius: 34px;
+          padding: 14px 12px 16px;
+          background:
+            radial-gradient(circle at 50% 19%, rgba(255, 255, 255, 1), transparent 34%),
+            linear-gradient(145deg, #ffffff, #eef1f3);
+          border: 1px solid rgba(255, 255, 255, 0.94);
+        }
+
+        .phone-status,
+        .phone-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-weight: 950;
+        }
+
+        .phone-status span {
+          width: 82px;
+          height: 24px;
+          border-radius: 999px;
+          background: #080a0c;
+        }
+
+        .phone-head {
+          margin-top: 14px;
+        }
+
+        .phone-head button {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.9);
+          color: var(--graphite);
+          border: 1px solid var(--line);
+          font-weight: 950;
+        }
+
+        .phone-head strong {
+          font-size: 22px;
+          letter-spacing: 0.1em;
+          font-weight: 950;
+        }
+
+        .phone-hero {
+          position: relative;
+          height: 190px;
+          display: grid;
+          place-items: center;
+          margin-top: 4px;
+        }
+
+        .phone-avatar-video-wrap {
+          position: relative;
+          width: 128px;
+          height: 176px;
+          border-radius: 22px;
+          overflow: hidden;
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 1),
+            0 14px 32px rgba(18, 22, 26, 0.12);
+        }
+
+        .phone-controls {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+
+        .phone-controls button {
+          min-height: 42px;
+          border-radius: 16px;
+          font-weight: 950;
+        }
+
+        .phone-controls .selected {
+          background: linear-gradient(145deg, #ffffff, #e2e6e9);
+          border-color: var(--line-strong);
+        }
+
+        .phone-live {
+          grid-column: 1 / -1;
+        }
+
+        .phone-input {
+          min-height: 74px;
+          margin-top: 12px;
+          border-radius: 18px;
+          padding: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          color: #394047;
+          font-size: 12px;
+          font-weight: 850;
+        }
+
+        .phone-input button {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: var(--glass);
+          border: 1px solid var(--line);
+          color: var(--graphite);
+          font-weight: 950;
+        }
+
+        .phone-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .phone-grid button {
+          min-height: 82px;
+          border-radius: 16px;
+          padding: 8px 6px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+        }
+
+        .phone-grid span {
+          font-size: 22px;
+          line-height: 1;
+        }
+
+        .phone-grid strong {
+          font-size: 10.5px;
+          line-height: 1.12;
+          font-weight: 950;
+        }
+
+        .phone-grid small {
+          font-weight: 950;
+        }
+
+        .modal {
+          position: fixed;
+          inset: 0;
+          z-index: 20;
+          display: grid;
+          place-items: center;
+          padding: 24px;
+          background: rgba(238, 241, 244, 0.72);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+        }
+
+        .live-panel {
+          position: relative;
+          width: min(560px, 100%);
+          border-radius: 34px;
+          padding: 28px;
           text-align: center;
         }
 
-        .avatar-info h2 {
-          font-size: 24px;
-          letter-spacing: -0.045em;
-          color: #2b2734;
+        .close {
+          position: absolute;
+          top: 16px;
+          right: 16px;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: #fff;
+          border: 1px solid var(--line);
+          font-size: 28px;
+          line-height: 1;
         }
 
-        .avatar-info p {
-          margin-top: 5px;
-          font-size: 13px;
-          font-weight: 650;
-          color: #817b8b;
-        }
-
-        .avatar-buttons {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 8px;
-        }
-
-        .avatar-buttons button {
-          min-height: 42px;
-          border: 0;
-          border-radius: 18px;
-          cursor: pointer;
-          font-size: 13px;
-          font-weight: 950;
-          color: #635d70;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(230, 231, 239, 0.95);
-        }
-
-        .avatar-buttons button.primary,
-        .avatar-buttons button.active {
-          color: #fff;
-          background: linear-gradient(135deg, #b9c1d4, #e9d7e6);
-          border-color: transparent;
-          box-shadow: 0 14px 30px rgba(150, 142, 165, 0.18);
-        }
-
-        .chat-card {
-          min-height: 0;
-          border-radius: 34px;
-          display: grid;
-          grid-template-rows: auto minmax(0, 1fr) auto;
+        .live-avatar-video-wrap {
+          position: relative;
+          width: 230px;
+          height: 300px;
+          margin: 0 auto;
+          border-radius: 26px;
           overflow: hidden;
+          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
+          border: 1px solid rgba(20, 24, 28, 0.12);
+          box-shadow: var(--shadow);
         }
 
-        .chat-top {
-          padding: 17px 18px 12px;
-          border-bottom: 1px solid rgba(231, 232, 240, 0.82);
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
-        }
-
-        .chat-top h2 {
-          font-size: clamp(22px, 2vw, 30px);
-          letter-spacing: -0.05em;
-          color: #2b2734;
-        }
-
-        .chat-top p {
-          margin-top: 4px;
-          font-size: 13px;
-          color: #817b8b;
-          font-weight: 650;
-        }
-
-        .chat-top button {
-          height: 36px;
-          padding: 0 13px;
-          border: 0;
-          border-radius: 999px;
-          cursor: pointer;
-          font-size: 12px;
+        .live-panel h2 {
+          margin: 20px 0 6px;
+          font-size: 30px;
           font-weight: 950;
-          color: #675f73;
-          background: rgba(255, 255, 255, 0.75);
-          border: 1px solid rgba(230, 231, 239, 0.96);
         }
 
-        .messages {
-          min-height: 0;
-          overflow-y: auto;
-          padding: 18px;
+        .live-panel p {
+          margin: 0;
+          color: var(--muted);
+          font-weight: 800;
+        }
+
+        .live-buttons {
+          margin-top: 22px;
           display: flex;
-          flex-direction: column;
-          gap: 13px;
-        }
-
-        .messages::-webkit-scrollbar {
-          width: 9px;
-        }
-
-        .messages::-webkit-scrollbar-thumb {
-          background: rgba(186, 190, 204, 0.58);
-          border-radius: 999px;
-        }
-
-        .message-row {
-          width: 100%;
-          display: flex;
-        }
-
-        .assistant-row {
-          justify-content: flex-start;
-        }
-
-        .user-row {
-          justify-content: flex-end;
-        }
-
-        .bubble {
-          max-width: min(78%, 860px);
-          padding: 13px 15px;
-          border-radius: 24px;
-          box-shadow: 0 14px 34px rgba(115, 112, 140, 0.1);
-        }
-
-        .bubble strong {
-          display: block;
-          margin-bottom: 6px;
-          font-size: 12px;
-          letter-spacing: 0.02em;
-        }
-
-        .bubble p {
-          white-space: pre-wrap;
-          font-size: 15px;
-          line-height: 1.52;
-        }
-
-        .bubble.assistant {
-          color: #312c3b;
-          background: rgba(255, 255, 255, 0.84);
-          border: 1px solid rgba(231, 232, 240, 0.96);
-          border-bottom-left-radius: 8px;
-        }
-
-        .bubble.assistant strong {
-          color: #858da4;
-        }
-
-        .bubble.user {
-          color: #2f2938;
-          background:
-            linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(231, 235, 245, 0.96));
-          border: 1px solid rgba(255, 255, 255, 0.98);
-          border-bottom-right-radius: 8px;
-        }
-
-        .bubble.user strong {
-          color: #a28aa0;
-        }
-
-        .typing {
-          opacity: 0.85;
-        }
-
-        .composer {
-          padding: 12px;
-          border-top: 1px solid rgba(231, 232, 240, 0.82);
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 112px;
+          justify-content: center;
+          flex-wrap: wrap;
           gap: 10px;
-          background: rgba(255, 255, 255, 0.42);
         }
 
-        .composer textarea {
-          width: 100%;
-          height: 62px;
-          resize: none;
-          outline: none;
-          border-radius: 23px;
-          border: 1px solid rgba(226, 228, 238, 0.98);
-          background: rgba(255, 255, 255, 0.82);
-          color: #2f2938;
-          padding: 14px 15px;
-          font-size: 15px;
-          line-height: 1.36;
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.98);
+        .live-buttons button {
+          min-height: 44px;
+          border-radius: 999px;
+          padding: 0 18px;
+          background: #fff;
+          border: 1px solid var(--line);
+          color: var(--graphite);
+          font-weight: 900;
+          box-shadow: var(--shadow-soft);
         }
 
-        .composer textarea:focus {
-          border-color: rgba(188, 194, 212, 0.98);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.98),
-            0 0 0 5px rgba(198, 204, 220, 0.2);
-        }
-
-        .composer button {
-          border: 0;
-          border-radius: 23px;
-          cursor: pointer;
-          font-size: 15px;
-          font-weight: 950;
-          color: #fff;
-          background: linear-gradient(135deg, #b8bfce, #ead6e4);
-          box-shadow: 0 14px 30px rgba(150, 142, 165, 0.2);
-        }
-
-        .composer button:disabled {
-          cursor: not-allowed;
-          opacity: 0.45;
-          box-shadow: none;
-        }
-
-        .bottom-bar {
-          min-height: 62px;
-          border-radius: 30px;
-          padding: 10px;
-          display: grid;
-          grid-template-columns: repeat(10, minmax(0, 1fr));
-          gap: 8px;
-        }
-
-        .tool {
-          min-height: 42px;
-          border: 0;
-          border-radius: 18px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 950;
-          color: #665f72;
-          background: rgba(255, 255, 255, 0.74);
-          border: 1px solid rgba(230, 231, 239, 0.96);
-          box-shadow: 0 10px 24px rgba(115, 112, 140, 0.07);
-          transition:
-            transform 0.14s ease,
-            background 0.14s ease;
-        }
-
-        .tool:hover {
-          transform: translateY(-1px);
-          background: rgba(255, 255, 255, 0.96);
-        }
-
-        .tool.active {
-          color: #fff;
-          background: linear-gradient(135deg, #b9c1d4, #f0d2e4);
-          border-color: transparent;
-        }
-
-        @media (max-width: 1050px) {
-          .hero {
-            grid-template-columns: 260px minmax(0, 1fr);
+        @keyframes orbit {
+          0%,
+          100% {
+            transform: scale(1) translateY(0);
           }
-
-          .bottom-bar {
-            grid-template-columns: repeat(5, minmax(0, 1fr));
+          50% {
+            transform: scale(1.03) translateY(-8px);
           }
         }
 
-        @media (max-width: 820px) {
-          .shell {
-            padding: 10px;
-            gap: 9px;
+        @media (max-width: 1420px) {
+          .app-layout {
+            grid-template-columns: 210px minmax(640px, 1fr);
           }
 
-          .top {
-            border-radius: 24px;
-            min-height: auto;
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .status-pill {
-            width: 100%;
-            justify-content: center;
-          }
-
-          .hero {
-            grid-template-columns: 1fr;
-            grid-template-rows: auto minmax(0, 1fr);
-          }
-
-          .avatar-card {
-            border-radius: 26px;
-            grid-template-columns: auto minmax(0, 1fr);
-            grid-template-rows: auto auto;
-            align-items: center;
-            padding: 10px;
-            gap: 10px;
-          }
-
-          .avatar-frame {
-            width: 92px;
-            min-height: 92px;
-            border-radius: 26px;
-          }
-
-          .avatar-placeholder {
-            width: 70px;
-            height: 78px;
-          }
-
-          .hair {
-            width: 58px;
-            height: 70px;
-          }
-
-          .face {
-            width: 44px;
-            height: 50px;
-            border-radius: 22px;
-          }
-
-          .eyes {
-            top: 18px;
-            left: 11px;
-            right: 11px;
-          }
-
-          .eyes i {
-            width: 4px;
-            height: 4px;
-          }
-
-          .mouth {
-            bottom: 12px;
-            width: 11px;
-            height: 4px;
-            border-bottom-width: 2px;
-          }
-
-          .avatar-label {
-            min-width: 74px;
-            height: 24px;
-            font-size: 9px;
-            bottom: 6px;
-          }
-
-          .avatar-info {
-            text-align: left;
-          }
-
-          .avatar-info h2 {
-            font-size: 20px;
-          }
-
-          .avatar-info p {
-            font-size: 12px;
-          }
-
-          .avatar-buttons {
-            grid-column: 1 / -1;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-
-          .avatar-buttons button {
-            min-height: 36px;
-            border-radius: 15px;
-            font-size: 11.5px;
-          }
-
-          .chat-card {
-            border-radius: 26px;
-          }
-
-          .chat-top {
-            padding: 14px;
-          }
-
-          .chat-top p {
+          .phone-shell {
             display: none;
           }
 
-          .messages {
-            padding: 13px;
+          .mode-grid {
+            grid-template-columns: repeat(4, 1fr);
+          }
+        }
+
+        @media (max-width: 980px) {
+          .page {
+            padding: 8px;
           }
 
-          .bubble {
-            max-width: 92%;
-          }
-
-          .composer {
+          .app-layout {
             grid-template-columns: 1fr;
+            min-height: auto;
           }
 
-          .composer textarea {
-            height: 58px;
+          .sidebar,
+          .phone-shell {
+            display: none;
           }
 
-          .composer button {
-            min-height: 46px;
+          .main-panel {
+            min-height: calc(100vh - 16px);
+            padding: 12px;
+            border-radius: 22px;
           }
 
-          .bottom-bar {
-            border-radius: 24px;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            max-height: 132px;
-            overflow-y: auto;
+          .main-head {
+            justify-content: center;
           }
 
-          .tool {
-            min-height: 38px;
-            border-radius: 15px;
-            font-size: 11.5px;
+          .main-head h1 {
+            font-size: 18px;
+            text-align: center;
+          }
+
+          .head-actions {
+            display: none;
+          }
+
+          .avatar-block {
+            height: 180px;
+          }
+
+          .avatar-video-wrap {
+            width: 160px;
+            height: 180px;
+          }
+
+          .controls {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .control.live {
+            grid-column: 1 / -1;
+          }
+
+          .write-box {
+            height: 360px;
+            min-height: 360px;
+          }
+
+          .mode-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .mode-card {
+            min-height: 120px;
           }
         }
       `}</style>
