@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Message = {
-  role: string;
+  role: "user" | "lyra";
   text: string;
 };
+
+type ToolKey =
+  | "research"
+  | "content"
+  | "study"
+  | "image"
+  | "vision"
+  | "pdf"
+  | "translate";
 
 declare global {
   interface Window {
@@ -16,6 +25,73 @@ declare global {
 
 const AVATAR_SRC = "/lyra-avatar.jpg.jpeg";
 const VIDEO_SRC = "/lyra-avatar-mp4.mp4";
+
+const TOOL_META: Record<
+  ToolKey,
+  {
+    title: string;
+    icon: string;
+    placeholder: string;
+    buttonLabel: string;
+    helper: string;
+  }
+> = {
+  research: {
+    title: "Araştırma Modu",
+    icon: "⌕",
+    placeholder:
+      "Araştırmak istediğin konuyu yaz. Sana net, anlaşılır ve güçlü bir cevap çıkarayım.",
+    buttonLabel: "Araştır",
+    helper: "Bilgi bul, analiz et ve net cevap üret.",
+  },
+  content: {
+    title: "İçerik Üretme",
+    icon: "✎",
+    placeholder:
+      "Konu yaz. Sana başlık, hook, teleprompter ve CTA hazırlayayım.",
+    buttonLabel: "İçerik Hazırla",
+    helper: "Hook, başlık, video metni ve teleprompter hazırla.",
+  },
+  study: {
+    title: "Ders Modu",
+    icon: "■",
+    placeholder:
+      "Çalışmak istediğin konuyu yaz. Sana sade konu anlatımı ve soru hazırlayayım.",
+    buttonLabel: "Ders Hazırla",
+    helper: "Konu anlat, mini özet ve soru üret.",
+  },
+  image: {
+    title: "Görsel Üretme",
+    icon: "▧",
+    placeholder:
+      "Nasıl bir görsel istediğini yaz. Sana güçlü bir prompt ve konsept çıkarayım.",
+    buttonLabel: "Prompt Oluştur",
+    helper: "Görsel promptu ve konsept hazırla.",
+  },
+  vision: {
+    title: "Görselle Okut",
+    icon: "◌",
+    placeholder:
+      "Analiz edilmesini istediğin görseli tarif et ya da içeriğini yaz.",
+    buttonLabel: "Analiz Et",
+    helper: "Görsel, belge ve ekranları analiz et.",
+  },
+  pdf: {
+    title: "PDF Özeti",
+    icon: "▤",
+    placeholder:
+      "Özetlemek istediğin PDF içeriğini yapıştır ya da konusunu yaz.",
+    buttonLabel: "Özet Çıkar",
+    helper: "PDF içeriğini özetle ve not çıkar.",
+  },
+  translate: {
+    title: "Translate",
+    icon: "🌐",
+    placeholder: "Çevrilecek metni yaz.",
+    buttonLabel: "Çevir",
+    helper: "Metin çevir, düzenle ve sadeleştir.",
+  },
+};
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
@@ -31,17 +107,21 @@ export default function Home() {
     {
       role: "lyra",
       text:
-        "Harika! “Çalışıyor musun?” sorusuna öyle bir cevap verelim ki, sadece soruyu geçiştirmekle kalmasın, aynı zamanda sohbetimizin harika olacağının sinyalini versin.",
+        "Elbette, Türkçe konuşabiliyorum. Sana nasıl yardımcı olmamı istersin kanka?",
     },
   ]);
 
   const [input, setInput] = useState("");
   const [liveOpen, setLiveOpen] = useState(false);
 
-  const [translateOpen, setTranslateOpen] = useState(false);
-  const [translateInput, setTranslateInput] = useState("");
-  const [translateOutput, setTranslateOutput] = useState("");
-  const [sourceLang, setSourceLang] = useState("Otomatik Algıla");
+  const [activeTool, setActiveTool] = useState<ToolKey | null>("translate");
+  const [toolInput, setToolInput] = useState("");
+  const [toolOutput, setToolOutput] = useState("");
+  const [toolBusy, setToolBusy] = useState(false);
+
+  const [translateInput, setTranslateInput] = useState("how old are you");
+  const [translateOutput, setTranslateOutput] = useState("Kaç yaşındasın");
+  const [sourceLang, setSourceLang] = useState("İngilizce");
   const [targetLang, setTargetLang] = useState("Türkçe");
 
   const [isListening, setIsListening] = useState(false);
@@ -61,6 +141,10 @@ export default function Home() {
   const lastNudgeRef = useRef(0);
 
   const lastMessage = messages[messages.length - 1];
+
+  const currentToolMeta = useMemo(() => {
+    return activeTool ? TOOL_META[activeTool] : null;
+  }, [activeTool]);
 
   useEffect(() => {
     liveRef.current = liveOpen;
@@ -316,21 +400,81 @@ export default function Home() {
     }
   }
 
-  async function runTranslate() {
-    const text = translateInput.trim();
+  function buildToolPrompt(tool: ToolKey, rawText: string) {
+    const text = rawText.trim();
+
+    switch (tool) {
+      case "research":
+        return `Kullanıcının istediği konuyu sade, net, güncel ve anlaşılır şekilde açıkla. Gereksiz uzatma yapma ama yeterince doyurucu ol. Gerekirse kısa maddeler kullan.\n\nKonu: ${text}`;
+      case "content":
+        return `Kullanıcı için içerik üret. Türkçe cevap ver. Çıktı formatı şu olsun: 1) 3 kısa başlık 2) güçlü hook 3) 30-45 saniyelik teleprompter metni 4) CTA. Konu: ${text}`;
+      case "study":
+        return `Kullanıcı için öğretici bir mini ders hazırla. Türkçe cevap ver. Format: Kısa konu anlatımı, kritik noktalar, mini örnek, 3 pratik soru. Konu: ${text}`;
+      case "image":
+        return `Kullanıcının istediği görsel için güçlü ve profesyonel bir image prompt oluştur. Türkçe açıklama + altında kopyalanabilir prompt ver. İstek: ${text}`;
+      case "vision":
+        return `Kullanıcının verdiği görsel/ekran açıklamasını analiz et. Ne anlaşıldığını, önemli noktaları ve kısa yorumunu yaz. Açıklama: ${text}`;
+      case "pdf":
+        return `Kullanıcının verdiği PDF içeriği ya da konusu için düzenli bir özet çıkar. Türkçe cevap ver. Format: Kısa özet, ana noktalar, önemli notlar. İçerik/Konu: ${text}`;
+      case "translate":
+        return `Şu metni ${targetLang} diline çevir. Kaynak dil: ${sourceLang}. Sadece çeviriyi yaz.\n\n${text}`;
+      default:
+        return text;
+    }
+  }
+
+  async function runTool() {
+    if (!activeTool) return;
+
+    if (activeTool === "translate") {
+      const text = translateInput.trim();
+      if (!text) return;
+
+      setToolBusy(true);
+      setTranslateOutput("Çeviri hazırlanıyor...");
+
+      try {
+        const reply = await askGemini(buildToolPrompt("translate", text));
+        setTranslateOutput(String(reply));
+      } catch {
+        setTranslateOutput(
+          "Çeviri sırasında küçük bir bağlantı takılması oldu kanka."
+        );
+      } finally {
+        setToolBusy(false);
+      }
+
+      return;
+    }
+
+    const text = toolInput.trim();
     if (!text) return;
 
-    setTranslateOutput("Çeviri hazırlanıyor...");
+    setToolBusy(true);
+    setToolOutput("Hazırlanıyor...");
 
     try {
-      const prompt = `Şu metni ${targetLang} diline çevir. Kaynak dil: ${sourceLang}. Sadece çeviriyi yaz:\n\n${text}`;
-      const reply = await askGemini(prompt);
-      setTranslateOutput(String(reply));
+      const reply = await askGemini(buildToolPrompt(activeTool, text));
+      setToolOutput(String(reply));
     } catch {
-      setTranslateOutput(
-        "Çeviri sırasında bağlantı takıldı kanka. Gemini route'u kontrol edelim."
+      setToolOutput(
+        "Bu araç çalışırken küçük bir bağlantı takılması oldu kanka. Tekrar deneyelim."
       );
+    } finally {
+      setToolBusy(false);
     }
+  }
+
+  function openTool(tool: ToolKey) {
+    setActiveTool(tool);
+
+    if (tool !== "translate") {
+      setToolOutput("");
+    }
+  }
+
+  function closeToolPanel() {
+    setActiveTool(null);
   }
 
   function openLiveCall() {
@@ -452,12 +596,10 @@ export default function Home() {
             <button>♙ Kadın</button>
             <button>♟ Erkek</button>
             <button onClick={openLiveCall}>≋ Canlı Konuşma</button>
-            <button onClick={() => setTranslateOpen((v) => !v)}>
-              🌐 Translate
-            </button>
+            <button onClick={() => openTool("translate")}>🌐 Translate</button>
           </div>
 
-          <section className="work-area">
+          <section className={`work-area ${activeTool ? "split" : ""}`}>
             <div className="chat-box">
               <div className="messages">
                 {messages.map((msg, index) => (
@@ -488,119 +630,156 @@ export default function Home() {
                   <button>▧</button>
                   <button>PDF</button>
                 </div>
-
-                <button className="send" onClick={() => sendMessage()}>
-                  ▶
-                </button>
               </div>
             </div>
 
-            {translateOpen && (
-              <div className="translate-box">
-                <div className="translate-head">
-                  <h3>🌐 Translate</h3>
-                  <button onClick={() => setTranslateOpen(false)}>×</button>
+            {activeTool && (
+              <div className="tool-box">
+                <div className="tool-head">
+                  <h3>
+                    <span>{TOOL_META[activeTool].icon}</span>
+                    {TOOL_META[activeTool].title}
+                  </h3>
+                  <button onClick={closeToolPanel}>×</button>
                 </div>
 
-                <label>Metni çevir</label>
+                <p className="tool-helper">{TOOL_META[activeTool].helper}</p>
 
-                <div className="translate-row">
-                  <select
-                    value={sourceLang}
-                    onChange={(e) => setSourceLang(e.target.value)}
-                  >
-                    <option>Otomatik Algıla</option>
-                    <option>Türkçe</option>
-                    <option>İngilizce</option>
-                    <option>Almanca</option>
-                    <option>Fransızca</option>
-                    <option>Arapça</option>
-                  </select>
+                {activeTool === "translate" ? (
+                  <>
+                    <label>Metni çevir</label>
 
-                  <button
-                    onClick={() => {
-                      const oldSource = sourceLang;
-                      setSourceLang(targetLang);
-                      setTargetLang(oldSource);
-                    }}
-                  >
-                    ⇄
-                  </button>
+                    <div className="translate-row">
+                      <select
+                        value={sourceLang}
+                        onChange={(e) => setSourceLang(e.target.value)}
+                      >
+                        <option>Otomatik Algıla</option>
+                        <option>Türkçe</option>
+                        <option>İngilizce</option>
+                        <option>Almanca</option>
+                        <option>Fransızca</option>
+                        <option>Arapça</option>
+                      </select>
 
-                  <select
-                    value={targetLang}
-                    onChange={(e) => setTargetLang(e.target.value)}
-                  >
-                    <option>Türkçe</option>
-                    <option>İngilizce</option>
-                    <option>Almanca</option>
-                    <option>Fransızca</option>
-                    <option>Arapça</option>
-                  </select>
-                </div>
+                      <button
+                        onClick={() => {
+                          const oldSource = sourceLang;
+                          setSourceLang(targetLang);
+                          setTargetLang(oldSource);
+                        }}
+                      >
+                        ⇄
+                      </button>
 
-                <textarea
-                  className="translate-input"
-                  value={translateInput}
-                  onChange={(e) => setTranslateInput(e.target.value)}
-                  placeholder="Çevrilecek metni buraya yazın..."
-                  maxLength={5000}
-                />
+                      <select
+                        value={targetLang}
+                        onChange={(e) => setTargetLang(e.target.value)}
+                      >
+                        <option>Türkçe</option>
+                        <option>İngilizce</option>
+                        <option>Almanca</option>
+                        <option>Fransızca</option>
+                        <option>Arapça</option>
+                      </select>
+                    </div>
 
-                <div className="translate-count">
-                  {translateInput.length} / 5000
-                </div>
+                    <textarea
+                      className="tool-input"
+                      value={translateInput}
+                      onChange={(e) => setTranslateInput(e.target.value)}
+                      placeholder="Çevrilecek metni buraya yaz..."
+                      maxLength={5000}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          runTool();
+                        }
+                      }}
+                    />
 
-                <button className="translate-btn" onClick={runTranslate}>
-                  Çevir
-                </button>
+                    <div className="tool-count">
+                      {translateInput.length} / 5000
+                    </div>
 
-                <label>Çeviri</label>
+                    <button className="tool-run" onClick={runTool}>
+                      {toolBusy ? "Hazırlanıyor..." : "Çevir"}
+                    </button>
 
-                <div className="translate-output">
-                  {translateOutput || "Çeviri burada görünecek..."}
-                </div>
+                    <label>Çeviri</label>
+                    <div className="tool-output">{translateOutput}</div>
+                  </>
+                ) : (
+                  <>
+                    <label>{currentToolMeta?.title} Girişi</label>
+
+                    <textarea
+                      className="tool-input"
+                      value={toolInput}
+                      onChange={(e) => setToolInput(e.target.value)}
+                      placeholder={currentToolMeta?.placeholder}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          runTool();
+                        }
+                      }}
+                    />
+
+                    <button className="tool-run" onClick={runTool}>
+                      {toolBusy
+                        ? "Hazırlanıyor..."
+                        : currentToolMeta?.buttonLabel}
+                    </button>
+
+                    <label>Sonuç</label>
+                    <div className="tool-output">
+                      {toolOutput ||
+                        "Burada bu araca ait sonuçlar görünecek..."}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </section>
 
           <section className="tool-grid">
-            <button>
+            <button onClick={() => openTool("research")}>
               <span>⌕</span>
               <b>Araştırma Modu</b>
               <small>Bilgi bul, analiz et ve net cevaplar üret.</small>
               <i>⌄</i>
             </button>
 
-            <button>
+            <button onClick={() => openTool("content")}>
               <span>✎</span>
               <b>İçerik Üretme</b>
               <small>Hook, başlık, video metni ve teleprompter hazırla.</small>
               <i>⌄</i>
             </button>
 
-            <button>
+            <button onClick={() => openTool("study")}>
               <span>■</span>
               <b>Ders Modu</b>
               <small>Konu anlat, test üret, yanlış ayıkla.</small>
               <i>⌄</i>
             </button>
 
-            <button>
+            <button onClick={() => openTool("image")}>
               <span>▧</span>
               <b>Görsel Üretme</b>
               <small>Görsel promptu ve konsept hazırla.</small>
               <i>⌄</i>
             </button>
 
-            <button>
+            <button onClick={() => openTool("vision")}>
               <span>◌</span>
               <b>Görselle Okut</b>
               <small>Görsel, belge ve ekranları analiz et.</small>
               <i>⌄</i>
             </button>
 
-            <button>
+            <button onClick={() => openTool("pdf")}>
               <span>▤</span>
               <b>PDF Özeti</b>
               <small>PDF yükle, özetle ve not çıkar.</small>
@@ -614,7 +793,7 @@ export default function Home() {
               <i>⌄</i>
             </button>
 
-            <button onClick={() => setTranslateOpen((v) => !v)}>
+            <button onClick={() => openTool("translate")}>
               <span>🌐</span>
               <b>Translate</b>
               <small>Metin çevir, düzenle ve sadeleştir.</small>
@@ -660,26 +839,22 @@ export default function Home() {
               ≋ Canlı Konuşma ›
             </button>
 
-            <button
-              className="phone-live translate"
-              onClick={() => setTranslateOpen(true)}
-            >
+            <button className="phone-live translate" onClick={() => openTool("translate")}>
               🌐 Translate
             </button>
 
             <div className="phone-input">
               <span>Lyra’ya bir şey sor veya yaz...</span>
-              <button>▶</button>
             </div>
 
             <div className="phone-tools">
-              <button>Araştırma Modu</button>
-              <button>İçerik Üretme</button>
-              <button>Ders Modu</button>
-              <button>Görsel Üretme</button>
-              <button>Görselle Okut</button>
-              <button>PDF Özeti</button>
-              <button>Canlı Mod</button>
+              <button onClick={() => openTool("research")}>Araştırma Modu</button>
+              <button onClick={() => openTool("content")}>İçerik Üretme</button>
+              <button onClick={() => openTool("study")}>Ders Modu</button>
+              <button onClick={() => openTool("image")}>Görsel Üretme</button>
+              <button onClick={() => openTool("vision")}>Görselle Okut</button>
+              <button onClick={() => openTool("pdf")}>PDF Özeti</button>
+              <button onClick={openLiveCall}>Canlı Mod</button>
             </div>
           </div>
         </aside>
@@ -845,7 +1020,7 @@ export default function Home() {
 
         .layout {
           display: grid;
-          grid-template-columns: 250px minmax(820px, 1fr) 360px;
+          grid-template-columns: 250px minmax(860px, 1fr) 360px;
           gap: 16px;
           width: min(1760px, 100%);
           margin: 0 auto;
@@ -1061,12 +1236,12 @@ export default function Home() {
           gap: 12px;
         }
 
-        .work-area:has(.translate-box) {
-          grid-template-columns: minmax(620px, 1.45fr) minmax(330px, 0.7fr);
+        .work-area.split {
+          grid-template-columns: minmax(710px, 1.72fr) minmax(305px, 0.66fr);
         }
 
         .chat-box,
-        .translate-box {
+        .tool-box {
           border-radius: 24px;
           padding: 16px;
           background: rgba(255, 255, 255, 0.58);
@@ -1085,10 +1260,18 @@ export default function Home() {
           min-height: 250px;
           max-height: 360px;
           overflow-y: auto;
-          padding-right: 8px;
+          padding-right: 0;
           display: flex;
           flex-direction: column;
           gap: 12px;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .messages::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
         }
 
         .msg {
@@ -1125,7 +1308,7 @@ export default function Home() {
         }
 
         .chat-box textarea {
-          min-height: 98px;
+          min-height: 96px;
           margin-top: 16px;
           font-size: 20px;
           font-weight: 950;
@@ -1137,7 +1320,7 @@ export default function Home() {
 
         .chat-bottom {
           display: flex;
-          justify-content: space-between;
+          justify-content: flex-start;
           align-items: center;
           gap: 12px;
           margin-top: 8px;
@@ -1158,28 +1341,28 @@ export default function Home() {
           font-weight: 950;
         }
 
-        .chat-bottom .send {
-          width: 48px;
-          height: 48px;
-        }
-
-        .translate-box {
+        .tool-box {
           min-height: 420px;
+          display: flex;
+          flex-direction: column;
         }
 
-        .translate-head {
+        .tool-head {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 14px;
+          margin-bottom: 6px;
         }
 
-        .translate-head h3 {
+        .tool-head h3 {
           margin: 0;
           font-size: 20px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
 
-        .translate-head button {
+        .tool-head button {
           width: 34px;
           height: 34px;
           border: 0;
@@ -1189,7 +1372,14 @@ export default function Home() {
           font-weight: 900;
         }
 
-        .translate-box label {
+        .tool-helper {
+          margin: 0 0 12px;
+          color: #5f6671;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .tool-box label {
           display: block;
           margin: 10px 0 8px;
           font-weight: 900;
@@ -1213,7 +1403,7 @@ export default function Home() {
           padding: 0 10px;
         }
 
-        .translate-input {
+        .tool-input {
           min-height: 96px;
           padding: 12px;
           border-radius: 16px;
@@ -1222,17 +1412,17 @@ export default function Home() {
           font-weight: 700;
         }
 
-        .translate-count {
+        .tool-count {
           text-align: right;
           font-size: 12px;
           color: #66707a;
           margin-top: 4px;
         }
 
-        .translate-btn {
+        .tool-run {
           width: 100%;
           height: 42px;
-          margin: 8px 0;
+          margin: 10px 0 6px;
           border: 0;
           border-radius: 16px;
           background: #11151c;
@@ -1240,15 +1430,25 @@ export default function Home() {
           font-weight: 950;
         }
 
-        .translate-output {
-          min-height: 86px;
+        .tool-output {
+          min-height: 120px;
           padding: 12px;
           border-radius: 16px;
           background: rgba(255, 255, 255, 0.62);
           border: 1px solid rgba(185, 191, 198, 0.72);
-          color: #5e6670;
+          color: #222831;
           font-size: 14px;
-          line-height: 1.4;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          overflow-y: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .tool-output::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
         }
 
         .tool-grid {
@@ -1395,17 +1595,9 @@ export default function Home() {
           min-height: 58px;
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 0 10px 0 14px;
+          justify-content: flex-start;
+          padding: 0 14px;
           font-size: 12px;
-        }
-
-        .phone-input button {
-          width: 34px;
-          height: 34px;
-          border: 0;
-          border-radius: 999px;
-          background: white;
         }
 
         .phone-tools {
@@ -1851,6 +2043,10 @@ export default function Home() {
           .tool-grid {
             grid-template-columns: repeat(4, 1fr);
           }
+
+          .work-area.split {
+            grid-template-columns: minmax(620px, 1.45fr) minmax(290px, 0.72fr);
+          }
         }
 
         @media (max-width: 980px) {
@@ -1867,7 +2063,7 @@ export default function Home() {
           }
 
           .work-area,
-          .work-area:has(.translate-box) {
+          .work-area.split {
             grid-template-columns: 1fr;
           }
 
