@@ -28,10 +28,12 @@ function getTextFromBody(body: any) {
   ).trim();
 }
 
-function parseDataUrl(value: any) {
-  const imageDataUrl = String(value || "");
+function cleanBase64Image(value: any) {
+  if (!value) return null;
 
-  const match = imageDataUrl.match(/^data:(.+?);base64,(.+)$/);
+  const asString = String(value);
+
+  const match = asString.match(/^data:(.+?);base64,(.+)$/);
 
   if (!match) return null;
 
@@ -39,18 +41,6 @@ function parseDataUrl(value: any) {
     mimeType: match[1],
     base64: match[2],
   };
-}
-
-function cleanBase64Image(value: any) {
-  if (!value) return null;
-
-  const asString = String(value);
-
-  if (asString.startsWith("data:")) {
-    return parseDataUrl(asString);
-  }
-
-  return null;
 }
 
 function extractGeminiText(data: any) {
@@ -69,6 +59,27 @@ function extractGeminiText(data: any) {
   }
 
   return "";
+}
+
+function isQuotaError(message: string) {
+  const lower = message.toLowerCase();
+
+  return (
+    lower.includes("quota") ||
+    lower.includes("rate limit") ||
+    lower.includes("429") ||
+    lower.includes("too many requests") ||
+    lower.includes("exceeded")
+  );
+}
+
+function quotaFriendlyMessage(errorMessage: string) {
+  const retryMatch = errorMessage.match(/retry in ([0-9.]+)s/i);
+  const retrySeconds = retryMatch?.[1]
+    ? Math.ceil(Number(retryMatch[1]))
+    : 30;
+
+  return `Gemini ücretsiz kullanım kotası doldu kanka. API key çalışıyor ama Google şu an fazla istek attığımız için cevap vermiyor. Yaklaşık ${retrySeconds} saniye sonra tekrar dene. Çok sık kullanacaksak Gemini tarafında billing/plan açmak ya da farklı bir API key bağlamak gerekiyor.`;
 }
 
 async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
@@ -90,7 +101,7 @@ async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
           temperature: 0.65,
           topP: 0.9,
           topK: 40,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 4096,
         },
       }),
     }
@@ -125,6 +136,20 @@ async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
   return text;
 }
 
+function okAnswer(answer: string) {
+  return NextResponse.json({
+    ok: true,
+    answer,
+    reply: answer,
+    text: answer,
+    message: answer,
+    content: answer,
+    output: answer,
+    result: answer,
+    response: answer,
+  });
+}
+
 export async function GET(req: NextRequest) {
   const apiKey = getApiKey();
 
@@ -144,7 +169,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const answer = await callGemini("gemini-2.5-flash", apiKey, [
+    const answer = await callGemini("gemini-1.5-flash", apiKey, [
       {
         text: `Türkçe kısa cevap ver. Test mesajı: ${test}`,
       },
@@ -161,12 +186,30 @@ export async function GET(req: NextRequest) {
       content: answer,
     });
   } catch (error: any) {
+    const message = error?.message || "Gemini test hatası.";
+
+    if (isQuotaError(message)) {
+      const answer = quotaFriendlyMessage(message);
+
+      return NextResponse.json({
+        ok: true,
+        route: "/api/gemini",
+        hasGeminiKey: true,
+        quotaLimited: true,
+        answer,
+        reply: answer,
+        text: answer,
+        message: answer,
+        content: answer,
+      });
+    }
+
     return NextResponse.json(
       {
         ok: false,
         route: "/api/gemini",
         hasGeminiKey: true,
-        error: error?.message || "Gemini test hatası.",
+        error: message,
       },
       { status: 500 }
     );
@@ -225,11 +268,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const models = [
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-1.5-flash",
-    ];
+    const models = image
+      ? ["gemini-1.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
+      : ["gemini-1.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
 
     let finalAnswer = "";
     let lastError = "";
@@ -240,31 +281,33 @@ export async function POST(req: NextRequest) {
         break;
       } catch (error: any) {
         lastError = error?.message || `${model} hata verdi.`;
+
+        if (isQuotaError(lastError)) {
+          continue;
+        }
       }
     }
 
     if (!finalAnswer) {
+      if (isQuotaError(lastError)) {
+        return okAnswer(quotaFriendlyMessage(lastError));
+      }
+
       throw new Error(lastError || "Gemini cevap veremedi.");
     }
 
-    return NextResponse.json({
-      ok: true,
-
-      // page.tsx hangi alanı ararsa bulsun diye hepsini dönüyoruz
-      answer: finalAnswer,
-      reply: finalAnswer,
-      text: finalAnswer,
-      message: finalAnswer,
-      content: finalAnswer,
-      output: finalAnswer,
-      result: finalAnswer,
-      response: finalAnswer,
-    });
+    return okAnswer(finalAnswer);
   } catch (error: any) {
+    const message = error?.message || "Gemini route hata verdi.";
+
+    if (isQuotaError(message)) {
+      return okAnswer(quotaFriendlyMessage(message));
+    }
+
     return NextResponse.json(
       {
         ok: false,
-        error: error?.message || "Gemini route hata verdi.",
+        error: message,
       },
       { status: 500 }
     );
