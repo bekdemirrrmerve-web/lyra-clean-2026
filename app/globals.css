@@ -11,15 +11,12 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   scroll-behavior: smooth;
-}
-
-body {
   background: #f5f7f8;
   color: #111417;
 }
 
-html {
-  scroll-padding-top: 0;
+body {
+  min-height: 100vh;
 }
 
 button,
@@ -36,4 +33,9 @@ button {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+img,
+video {
+  max-width: 100%;
 }
