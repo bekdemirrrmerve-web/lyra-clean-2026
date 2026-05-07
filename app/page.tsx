@@ -89,8 +89,8 @@ const TOOL_META: Record<
     title: "Ders Modu",
     icon: "■",
     placeholder:
-      "Çalışmak istediğin konuyu yaz. Mesela: üslü sayılar, OBEB-OKEK, paragraf taktikleri...",
-    buttonLabel: "Ders Hazırla",
+      "Çalışmak istediğin konuyu yaz. Örnek: üslü sayılar, OBEB-OKEK, paragraf taktikleri...",
+    buttonLabel: "Dersi Oluştur",
     helper: "Konu özeti, çözümlü sorular ve şıklı test üret.",
   },
   image: {
@@ -130,9 +130,17 @@ function getLangCode(languageName: string) {
   return LANGUAGES.find((lang) => lang.name === languageName)?.code || "tr-TR";
 }
 
+function escapeHtml(value: string) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function extractTextFromGemini(data: any) {
   if (!data) return "";
-
   if (typeof data === "string") return data;
 
   const direct =
@@ -149,50 +157,64 @@ function extractTextFromGemini(data: any) {
 
   if (typeof data?.response?.text === "string") return data.response.text;
 
-  const candidateText =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-    data?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).join("\n");
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    const text = parts.map((p: any) => p?.text || "").join("\n").trim();
+    if (text) return text;
+  }
 
-  if (typeof candidateText === "string") return candidateText;
-
-  const partsText = data?.parts?.map((p: any) => p?.text).join("\n");
-  if (typeof partsText === "string") return partsText;
+  if (Array.isArray(data?.parts)) {
+    const text = data.parts.map((p: any) => p?.text || "").join("\n").trim();
+    if (text) return text;
+  }
 
   return "";
 }
 
 function extractStudySections(text: string): StudySections {
-  const clean = text || "";
+  const clean = String(text || "")
+    .replaceAll("**", "")
+    .replaceAll("###", "")
+    .replaceAll("##", "")
+    .trim();
 
-  function section(title: string, nextTitles: string[]) {
-    const titleRegex = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const nextRegex = nextTitles
-      .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  function findSection(names: string[], nextNames: string[]) {
+    const escapedNames = names
+      .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
       .join("|");
 
+    const escapedNext = nextNames
+      .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|");
+
+    const endPart = escapedNext
+      ? `(?=\\n\\s*(?:${escapedNext})\\s*:?\\s*\\n|$)`
+      : `(?=$)`;
+
     const regex = new RegExp(
-      `(?:^|\\n)#{1,3}\\s*${titleRegex}\\s*\\n([\\s\\S]*?)(?=\\n#{1,3}\\s*(?:${nextRegex})\\s*\\n|$)`,
+      `(?:^|\\n)\\s*(?:${escapedNames})\\s*:?\\s*\\n([\\s\\S]*?)${endPart}`,
       "i"
     );
 
-    const match = clean.match(regex);
-    return match?.[1]?.trim() || "";
+    return clean.match(regex)?.[1]?.trim() || "";
   }
 
-  const summary =
-    section("KONU ÖZETİ", ["ÇÖZÜMLÜ SORULAR", "ŞIKLI TEST"]) ||
-    section("KONU OZETI", ["COZUMLU SORULAR", "SIKLI TEST"]);
+  const summary = findSection(
+    ["KONU ÖZETİ", "KONU OZETI", "KONU ÖZETI"],
+    ["ÇÖZÜMLÜ SORULAR", "COZUMLU SORULAR", "ŞIKLI TEST", "SIKLI TEST"]
+  );
 
-  const solved =
-    section("ÇÖZÜMLÜ SORULAR", ["ŞIKLI TEST"]) ||
-    section("COZUMLU SORULAR", ["SIKLI TEST"]);
+  const solved = findSection(
+    ["ÇÖZÜMLÜ SORULAR", "COZUMLU SORULAR"],
+    ["ŞIKLI TEST", "SIKLI TEST", "CEVAP ANAHTARI"]
+  );
 
-  const test =
-    section("ŞIKLI TEST", ["CEVAP ANAHTARI"]) ||
-    section("SIKLI TEST", ["CEVAP ANAHTARI"]);
+  const test = findSection(["ŞIKLI TEST", "SIKLI TEST"], []);
 
   return {
-    summary: summary || "Konu özeti burada görünecek.",
+    summary:
+      summary ||
+      (clean ? clean.slice(0, 1800) : "Konu özeti burada görünecek."),
     solved: solved || "Çözümlü sorular burada görünecek.",
     test: test || "Şıklı test burada görünecek.",
     raw: clean,
@@ -207,13 +229,9 @@ export default function Home() {
         "Teleprompter Metni:\n“Bugün sana kanka bana cilt bakım toniği formülasyonu atsana konusunu çok basit anlatacağım. Çünkü çoğu kişi burada yanlış noktaya odaklanıyor. Aslında işin özü çok daha net. Önce problemi anlayacağız, sonra doğru adımı seçeceğiz ve sonunda bunu nasıl uygulayacağını konuşacağız.”\n\nCTA:\n“Kaydet, sonra birlikte tekrar bakalım.”",
     },
     {
-      role: "user",
-      text: "çalışıyo musun",
-    },
-    {
       role: "lyra",
       text:
-        "Elbette kanka, buradayım. Sana nasıl yardımcı olmamı istersin?",
+        "Elbette kanka, buradayım. Mesaj yazınca cevap vereceğim; Ders Modu’nda da konu özeti, çözümlü soru ve şıklı test çıkaracağım.",
     },
   ]);
 
@@ -232,9 +250,11 @@ export default function Home() {
     raw: "",
   });
 
-  const [translateInput, setTranslateInput] = useState("how old are you");
-  const [translateOutput, setTranslateOutput] = useState("Kaç yaşındasın");
-  const [sourceLang, setSourceLang] = useState("İngilizce");
+  const [translateInput, setTranslateInput] = useState("");
+  const [translateOutput, setTranslateOutput] = useState(
+    "Çeviri burada görünecek."
+  );
+  const [sourceLang, setSourceLang] = useState("Otomatik Algıla");
   const [targetLang, setTargetLang] = useState("Türkçe");
 
   const [isListening, setIsListening] = useState(false);
@@ -470,20 +490,22 @@ export default function Home() {
       content: m.text,
     }));
 
+    const body = {
+      message: text,
+      prompt: text,
+      input: text,
+      text,
+      question: text,
+      userMessage: text,
+      history,
+    };
+
     const res = await fetch("/api/gemini", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        message: text,
-        prompt: text,
-        input: text,
-        text,
-        question: text,
-        userMessage: text,
-        history,
-      }),
+      body: JSON.stringify(body),
     });
 
     const rawText = await res.text();
@@ -506,6 +528,10 @@ export default function Home() {
     const finalText = extractTextFromGemini(data);
 
     if (!finalText || !finalText.trim()) {
+      if (typeof rawText === "string" && rawText.trim()) {
+        return rawText.trim();
+      }
+
       throw new Error("Gemini boş cevap döndürdü.");
     }
 
@@ -526,21 +552,16 @@ export default function Home() {
       stopListening();
 
       const reply = await askGemini(text);
-      const finalReply =
-        typeof reply === "string"
-          ? reply
-          : "Bunu aldım ama cevabı metne çeviremedim.";
-
-      addLyra(finalReply);
+      addLyra(reply);
       setIsThinking(false);
       thinkingRef.current = false;
 
       if (liveRef.current || fromVoice) {
-        speak(finalReply, "tr-TR");
+        speak(reply, "tr-TR");
       }
     } catch {
       const fallback =
-        "Cevap bağlantısında takıldım kanka. Gemini route çalışıyor olabilir ama dönen cevabı okuyamadım. app/api/gemini/route.ts içinde cevap alanı answer, reply veya text olarak dönmeli.";
+        "Cevabı alamadım kanka. Gemini route çalışıyor ama POST cevabı boş ya da farklı isimle dönüyor olabilir. Route içinde answer, reply veya text alanı döndürmen gerekiyor.";
 
       addLyra(fallback);
       setIsThinking(false);
@@ -572,24 +593,29 @@ Konu: ${text}`;
         return `Sen DGS/TYT tarzında sade anlatan bir ders hocasısın.
 Kullanıcının verdiği konuda eksiksiz ders notu hazırla.
 
+Lütfen matematik sembollerini bozuk çıkmayacak şekilde sade yaz.
+Örnek: 3^4 yerine "3 üzeri 4" yazabilirsin.
+LaTeX, markdown tablo, garip sembol kullanma.
+Türkçe karakterleri düzgün kullan.
+
 Mutlaka şu başlıklarla cevap ver:
 
-## KONU ÖZETİ
+KONU ÖZETİ
 - Konuyu çok sade anlat.
 - Önemli formülleri ve kısa ipuçlarını yaz.
 - Akılda kalıcı mini not ekle.
 
-## ÇÖZÜMLÜ SORULAR
-En az 3 tane çözümlü soru yaz.
+ÇÖZÜMLÜ SORULAR
+En az 4 tane çözümlü soru yaz.
 Her soruda:
 Soru:
 Çözüm:
 Cevap:
 
-## ŞIKLI TEST
-En az 5 tane A-B-C-D-E şıklı test sorusu yaz.
+ŞIKLI TEST
+En az 7 tane A-B-C-D-E şıklı test sorusu yaz.
+Her sorunun seçenekleri olsun.
 En altta cevap anahtarı ver.
-Sorular ÖSYM mantığına yakın olsun ama çok zorlaştırma.
 
 Konu: ${text}`;
 
@@ -696,81 +722,92 @@ Konu: ${text}`;
 
     const title = activeTool ? TOOL_META[activeTool].title : "Lyra Çıktısı";
 
-    let htmlContent = "";
+    let bodyContent = "";
 
     if (activeTool === "study") {
-      htmlContent = `
+      bodyContent = `
         <h1>Ders Modu</h1>
         <h2>Konu Özeti</h2>
-        <div>${studySections.summary.replace(/\n/g, "<br/>")}</div>
+        <pre>${escapeHtml(studySections.summary)}</pre>
         <h2>Çözümlü Sorular</h2>
-        <div>${studySections.solved.replace(/\n/g, "<br/>")}</div>
+        <pre>${escapeHtml(studySections.solved)}</pre>
         <h2>Şıklı Test</h2>
-        <div>${studySections.test.replace(/\n/g, "<br/>")}</div>
+        <pre>${escapeHtml(studySections.test)}</pre>
       `;
     } else if (activeTool === "translate") {
-      htmlContent = `
+      bodyContent = `
         <h1>Translate</h1>
         <h2>Metin</h2>
-        <div>${translateInput.replace(/\n/g, "<br/>")}</div>
+        <pre>${escapeHtml(translateInput)}</pre>
         <h2>Çeviri</h2>
-        <div>${translateOutput.replace(/\n/g, "<br/>")}</div>
+        <pre>${escapeHtml(translateOutput)}</pre>
       `;
     } else {
-      htmlContent = `
-        <h1>${title}</h1>
-        <div>${toolOutput.replace(/\n/g, "<br/>")}</div>
+      bodyContent = `
+        <h1>${escapeHtml(title)}</h1>
+        <pre>${escapeHtml(toolOutput)}</pre>
       `;
     }
 
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    const printHtml = `<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<title>${escapeHtml(title)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    padding: 32px;
+    color: #111;
+    line-height: 1.55;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 22px;
+    letter-spacing: .03em;
+  }
+  h2 {
+    margin: 26px 0 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #ddd;
+    font-size: 20px;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+</style>
+</head>
+<body>
+${bodyContent}
+<script>
+  window.onload = function() {
+    window.focus();
+    window.print();
+  };
+</script>
+</body>
+</html>`;
 
-    win.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>${title}</title>
-          <meta charset="utf-8" />
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 32px;
-              color: #111;
-              line-height: 1.55;
-            }
-            h1 {
-              font-size: 28px;
-              letter-spacing: .04em;
-              margin-bottom: 20px;
-            }
-            h2 {
-              margin-top: 26px;
-              padding-bottom: 8px;
-              border-bottom: 1px solid #ddd;
-            }
-            div {
-              white-space: normal;
-              font-size: 15px;
-            }
-            @media print {
-              body { padding: 18px; }
-            }
-          </style>
-        </head>
-        <body>
-          ${htmlContent}
-          <script>
-            window.onload = function() {
-              window.focus();
-              window.print();
-            };
-          </script>
-        </body>
-      </html>
-    `);
+    const blob = new Blob([printHtml], {
+      type: "text/html;charset=utf-8",
+    });
 
-    win.document.close();
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank", "width=900,height=700");
+
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 10000);
   }
 
   function openLiveCall() {
@@ -897,7 +934,7 @@ Konu: ${text}`;
             <button onClick={() => openTool("translate")}>🌐 Translate</button>
           </div>
 
-          <section className={`work-area ${activeTool ? "split" : ""}`}>
+          <section className="work-area">
             <div className="chat-box">
               <div className="messages">
                 {messages.map((msg, index) => (
@@ -913,7 +950,7 @@ Konu: ${text}`;
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Mesajını yaz. Enter ile gönder, Shift + Enter ile alt satır."
+                placeholder="Lyra’ya mesaj yaz..."
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -932,7 +969,7 @@ Konu: ${text}`;
             </div>
 
             {activeTool && (
-              <div className="tool-box">
+              <div className="tool-box under-chat">
                 <div className="tool-head">
                   <h3>
                     <span>{TOOL_META[activeTool].icon}</span>
@@ -989,7 +1026,7 @@ Konu: ${text}`;
                       className="tool-input"
                       value={translateInput}
                       onChange={(e) => setTranslateInput(e.target.value)}
-                      placeholder="Çevrilecek metni buraya yaz..."
+                      placeholder="Çevrilecek metni yazın..."
                       maxLength={5000}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -1601,10 +1638,6 @@ Konu: ${text}`;
           gap: 12px;
         }
 
-        .work-area.split {
-          grid-template-columns: minmax(720px, 1.72fr) minmax(305px, 0.66fr);
-        }
-
         .chat-box,
         .tool-box {
           border-radius: 24px;
@@ -1707,9 +1740,13 @@ Konu: ${text}`;
         }
 
         .tool-box {
-          min-height: 420px;
+          min-height: 320px;
           display: flex;
           flex-direction: column;
+        }
+
+        .tool-box.under-chat {
+          margin-top: 0;
         }
 
         .tool-head {
@@ -1833,12 +1870,13 @@ Konu: ${text}`;
 
         .study-tabs {
           display: grid;
+          grid-template-columns: repeat(3, 1fr);
           gap: 10px;
           margin-top: 10px;
         }
 
         .study-tabs article {
-          max-height: 220px;
+          max-height: 260px;
           overflow-y: auto;
           padding: 12px;
           border-radius: 16px;
@@ -2454,8 +2492,8 @@ Konu: ${text}`;
             grid-template-columns: repeat(4, 1fr);
           }
 
-          .work-area.split {
-            grid-template-columns: minmax(620px, 1.45fr) minmax(290px, 0.72fr);
+          .study-tabs {
+            grid-template-columns: 1fr;
           }
         }
 
@@ -2472,13 +2510,12 @@ Konu: ${text}`;
             min-height: auto;
           }
 
-          .work-area,
-          .work-area.split {
-            grid-template-columns: 1fr;
-          }
-
           .tool-grid {
             grid-template-columns: repeat(2, 1fr);
+          }
+
+          .study-tabs {
+            grid-template-columns: 1fr;
           }
         }
 
@@ -2522,6 +2559,10 @@ Konu: ${text}`;
           }
 
           .tool-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .study-tabs {
             grid-template-columns: 1fr;
           }
 
