@@ -14,12 +14,6 @@ type ChatMessage = {
 const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
 const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
 
-/*
-  ÖNEMLİ:
-  Bot mesaja düşmesin diye eski /api/chat, /api/lyra, /api/ai fallbacklerini kaldırdım.
-  Mesaj sadece Gemini route'a gider.
-  Eğer app/api/gemini/route.ts yoksa bu route'u oluşturman gerekir.
-*/
 const GEMINI_TEXT_ENDPOINT = '/api/gemini';
 const GEMINI_TTS_ENDPOINT = '/api/tts';
 
@@ -95,7 +89,7 @@ const modes: {
 function buildPrompt(mode: ModeKey, input: string, action?: string) {
   if (mode === 'content') {
     return `
-Sen Lyra'sın. Türkçe, akıcı, sıcak ve sosyal medya odaklı içerik üret.
+Sen Lyra'sın. Türkçe, sıcak, akıcı ve sosyal medya odaklı içerik üret.
 Konu: ${input}
 İstenen aksiyon: ${action || 'tam içerik paketi'}
 
@@ -282,7 +276,6 @@ function AvatarVideo({
           video.play().catch(() => {});
         }
       }
-
       frame = requestAnimationFrame(keepAlive);
     };
 
@@ -301,7 +294,6 @@ function AvatarVideo({
   return (
     <div className="avatar-media-root">
       <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
-
       {!videoFailed && (
         <video
           ref={videoRef}
@@ -326,12 +318,9 @@ function AvatarVideo({
             event.currentTarget.currentTime = 0.04;
             event.currentTarget.play().catch(() => {});
           }}
-          onError={() => {
-            setVideoFailed(true);
-          }}
+          onError={() => setVideoFailed(true)}
         />
       )}
-
       {!videoReady && !videoFailed && <div className="video-loading">LYRA</div>}
     </div>
   );
@@ -426,13 +415,11 @@ export default function Page() {
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
-
       audioRef.current = audio;
 
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         isSpeakingRef.current = false;
-
         if (liveOpen && shouldRestartRef.current) {
           setTimeout(() => startListening(true), 180);
         }
@@ -441,7 +428,6 @@ export default function Page() {
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
         isSpeakingRef.current = false;
-
         if (liveOpen && shouldRestartRef.current) {
           setTimeout(() => startListening(true), 180);
         }
@@ -450,7 +436,6 @@ export default function Page() {
       await audio.play();
     } catch {
       isSpeakingRef.current = false;
-
       addMessage(
         'system',
         'Gemini sesi çalışmadı. /api/tts route’unu ve GEMINI_API_KEY env ayarını kontrol et.'
@@ -490,7 +475,7 @@ export default function Page() {
     if (!aiText) {
       addMessage(
         'assistant',
-        'Gemini bağlantısı çalışmadı kanka. Eski bot route’a düşürmedim; böylece yanlış bot cevap vermez. app/api/gemini/route.ts ve Vercel GEMINI_API_KEY ayarını kontrol edelim.'
+        'Gemini bağlantısı çalışmadı kanka. Eski bot fallback kapalı. app/api/gemini/route.ts ve GEMINI_API_KEY ayarını kontrol edelim.'
       );
       return;
     }
@@ -634,12 +619,10 @@ export default function Page() {
 
   const quickAction = (action: string) => {
     const text = message.trim();
-
     if (!text) {
       setMessage(action);
       return;
     }
-
     sendMessage(text, action);
   };
 
@@ -1091,7 +1074,8 @@ export default function Page() {
           min-height: 100dvh;
           overflow-x: hidden;
           overflow-y: auto;
-          padding: 10px;
+          padding: 24px 10px 12px;
+          scroll-padding-top: 24px;
         }
 
         .page::before,
@@ -1125,12 +1109,12 @@ export default function Page() {
           position: relative;
           z-index: 2;
           width: 100%;
-          min-height: calc(100dvh - 20px);
+          min-height: calc(100dvh - 36px);
           margin: 0 auto;
           display: grid;
           grid-template-columns: 220px minmax(620px, 1fr) 320px;
           gap: 14px;
-          align-items: stretch;
+          align-items: start;
         }
 
         .glass {
@@ -1142,7 +1126,7 @@ export default function Page() {
         }
 
         .sidebar {
-          min-height: calc(100dvh - 20px);
+          min-height: calc(100dvh - 36px);
           border-radius: 28px;
           padding: 18px 14px;
           display: flex;
@@ -1257,12 +1241,12 @@ export default function Page() {
 
         .main-panel {
           position: relative;
-          min-height: calc(100dvh - 20px);
+          min-height: calc(100dvh - 36px);
           border-radius: 28px;
-          padding: 14px 18px;
+          padding: 18px 18px 14px;
           overflow: hidden;
           display: grid;
-          grid-template-rows: 42px 255px minmax(360px, auto) 126px auto;
+          grid-template-rows: 56px 228px minmax(360px, auto) 118px auto;
           gap: 10px;
         }
 
@@ -1286,7 +1270,7 @@ export default function Page() {
         }
 
         .main-head {
-          min-height: 42px;
+          min-height: 56px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1297,6 +1281,7 @@ export default function Page() {
           font-size: clamp(20px, 2vw, 28px);
           letter-spacing: 0.12em;
           font-weight: 950;
+          text-align: center;
         }
 
         .head-actions {
@@ -1317,6 +1302,7 @@ export default function Page() {
           display: flex;
           flex-direction: column;
           align-items: center;
+          justify-content: flex-start;
           gap: 8px;
           overflow: visible;
         }
@@ -1324,7 +1310,7 @@ export default function Page() {
         .avatar-block {
           position: relative;
           width: 100%;
-          height: 194px;
+          height: 156px;
           display: grid;
           place-items: center;
           isolation: isolate;
@@ -1340,14 +1326,14 @@ export default function Page() {
         }
 
         .orbit-one {
-          width: 210px;
-          height: 210px;
+          width: 180px;
+          height: 180px;
           animation: orbit 9s ease-in-out infinite;
         }
 
         .orbit-two {
-          width: 270px;
-          height: 270px;
+          width: 230px;
+          height: 230px;
           opacity: 0.42;
           animation: orbit 12s ease-in-out infinite reverse;
         }
@@ -1355,9 +1341,9 @@ export default function Page() {
         .avatar-video-wrap {
           position: relative;
           z-index: 2;
-          width: 150px;
-          height: 190px;
-          border-radius: 22px;
+          width: 126px;
+          height: 154px;
+          border-radius: 20px;
           overflow: hidden;
           border: 1px solid rgba(20, 24, 28, 0.12);
           background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
@@ -1423,8 +1409,8 @@ export default function Page() {
         }
 
         .control {
-          min-height: 46px;
-          border-radius: 19px;
+          min-height: 44px;
+          border-radius: 18px;
           padding: 0 16px;
           display: inline-flex;
           align-items: center;
@@ -1563,7 +1549,7 @@ export default function Page() {
         }
 
         .mode-card {
-          min-height: 116px;
+          min-height: 108px;
           border-radius: 20px;
           padding: 12px 9px 9px;
           display: flex;
@@ -1640,7 +1626,7 @@ export default function Page() {
 
         .phone-shell {
           align-self: start;
-          min-height: calc(100dvh - 20px);
+          min-height: calc(100dvh - 36px);
           padding: 8px;
           border-radius: 40px;
           background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
@@ -1655,7 +1641,7 @@ export default function Page() {
 
         .phone {
           width: 300px;
-          height: calc(100dvh - 48px);
+          height: calc(100dvh - 60px);
           max-height: 820px;
           overflow: hidden;
           border-radius: 34px;
@@ -1882,7 +1868,7 @@ export default function Page() {
             transform: scale(1) translateY(0);
           }
           50% {
-            transform: scale(1.03) translateY(-8px);
+            transform: scale(1.03) translateY(-6px);
           }
         }
 
@@ -1900,18 +1886,18 @@ export default function Page() {
           }
 
           .main-panel {
-            grid-template-rows: 42px 250px minmax(360px, auto) auto auto;
+            grid-template-rows: 56px 220px minmax(360px, auto) auto auto;
           }
         }
 
         @media (max-width: 980px) {
           .page {
-            padding: 8px;
+            padding: 12px 8px;
           }
 
           .app-layout {
             grid-template-columns: 1fr;
-            min-height: calc(100dvh - 16px);
+            min-height: calc(100dvh - 24px);
           }
 
           .sidebar,
@@ -1920,8 +1906,8 @@ export default function Page() {
           }
 
           .main-panel {
-            min-height: calc(100dvh - 16px);
-            padding: 12px;
+            min-height: calc(100dvh - 24px);
+            padding: 14px 12px;
             border-radius: 22px;
             display: flex;
             flex-direction: column;
@@ -1929,6 +1915,7 @@ export default function Page() {
 
           .main-head {
             justify-content: center;
+            min-height: 48px;
           }
 
           .main-head h1 {
@@ -1941,12 +1928,22 @@ export default function Page() {
           }
 
           .avatar-block {
-            height: 170px;
+            height: 148px;
           }
 
           .avatar-video-wrap {
-            width: 140px;
-            height: 170px;
+            width: 120px;
+            height: 146px;
+          }
+
+          .orbit-one {
+            width: 168px;
+            height: 168px;
+          }
+
+          .orbit-two {
+            width: 210px;
+            height: 210px;
           }
 
           .controls {
