@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'GEMINI_API_KEY is missing' },
+        { error: 'GEMINI_API_KEY is missing in Vercel environment variables' },
         { status: 500 }
       );
     }
@@ -59,19 +59,20 @@ export async function POST(req: NextRequest) {
       .replace(/\n{3,}/g, '\n\n')
       .slice(0, 3600);
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
         },
         body: JSON.stringify({
           contents: [
             {
               parts: [
                 {
-                  text: `Türkçe konuş. Sıcak, doğal, akıcı ve gerçek bir kadın asistan gibi oku. Gereksiz yavaşlama yapma. Sohbet eder gibi, net ve enerjik oku:\n\n${cleanText}`,
+                  text: `Türkçe konuş. Sıcak, doğal, akıcı, gerçek bir kadın asistan gibi oku. Gereksiz yavaşlama yapma. Sohbet eder gibi net ve canlı oku:\n\n${cleanText}`,
                 },
               ],
             },
@@ -90,19 +91,18 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    if (!geminiResponse.ok) {
-      const detail = await geminiResponse.text();
-
+    if (!response.ok) {
+      const detail = await response.text();
       return NextResponse.json(
         {
           error: 'Gemini TTS request failed',
           detail,
         },
-        { status: geminiResponse.status }
+        { status: response.status }
       );
     }
 
-    const data = await geminiResponse.json();
+    const data = await response.json();
 
     const audioPart = data?.candidates?.[0]?.content?.parts?.find(
       (part: any) => part?.inlineData?.data
