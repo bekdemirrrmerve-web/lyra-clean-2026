@@ -89,7 +89,7 @@ const TOOL_META: Record<
     title: "Ders Modu",
     icon: "■",
     placeholder:
-      "Çalışmak istediğin konuyu yaz. Örnek: üslü sayılar, OBEB-OKEK, paragraf taktikleri...",
+      "Çalışmak istediğin konuyu yaz. Örnek: üslü sayılar, sayısal mantık, OBEB-OKEK...",
     buttonLabel: "Dersi Oluştur",
     helper: "Konu özeti, çözümlü sorular ve şıklı test üret.",
   },
@@ -97,17 +97,17 @@ const TOOL_META: Record<
     title: "Görsel Üretme",
     icon: "▧",
     placeholder:
-      "Nasıl bir görsel istediğini yaz. Sana güçlü bir prompt ve konsept oluşturayım.",
-    buttonLabel: "Prompt Oluştur",
-    helper: "Görsel promptu ve konsept hazırla.",
+      "Nasıl bir görsel istediğini yaz. Örnek: beyaz gümüş yapay zeka asistan arayüzü, gerçekçi avatar...",
+    buttonLabel: "Görsel Oluştur",
+    helper: "Prompt yaz, görsel oluştur ve konsept hazırla.",
   },
   vision: {
     title: "Görselle Okut",
     icon: "◌",
     placeholder:
-      "Analiz edilmesini istediğin görseli ya da ekran içeriğini yaz.",
+      "Kamerayla nesneyi göster veya açıklama yaz. Lyra ne olduğunu analiz etsin.",
     buttonLabel: "Analiz Et",
-    helper: "Görsel, belge ve ekranları analiz et.",
+    helper: "Kamera aç, nesne göster, fotoğraf çek ve analiz et.",
   },
   pdf: {
     title: "PDF Özeti",
@@ -171,6 +171,36 @@ function extractTextFromGemini(data: any) {
   return "";
 }
 
+function findBlock(text: string, startNames: string[], endNames: string[]) {
+  const clean = String(text || "");
+  const lower = clean.toLocaleLowerCase("tr-TR");
+
+  const starts = startNames
+    .map((name) => ({
+      name,
+      index: lower.indexOf(name.toLocaleLowerCase("tr-TR")),
+    }))
+    .filter((item) => item.index >= 0)
+    .sort((a, b) => a.index - b.index);
+
+  if (!starts.length) return "";
+
+  const start = starts[0];
+  const startIndex = start.index + start.name.length;
+
+  const endIndexes = endNames
+    .map((name) => lower.indexOf(name.toLocaleLowerCase("tr-TR"), startIndex))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b);
+
+  const endIndex = endIndexes[0] ?? clean.length;
+
+  return clean
+    .slice(startIndex, endIndex)
+    .replace(/^[:\s\n\r-]+/, "")
+    .trim();
+}
+
 function extractStudySections(text: string): StudySections {
   const clean = String(text || "")
     .replaceAll("**", "")
@@ -178,38 +208,23 @@ function extractStudySections(text: string): StudySections {
     .replaceAll("##", "")
     .trim();
 
-  function findSection(names: string[], nextNames: string[]) {
-    const escapedNames = names
-      .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-      .join("|");
-
-    const escapedNext = nextNames
-      .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-      .join("|");
-
-    const endPart = escapedNext
-      ? `(?=\\n\\s*(?:${escapedNext})\\s*:?\\s*\\n|$)`
-      : `(?=$)`;
-
-    const regex = new RegExp(
-      `(?:^|\\n)\\s*(?:${escapedNames})\\s*:?\\s*\\n([\\s\\S]*?)${endPart}`,
-      "i"
-    );
-
-    return clean.match(regex)?.[1]?.trim() || "";
-  }
-
-  const summary = findSection(
-    ["KONU ÖZETİ", "KONU OZETI", "KONU ÖZETI"],
+  const summary = findBlock(
+    clean,
+    ["KONU ÖZETİ", "KONU OZETI", "KONU ÖZETI", "KONU ÖZET"],
     ["ÇÖZÜMLÜ SORULAR", "COZUMLU SORULAR", "ŞIKLI TEST", "SIKLI TEST"]
   );
 
-  const solved = findSection(
-    ["ÇÖZÜMLÜ SORULAR", "COZUMLU SORULAR"],
+  const solved = findBlock(
+    clean,
+    ["ÇÖZÜMLÜ SORULAR", "COZUMLU SORULAR", "ÇÖZÜMLÜ SORU", "COZUMLU SORU"],
     ["ŞIKLI TEST", "SIKLI TEST", "CEVAP ANAHTARI"]
   );
 
-  const test = findSection(["ŞIKLI TEST", "SIKLI TEST"], []);
+  const test = findBlock(
+    clean,
+    ["ŞIKLI TEST", "SIKLI TEST", "TEST SORULARI", "ÇOKTAN SEÇMELİ TEST"],
+    []
+  );
 
   return {
     summary:
@@ -219,6 +234,14 @@ function extractStudySections(text: string): StudySections {
     test: test || "Şıklı test burada görünecek.",
     raw: clean,
   };
+}
+
+function makeImageUrl(prompt: string) {
+  const cleanPrompt = encodeURIComponent(
+    `${prompt}, high quality, detailed, clean composition, modern, realistic, no watermark, no text`
+  );
+
+  return `https://image.pollinations.ai/prompt/${cleanPrompt}?width=768&height=768&nologo=true&private=true&seed=${Date.now()}`;
 }
 
 export default function Home() {
@@ -231,7 +254,7 @@ export default function Home() {
     {
       role: "lyra",
       text:
-        "Elbette kanka, buradayım. Mesaj yazınca cevap vereceğim; Ders Modu’nda da konu özeti, çözümlü soru ve şıklı test çıkaracağım.",
+        "Elbette kanka, buradayım. Mesaj yazınca cevap vereceğim; Ders Modu’nda konu özeti, çözümlü soru ve şıklı test çıkaracağım.",
     },
   ]);
 
@@ -256,6 +279,15 @@ export default function Home() {
   );
   const [sourceLang, setSourceLang] = useState("Otomatik Algıla");
   const [targetLang, setTargetLang] = useState("Türkçe");
+
+  const [generatedImageUrl, setGeneratedImageUrl] = useState("");
+  const [generatedImagePrompt, setGeneratedImagePrompt] = useState("");
+
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [capturedImage, setCapturedImage] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [isListening, setIsListening] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -330,6 +362,7 @@ export default function Home() {
   useEffect(() => {
     return () => {
       stopListening();
+      stopCamera();
       if (typeof window !== "undefined") {
         window.speechSynthesis?.cancel();
       }
@@ -484,7 +517,7 @@ export default function Home() {
     }
   }
 
-  async function askGemini(text: string) {
+  async function askGemini(text: string, extra?: Record<string, any>) {
     const history = messages.slice(-12).map((m) => ({
       role: m.role === "user" ? "user" : "assistant",
       content: m.text,
@@ -498,6 +531,7 @@ export default function Home() {
       question: text,
       userMessage: text,
       history,
+      ...(extra || {}),
     };
 
     const res = await fetch("/api/gemini", {
@@ -594,7 +628,6 @@ Konu: ${text}`;
 Kullanıcının verdiği konuda eksiksiz ders notu hazırla.
 
 Lütfen matematik sembollerini bozuk çıkmayacak şekilde sade yaz.
-Örnek: 3^4 yerine "3 üzeri 4" yazabilirsin.
 LaTeX, markdown tablo, garip sembol kullanma.
 Türkçe karakterleri düzgün kullan.
 
@@ -606,21 +639,23 @@ KONU ÖZETİ
 - Akılda kalıcı mini not ekle.
 
 ÇÖZÜMLÜ SORULAR
-En az 4 tane çözümlü soru yaz.
+En az 5 farklı tipte çözümlü soru yaz.
+Her soru birbirinden farklı mantıkta olsun.
 Her soruda:
 Soru:
 Çözüm:
 Cevap:
 
 ŞIKLI TEST
-En az 7 tane A-B-C-D-E şıklı test sorusu yaz.
+En az 10 tane A-B-C-D-E şıklı test sorusu yaz.
 Her sorunun seçenekleri olsun.
+Sorular birbirinin aynısı olmasın.
 En altta cevap anahtarı ver.
 
 Konu: ${text}`;
 
       case "image":
-        return `Kullanıcının istediği görsel için güçlü ve profesyonel bir image prompt oluştur. Türkçe kısa açıklama + altında kopyalanabilir prompt ver.\n\nİstek: ${text}`;
+        return `Kullanıcının istediği görsel için profesyonel image prompt oluştur. Türkçe kısa açıklama + altında İngilizce kopyalanabilir prompt ver. Prompt gerçek görsel üretimine uygun, net ve detaylı olsun.\n\nİstek: ${text}`;
 
       case "vision":
         return `Kullanıcının verdiği görsel ya da ekran açıklamasını analiz et. Ne anlaşıldığını, önemli noktaları ve kısa yorumunu yaz.\n\nAçıklama: ${text}`;
@@ -634,6 +669,73 @@ Konu: ${text}`;
       default:
         return text;
     }
+  }
+
+  async function startCamera() {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices) {
+      setCameraError("Bu cihazda kamera erişimi desteklenmiyor.");
+      return;
+    }
+
+    try {
+      setCameraError("");
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      setCameraOpen(true);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 100);
+    } catch {
+      setCameraError(
+        "Kamera açılamadı kanka. Tarayıcıdan kamera izni verip tekrar dene."
+      );
+    }
+  }
+
+  function stopCamera() {
+    try {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    } catch {}
+
+    streamRef.current = null;
+    setCameraOpen(false);
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }
+
+  function captureCamera() {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const image = canvas.toDataURL("image/jpeg", 0.92);
+    setCapturedImage(image);
+    setToolOutput(
+      "Fotoğraf çekildi. Şimdi 'Analiz Et' butonuna basınca Lyra bu görselde ne olduğunu yorumlamaya çalışacak."
+    );
   }
 
   async function runTool() {
@@ -663,7 +765,8 @@ Konu: ${text}`;
     }
 
     const text = toolInput.trim();
-    if (!text) return;
+
+    if (activeTool !== "vision" && !text) return;
 
     setToolBusy(true);
 
@@ -674,18 +777,45 @@ Konu: ${text}`;
         test: "Şıklı test hazırlanıyor...",
         raw: "",
       });
+    } else if (activeTool === "image") {
+      setToolOutput("Görsel hazırlanıyor...");
+      setGeneratedImageUrl("");
+      setGeneratedImagePrompt("");
+    } else if (activeTool === "vision") {
+      setToolOutput("Görsel analiz ediliyor...");
     } else {
       setToolOutput("Hazırlanıyor...");
     }
 
     try {
-      const reply = await askGemini(buildToolPrompt(activeTool, text));
-      const finalReply = String(reply);
+      if (activeTool === "image") {
+        const reply = await askGemini(buildToolPrompt("image", text));
+        const imageUrl = makeImageUrl(text);
+        setGeneratedImagePrompt(String(reply));
+        setGeneratedImageUrl(imageUrl);
+        setToolOutput(String(reply));
+      } else if (activeTool === "vision") {
+        const prompt = capturedImage
+          ? `Kullanıcı kamerayla bir nesne fotoğrafı çekti. Fotoğraf data URL olarak gönderiliyor. Görselde ne olduğunu, olası nesneyi, kullanım alanını ve dikkat edilmesi gerekenleri Türkçe anlat. Nesne net değilse olasılıkları yaz. Ek açıklama: ${
+              text || "Ek açıklama yok."
+            }`
+          : buildToolPrompt("vision", text || "Kamera görüntüsü analiz edilecek.");
 
-      if (activeTool === "study") {
-        setStudySections(extractStudySections(finalReply));
+        const reply = await askGemini(prompt, {
+          image: capturedImage || null,
+          imageDataUrl: capturedImage || null,
+        });
+
+        setToolOutput(String(reply));
       } else {
-        setToolOutput(finalReply);
+        const reply = await askGemini(buildToolPrompt(activeTool, text));
+        const finalReply = String(reply);
+
+        if (activeTool === "study") {
+          setStudySections(extractStudySections(finalReply));
+        } else {
+          setToolOutput(finalReply);
+        }
       }
     } catch {
       if (activeTool === "study") {
@@ -695,6 +825,15 @@ Konu: ${text}`;
           test: "Gemini cevabı alınamadı.",
           raw: "",
         });
+      } else if (activeTool === "image") {
+        const imageUrl = text ? makeImageUrl(text) : "";
+        setGeneratedImageUrl(imageUrl);
+        setGeneratedImagePrompt(
+          "Gemini prompt cevabı alınamadı ama görsel üretme bağlantısı denendi."
+        );
+        setToolOutput(
+          "Görsel prompt cevabı alınamadı ama görsel üreticiye istek gönderildi."
+        );
       } else {
         setToolOutput(
           "Bu araç çalışırken küçük bir bağlantı takılması oldu kanka. Tekrar deneyelim."
@@ -710,6 +849,11 @@ Konu: ${text}`;
 
     if (tool !== "translate" && tool !== "study") {
       setToolOutput("");
+    }
+
+    if (tool !== "image") {
+      setGeneratedImageUrl("");
+      setGeneratedImagePrompt("");
     }
   }
 
@@ -803,7 +947,7 @@ ${bodyContent}
     });
 
     const url = URL.createObjectURL(blob);
-    const win = window.open(url, "_blank", "width=900,height=700");
+    window.open(url, "_blank", "width=900,height=700");
 
     setTimeout(() => {
       URL.revokeObjectURL(url);
@@ -1097,6 +1241,101 @@ ${bodyContent}
                       </article>
                     </div>
                   </>
+                ) : activeTool === "image" ? (
+                  <>
+                    <label>Görsel Promptu</label>
+
+                    <textarea
+                      className="tool-input"
+                      value={toolInput}
+                      onChange={(e) => setToolInput(e.target.value)}
+                      placeholder={currentToolMeta?.placeholder}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          runTool();
+                        }
+                      }}
+                    />
+
+                    <div className="tool-actions">
+                      <button className="tool-run" onClick={runTool}>
+                        {toolBusy ? "Görsel hazırlanıyor..." : "Görsel Oluştur"}
+                      </button>
+
+                      <button className="tool-print" onClick={printToolResult}>
+                        PDF Yazdır
+                      </button>
+                    </div>
+
+                    {generatedImageUrl && (
+                      <div className="image-result">
+                        <img
+                          src={generatedImageUrl}
+                          alt="Lyra görsel üretimi"
+                        />
+                      </div>
+                    )}
+
+                    <label>Prompt / Açıklama</label>
+                    <div className="tool-output">
+                      {generatedImagePrompt ||
+                        toolOutput ||
+                        "Prompt yazınca görsel burada oluşacak..."}
+                    </div>
+                  </>
+                ) : activeTool === "vision" ? (
+                  <>
+                    <div className="camera-actions">
+                      <button onClick={startCamera}>Kamerayı Aç</button>
+                      <button onClick={captureCamera}>Fotoğraf Çek</button>
+                      <button onClick={stopCamera}>Kamerayı Kapat</button>
+                    </div>
+
+                    {cameraError && <p className="camera-error">{cameraError}</p>}
+
+                    <div className="camera-box">
+                      {cameraOpen ? (
+                        <video ref={videoRef} playsInline muted />
+                      ) : capturedImage ? (
+                        <img src={capturedImage} alt="Çekilen görsel" />
+                      ) : (
+                        <div className="camera-placeholder">
+                          Kamerayı açıp nesneyi göster.
+                        </div>
+                      )}
+                    </div>
+
+                    {capturedImage && cameraOpen && (
+                      <div className="captured-preview">
+                        <img src={capturedImage} alt="Çekilen görsel önizleme" />
+                      </div>
+                    )}
+
+                    <label>Ek açıklama</label>
+                    <textarea
+                      className="tool-input"
+                      value={toolInput}
+                      onChange={(e) => setToolInput(e.target.value)}
+                      placeholder="İstersen nesneyle ilgili ek bilgi yaz..."
+                    />
+
+                    <div className="tool-actions">
+                      <button className="tool-run" onClick={runTool}>
+                        {toolBusy ? "Analiz ediliyor..." : "Analiz Et"}
+                      </button>
+
+                      <button className="tool-print" onClick={printToolResult}>
+                        PDF Yazdır
+                      </button>
+                    </div>
+
+                    <label>Analiz Sonucu</label>
+                    <div className="tool-output">
+                      {toolOutput ||
+                        "Kamera görüntüsü veya açıklama analiz sonucu burada görünecek..."}
+                    </div>
+                  </>
                 ) : (
                   <>
                     <label>{currentToolMeta?.title} Girişi</label>
@@ -1162,14 +1401,14 @@ ${bodyContent}
             <button onClick={() => openTool("image")}>
               <span>▧</span>
               <b>Görsel Üretme</b>
-              <small>Görsel promptu ve konsept hazırla.</small>
+              <small>Prompt yaz, görsel oluştur.</small>
               <i>⌄</i>
             </button>
 
             <button onClick={() => openTool("vision")}>
               <span>◌</span>
               <b>Görselle Okut</b>
-              <small>Görsel, belge ve ekranları analiz et.</small>
+              <small>Kamera aç, nesne okut.</small>
               <i>⌄</i>
             </button>
 
@@ -1745,10 +1984,6 @@ ${bodyContent}
           flex-direction: column;
         }
 
-        .tool-box.under-chat {
-          margin-top: 0;
-        }
-
         .tool-head {
           display: flex;
           justify-content: space-between;
@@ -1858,14 +2093,6 @@ ${bodyContent}
           line-height: 1.45;
           white-space: pre-wrap;
           overflow-y: auto;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-        }
-
-        .tool-output::-webkit-scrollbar {
-          display: none;
-          width: 0;
-          height: 0;
         }
 
         .study-tabs {
@@ -1876,20 +2103,29 @@ ${bodyContent}
         }
 
         .study-tabs article {
-          max-height: 260px;
+          max-height: 300px;
           overflow-y: auto;
           padding: 12px;
           border-radius: 16px;
           background: rgba(255, 255, 255, 0.62);
           border: 1px solid rgba(185, 191, 198, 0.72);
           white-space: pre-wrap;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
+          scrollbar-width: thin;
+          scrollbar-color: #9ca3af rgba(255, 255, 255, 0.45);
         }
 
         .study-tabs article::-webkit-scrollbar {
-          display: none;
-          width: 0;
+          width: 8px;
+        }
+
+        .study-tabs article::-webkit-scrollbar-thumb {
+          background: #9ca3af;
+          border-radius: 999px;
+        }
+
+        .study-tabs article::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.45);
+          border-radius: 999px;
         }
 
         .study-tabs h4 {
@@ -1901,6 +2137,76 @@ ${bodyContent}
           font-size: 13.5px;
           line-height: 1.45;
           color: #222831;
+        }
+
+        .image-result {
+          margin: 12px 0;
+          border-radius: 18px;
+          overflow: hidden;
+          border: 1px solid rgba(185, 191, 198, 0.72);
+          background: rgba(255, 255, 255, 0.62);
+        }
+
+        .image-result img {
+          width: 100%;
+          max-height: 420px;
+          display: block;
+          object-fit: contain;
+        }
+
+        .camera-actions {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin: 10px 0;
+        }
+
+        .camera-actions button {
+          height: 42px;
+          border: 1px solid rgba(185, 191, 198, 0.72);
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.75);
+          font-weight: 900;
+        }
+
+        .camera-box {
+          width: 100%;
+          min-height: 260px;
+          border-radius: 20px;
+          overflow: hidden;
+          background: rgba(255, 255, 255, 0.7);
+          border: 1px solid rgba(185, 191, 198, 0.72);
+          display: grid;
+          place-items: center;
+        }
+
+        .camera-box video,
+        .camera-box img,
+        .captured-preview img {
+          width: 100%;
+          max-height: 430px;
+          object-fit: contain;
+          display: block;
+        }
+
+        .camera-placeholder {
+          color: #5e6670;
+          font-weight: 850;
+          padding: 24px;
+          text-align: center;
+        }
+
+        .camera-error {
+          color: #b42318;
+          font-weight: 850;
+          margin: 8px 0;
+        }
+
+        .captured-preview {
+          margin-top: 10px;
+          border-radius: 16px;
+          overflow: hidden;
+          border: 1px solid rgba(185, 191, 198, 0.72);
         }
 
         .tool-grid {
@@ -2563,6 +2869,10 @@ ${bodyContent}
           }
 
           .study-tabs {
+            grid-template-columns: 1fr;
+          }
+
+          .camera-actions {
             grid-template-columns: 1fr;
           }
 
