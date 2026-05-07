@@ -18,6 +18,13 @@ type ToolKey =
   | "pdf"
   | "translate";
 
+type StudySections = {
+  summary: string;
+  solved: string;
+  test: string;
+  raw: string;
+};
+
 declare global {
   interface Window {
     SpeechRecognition?: any;
@@ -82,9 +89,9 @@ const TOOL_META: Record<
     title: "Ders Modu",
     icon: "■",
     placeholder:
-      "Çalışmak istediğin konuyu yaz. Sana sade konu anlatımı ve mini soru hazırlayayım.",
+      "Çalışmak istediğin konuyu yaz. Mesela: üslü sayılar, OBEB-OKEK, paragraf taktikleri...",
     buttonLabel: "Ders Hazırla",
-    helper: "Konu anlat, mini özet ve soru üret.",
+    helper: "Konu özeti, çözümlü sorular ve şıklı test üret.",
   },
   image: {
     title: "Görsel Üretme",
@@ -123,6 +130,75 @@ function getLangCode(languageName: string) {
   return LANGUAGES.find((lang) => lang.name === languageName)?.code || "tr-TR";
 }
 
+function extractTextFromGemini(data: any) {
+  if (!data) return "";
+
+  if (typeof data === "string") return data;
+
+  const direct =
+    data.answer ||
+    data.reply ||
+    data.text ||
+    data.message ||
+    data.content ||
+    data.output ||
+    data.result ||
+    data.response;
+
+  if (typeof direct === "string") return direct;
+
+  if (typeof data?.response?.text === "string") return data.response.text;
+
+  const candidateText =
+    data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+    data?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).join("\n");
+
+  if (typeof candidateText === "string") return candidateText;
+
+  const partsText = data?.parts?.map((p: any) => p?.text).join("\n");
+  if (typeof partsText === "string") return partsText;
+
+  return "";
+}
+
+function extractStudySections(text: string): StudySections {
+  const clean = text || "";
+
+  function section(title: string, nextTitles: string[]) {
+    const titleRegex = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nextRegex = nextTitles
+      .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|");
+
+    const regex = new RegExp(
+      `(?:^|\\n)#{1,3}\\s*${titleRegex}\\s*\\n([\\s\\S]*?)(?=\\n#{1,3}\\s*(?:${nextRegex})\\s*\\n|$)`,
+      "i"
+    );
+
+    const match = clean.match(regex);
+    return match?.[1]?.trim() || "";
+  }
+
+  const summary =
+    section("KONU ÖZETİ", ["ÇÖZÜMLÜ SORULAR", "ŞIKLI TEST"]) ||
+    section("KONU OZETI", ["COZUMLU SORULAR", "SIKLI TEST"]);
+
+  const solved =
+    section("ÇÖZÜMLÜ SORULAR", ["ŞIKLI TEST"]) ||
+    section("COZUMLU SORULAR", ["SIKLI TEST"]);
+
+  const test =
+    section("ŞIKLI TEST", ["CEVAP ANAHTARI"]) ||
+    section("SIKLI TEST", ["CEVAP ANAHTARI"]);
+
+  return {
+    summary: summary || "Konu özeti burada görünecek.",
+    solved: solved || "Çözümlü sorular burada görünecek.",
+    test: test || "Şıklı test burada görünecek.",
+    raw: clean,
+  };
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -144,10 +220,17 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [liveOpen, setLiveOpen] = useState(false);
 
-  const [activeTool, setActiveTool] = useState<ToolKey | null>("translate");
+  const [activeTool, setActiveTool] = useState<ToolKey | null>("study");
   const [toolInput, setToolInput] = useState("");
   const [toolOutput, setToolOutput] = useState("");
   const [toolBusy, setToolBusy] = useState(false);
+
+  const [studySections, setStudySections] = useState<StudySections>({
+    summary: "Ders konusunu yazınca konu özeti burada otomatik oluşacak.",
+    solved: "Çözümlü sorular burada otomatik oluşacak.",
+    test: "Şıklı test ve cevap anahtarı burada otomatik oluşacak.",
+    raw: "",
+  });
 
   const [translateInput, setTranslateInput] = useState("how old are you");
   const [translateOutput, setTranslateOutput] = useState("Kaç yaşındasın");
@@ -356,9 +439,7 @@ export default function Home() {
 
       const selectedVoice =
         voices.find((v) => v.lang === finalLang) ||
-        voices.find((v) =>
-          v.lang?.toLowerCase().startsWith(baseLang)
-        ) ||
+        voices.find((v) => v.lang?.toLowerCase().startsWith(baseLang)) ||
         voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
         voices[0];
 
@@ -398,24 +479,37 @@ export default function Home() {
         message: text,
         prompt: text,
         input: text,
+        text,
+        question: text,
+        userMessage: text,
         history,
       }),
     });
 
-    const data = await res.json().catch(() => null);
+    const rawText = await res.text();
+    let data: any = null;
 
-    if (!res.ok) {
-      throw new Error(data?.error || "Gemini cevabı alınamadı.");
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      data = rawText;
     }
 
-    return (
-      data?.answer ||
-      data?.reply ||
-      data?.text ||
-      data?.message ||
-      data?.content ||
-      "Cevap geldi ama metni düzgün okuyamadım."
-    );
+    if (!res.ok) {
+      throw new Error(
+        typeof data?.error === "string"
+          ? data.error
+          : "Gemini cevabı alınamadı."
+      );
+    }
+
+    const finalText = extractTextFromGemini(data);
+
+    if (!finalText || !finalText.trim()) {
+      throw new Error("Gemini boş cevap döndürdü.");
+    }
+
+    return finalText.trim();
   }
 
   async function sendMessage(value?: string, fromVoice = false) {
@@ -446,7 +540,7 @@ export default function Home() {
       }
     } catch {
       const fallback =
-        "Gemini bağlantısında küçük bir takılma oldu kanka. Ekran çalışıyor, bağlantıyı sonra birlikte düzeltiriz.";
+        "Cevap bağlantısında takıldım kanka. Gemini route çalışıyor olabilir ama dönen cevabı okuyamadım. app/api/gemini/route.ts içinde cevap alanı answer, reply veya text olarak dönmeli.";
 
       addLyra(fallback);
       setIsThinking(false);
@@ -464,18 +558,53 @@ export default function Home() {
     switch (tool) {
       case "research":
         return `Kullanıcının istediği konuyu sade, net, anlaşılır ve bilgilendirici şekilde açıkla. Çok uzatma ama boş da bırakma. Gerekirse kısa maddeler kullan.\n\nKonu: ${text}`;
+
       case "content":
-        return `Kullanıcı için içerik üret. Türkçe cevap ver. Çıktı şu formatta olsun: 1) 3 başlık önerisi 2) güçlü hook 3) 30-45 saniyelik teleprompter metni 4) CTA.\n\nKonu: ${text}`;
+        return `Kullanıcı için içerik üret. Türkçe cevap ver. Çıktı şu formatta olsun:
+1) 3 başlık önerisi
+2) güçlü hook
+3) 30-45 saniyelik teleprompter metni
+4) CTA
+
+Konu: ${text}`;
+
       case "study":
-        return `Kullanıcı için öğretici mini ders hazırla. Türkçe cevap ver. Format: kısa konu anlatımı, kritik noktalar, mini örnek, 3 pratik soru.\n\nKonu: ${text}`;
+        return `Sen DGS/TYT tarzında sade anlatan bir ders hocasısın.
+Kullanıcının verdiği konuda eksiksiz ders notu hazırla.
+
+Mutlaka şu başlıklarla cevap ver:
+
+## KONU ÖZETİ
+- Konuyu çok sade anlat.
+- Önemli formülleri ve kısa ipuçlarını yaz.
+- Akılda kalıcı mini not ekle.
+
+## ÇÖZÜMLÜ SORULAR
+En az 3 tane çözümlü soru yaz.
+Her soruda:
+Soru:
+Çözüm:
+Cevap:
+
+## ŞIKLI TEST
+En az 5 tane A-B-C-D-E şıklı test sorusu yaz.
+En altta cevap anahtarı ver.
+Sorular ÖSYM mantığına yakın olsun ama çok zorlaştırma.
+
+Konu: ${text}`;
+
       case "image":
         return `Kullanıcının istediği görsel için güçlü ve profesyonel bir image prompt oluştur. Türkçe kısa açıklama + altında kopyalanabilir prompt ver.\n\nİstek: ${text}`;
+
       case "vision":
         return `Kullanıcının verdiği görsel ya da ekran açıklamasını analiz et. Ne anlaşıldığını, önemli noktaları ve kısa yorumunu yaz.\n\nAçıklama: ${text}`;
+
       case "pdf":
         return `Kullanıcının verdiği PDF içeriği veya konusu için düzenli özet çıkar. Türkçe cevap ver. Format: kısa özet, ana noktalar, önemli notlar.\n\nİçerik/Konu: ${text}`;
+
       case "translate":
         return `Şu metni ${targetLang} diline çevir. Kaynak dil: ${sourceLang}. Sadece çeviriyi yaz.\n\n${text}`;
+
       default:
         return text;
     }
@@ -511,15 +640,40 @@ export default function Home() {
     if (!text) return;
 
     setToolBusy(true);
-    setToolOutput("Hazırlanıyor...");
+
+    if (activeTool === "study") {
+      setStudySections({
+        summary: "Konu özeti hazırlanıyor...",
+        solved: "Çözümlü sorular hazırlanıyor...",
+        test: "Şıklı test hazırlanıyor...",
+        raw: "",
+      });
+    } else {
+      setToolOutput("Hazırlanıyor...");
+    }
 
     try {
       const reply = await askGemini(buildToolPrompt(activeTool, text));
-      setToolOutput(String(reply));
+      const finalReply = String(reply);
+
+      if (activeTool === "study") {
+        setStudySections(extractStudySections(finalReply));
+      } else {
+        setToolOutput(finalReply);
+      }
     } catch {
-      setToolOutput(
-        "Bu araç çalışırken küçük bir bağlantı takılması oldu kanka. Tekrar deneyelim."
-      );
+      if (activeTool === "study") {
+        setStudySections({
+          summary: "Ders hazırlanırken bağlantı takıldı kanka.",
+          solved: "Tekrar deneyelim.",
+          test: "Gemini cevabı alınamadı.",
+          raw: "",
+        });
+      } else {
+        setToolOutput(
+          "Bu araç çalışırken küçük bir bağlantı takılması oldu kanka. Tekrar deneyelim."
+        );
+      }
     } finally {
       setToolBusy(false);
     }
@@ -527,13 +681,96 @@ export default function Home() {
 
   function openTool(tool: ToolKey) {
     setActiveTool(tool);
-    if (tool !== "translate") {
+
+    if (tool !== "translate" && tool !== "study") {
       setToolOutput("");
     }
   }
 
   function closeToolPanel() {
     setActiveTool(null);
+  }
+
+  function printToolResult() {
+    if (typeof window === "undefined") return;
+
+    const title = activeTool ? TOOL_META[activeTool].title : "Lyra Çıktısı";
+
+    let htmlContent = "";
+
+    if (activeTool === "study") {
+      htmlContent = `
+        <h1>Ders Modu</h1>
+        <h2>Konu Özeti</h2>
+        <div>${studySections.summary.replace(/\n/g, "<br/>")}</div>
+        <h2>Çözümlü Sorular</h2>
+        <div>${studySections.solved.replace(/\n/g, "<br/>")}</div>
+        <h2>Şıklı Test</h2>
+        <div>${studySections.test.replace(/\n/g, "<br/>")}</div>
+      `;
+    } else if (activeTool === "translate") {
+      htmlContent = `
+        <h1>Translate</h1>
+        <h2>Metin</h2>
+        <div>${translateInput.replace(/\n/g, "<br/>")}</div>
+        <h2>Çeviri</h2>
+        <div>${translateOutput.replace(/\n/g, "<br/>")}</div>
+      `;
+    } else {
+      htmlContent = `
+        <h1>${title}</h1>
+        <div>${toolOutput.replace(/\n/g, "<br/>")}</div>
+      `;
+    }
+
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) return;
+
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>${title}</title>
+          <meta charset="utf-8" />
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 32px;
+              color: #111;
+              line-height: 1.55;
+            }
+            h1 {
+              font-size: 28px;
+              letter-spacing: .04em;
+              margin-bottom: 20px;
+            }
+            h2 {
+              margin-top: 26px;
+              padding-bottom: 8px;
+              border-bottom: 1px solid #ddd;
+            }
+            div {
+              white-space: normal;
+              font-size: 15px;
+            }
+            @media print {
+              body { padding: 18px; }
+            }
+          </style>
+        </head>
+        <body>
+          ${htmlContent}
+          <script>
+            window.onload = function() {
+              window.focus();
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    win.document.close();
   }
 
   function openLiveCall() {
@@ -676,7 +913,7 @@ export default function Home() {
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım."
+                placeholder="Mesajını yaz. Enter ile gönder, Shift + Enter ile alt satır."
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -766,12 +1003,62 @@ export default function Home() {
                       {translateInput.length} / 5000
                     </div>
 
-                    <button className="tool-run" onClick={runTool}>
-                      {toolBusy ? "Hazırlanıyor..." : "Çevir"}
-                    </button>
+                    <div className="tool-actions">
+                      <button className="tool-run" onClick={runTool}>
+                        {toolBusy ? "Hazırlanıyor..." : "Çevir"}
+                      </button>
+
+                      <button className="tool-print" onClick={printToolResult}>
+                        PDF Yazdır
+                      </button>
+                    </div>
 
                     <label>Çeviri</label>
                     <div className="tool-output">{translateOutput}</div>
+                  </>
+                ) : activeTool === "study" ? (
+                  <>
+                    <label>Ders Konusu</label>
+
+                    <textarea
+                      className="tool-input"
+                      value={toolInput}
+                      onChange={(e) => setToolInput(e.target.value)}
+                      placeholder={currentToolMeta?.placeholder}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          runTool();
+                        }
+                      }}
+                    />
+
+                    <div className="tool-actions">
+                      <button className="tool-run" onClick={runTool}>
+                        {toolBusy ? "Ders hazırlanıyor..." : "Dersi Oluştur"}
+                      </button>
+
+                      <button className="tool-print" onClick={printToolResult}>
+                        PDF Yazdır
+                      </button>
+                    </div>
+
+                    <div className="study-tabs">
+                      <article>
+                        <h4>Konu Özeti</h4>
+                        <div>{studySections.summary}</div>
+                      </article>
+
+                      <article>
+                        <h4>Çözümlü Sorular</h4>
+                        <div>{studySections.solved}</div>
+                      </article>
+
+                      <article>
+                        <h4>Şıklı Test</h4>
+                        <div>{studySections.test}</div>
+                      </article>
+                    </div>
                   </>
                 ) : (
                   <>
@@ -790,11 +1077,17 @@ export default function Home() {
                       }}
                     />
 
-                    <button className="tool-run" onClick={runTool}>
-                      {toolBusy
-                        ? "Hazırlanıyor..."
-                        : currentToolMeta?.buttonLabel}
-                    </button>
+                    <div className="tool-actions">
+                      <button className="tool-run" onClick={runTool}>
+                        {toolBusy
+                          ? "Hazırlanıyor..."
+                          : currentToolMeta?.buttonLabel}
+                      </button>
+
+                      <button className="tool-print" onClick={printToolResult}>
+                        PDF Yazdır
+                      </button>
+                    </div>
 
                     <label>Sonuç</label>
                     <div className="tool-output">
@@ -825,7 +1118,7 @@ export default function Home() {
             <button onClick={() => openTool("study")}>
               <span>■</span>
               <b>Ders Modu</b>
-              <small>Konu anlat, test üret, yanlış ayıkla.</small>
+              <small>Konu özeti, çözümlü soru ve test üret.</small>
               <i>⌄</i>
             </button>
 
@@ -1491,15 +1784,30 @@ export default function Home() {
           margin-top: 4px;
         }
 
-        .tool-run {
-          width: 100%;
-          height: 42px;
+        .tool-actions {
+          display: grid;
+          grid-template-columns: 1fr 0.8fr;
+          gap: 8px;
           margin: 10px 0 6px;
+        }
+
+        .tool-run,
+        .tool-print {
+          height: 42px;
           border: 0;
           border-radius: 16px;
+          font-weight: 950;
+        }
+
+        .tool-run {
           background: #11151c;
           color: white;
-          font-weight: 950;
+        }
+
+        .tool-print {
+          background: rgba(255, 255, 255, 0.8);
+          color: #11151c;
+          border: 1px solid rgba(185, 191, 198, 0.72);
         }
 
         .tool-output {
@@ -1521,6 +1829,40 @@ export default function Home() {
           display: none;
           width: 0;
           height: 0;
+        }
+
+        .study-tabs {
+          display: grid;
+          gap: 10px;
+          margin-top: 10px;
+        }
+
+        .study-tabs article {
+          max-height: 220px;
+          overflow-y: auto;
+          padding: 12px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.62);
+          border: 1px solid rgba(185, 191, 198, 0.72);
+          white-space: pre-wrap;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .study-tabs article::-webkit-scrollbar {
+          display: none;
+          width: 0;
+        }
+
+        .study-tabs h4 {
+          margin: 0 0 8px;
+          font-size: 15px;
+        }
+
+        .study-tabs div {
+          font-size: 13.5px;
+          line-height: 1.45;
+          color: #222831;
         }
 
         .tool-grid {
