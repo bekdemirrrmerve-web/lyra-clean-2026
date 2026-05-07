@@ -12,6 +12,10 @@ type GeminiPart =
       };
     };
 
+function getApiKey() {
+  return process.env.GEMINI_API_KEY || "";
+}
+
 function getTextFromBody(body: any) {
   return String(
     body?.message ||
@@ -24,8 +28,8 @@ function getTextFromBody(body: any) {
   ).trim();
 }
 
-function parseImageDataUrl(imageDataUrl: string) {
-  if (!imageDataUrl || typeof imageDataUrl !== "string") return null;
+function parseDataUrl(value: any) {
+  const imageDataUrl = String(value || "");
 
   const match = imageDataUrl.match(/^data:(.+?);base64,(.+)$/);
 
@@ -37,11 +41,31 @@ function parseImageDataUrl(imageDataUrl: string) {
   };
 }
 
+function cleanBase64Image(value: any) {
+  if (!value) return null;
+
+  const asString = String(value);
+
+  if (asString.startsWith("data:")) {
+    return parseDataUrl(asString);
+  }
+
+  return null;
+}
+
 function extractGeminiText(data: any) {
-  const parts = data?.candidates?.[0]?.content?.parts;
+  const candidates = data?.candidates;
+
+  if (!Array.isArray(candidates) || candidates.length === 0) return "";
+
+  const parts = candidates?.[0]?.content?.parts;
 
   if (Array.isArray(parts)) {
-    return parts.map((part: any) => part?.text || "").join("\n").trim();
+    return parts
+      .map((part: any) => part?.text || "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
   }
 
   return "";
@@ -53,7 +77,7 @@ async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
     {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify({
         contents: [
@@ -63,10 +87,10 @@ async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
           },
         ],
         generationConfig: {
-          temperature: 0.7,
+          temperature: 0.65,
           topP: 0.9,
           topK: 40,
-          maxOutputTokens: 4096,
+          maxOutputTokens: 8192,
         },
       }),
     }
@@ -83,13 +107,13 @@ async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
   }
 
   if (!response.ok) {
-    const msg =
+    const errorMessage =
       data?.error?.message ||
       data?.message ||
       raw ||
-      `Gemini API error: ${response.status}`;
+      `Gemini API hata verdi: ${response.status}`;
 
-    throw new Error(msg);
+    throw new Error(errorMessage);
   }
 
   const text = extractGeminiText(data);
@@ -102,7 +126,7 @@ async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
 }
 
 export async function GET(req: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getApiKey();
 
   const { searchParams } = new URL(req.url);
   const test = searchParams.get("test") || "merhaba";
@@ -120,9 +144,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const answer = await callGemini("gemini-1.5-flash", apiKey, [
+    const answer = await callGemini("gemini-2.5-flash", apiKey, [
       {
-        text: `Türkçe ve kısa cevap ver: ${test}`,
+        text: `Türkçe kısa cevap ver. Test mesajı: ${test}`,
       },
     ]);
 
@@ -133,6 +157,8 @@ export async function GET(req: NextRequest) {
       answer,
       reply: answer,
       text: answer,
+      message: answer,
+      content: answer,
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -148,13 +174,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getApiKey();
 
   if (!apiKey) {
     return NextResponse.json(
       {
         ok: false,
-        error: "GEMINI_API_KEY bulunamadı. Vercel Environment Variables kısmını kontrol et.",
+        error:
+          "GEMINI_API_KEY bulunamadı. Vercel > Settings > Environment Variables kısmını kontrol et.",
       },
       { status: 500 }
     );
@@ -164,10 +191,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
 
     const text = getTextFromBody(body);
-    const imageDataUrl =
-      body?.imageDataUrl || body?.image || body?.photo || body?.file || "";
 
-    const image = parseImageDataUrl(imageDataUrl);
+    const image =
+      cleanBase64Image(body?.imageDataUrl) ||
+      cleanBase64Image(body?.image) ||
+      cleanBase64Image(body?.photo) ||
+      cleanBase64Image(body?.file);
 
     const parts: GeminiPart[] = [];
 
@@ -196,9 +225,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const models = image
-      ? ["gemini-1.5-flash", "gemini-1.5-pro"]
-      : ["gemini-1.5-flash", "gemini-1.5-pro"];
+    const models = [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-1.5-flash",
+    ];
 
     let finalAnswer = "";
     let lastError = "";
@@ -208,7 +239,7 @@ export async function POST(req: NextRequest) {
         finalAnswer = await callGemini(model, apiKey, parts);
         break;
       } catch (error: any) {
-        lastError = error?.message || "Model hatası.";
+        lastError = error?.message || `${model} hata verdi.`;
       }
     }
 
@@ -218,10 +249,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+
+      // page.tsx hangi alanı ararsa bulsun diye hepsini dönüyoruz
       answer: finalAnswer,
       reply: finalAnswer,
       text: finalAnswer,
       message: finalAnswer,
+      content: finalAnswer,
+      output: finalAnswer,
+      result: finalAnswer,
+      response: finalAnswer,
     });
   } catch (error: any) {
     return NextResponse.json(
