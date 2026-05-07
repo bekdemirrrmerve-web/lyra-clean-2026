@@ -1,1179 +1,923 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 
-type Role = 'user' | 'assistant' | 'system';
-type ModeKey = 'chat' | 'content' | 'lesson' | 'research' | 'image' | 'pdf';
-
-type ChatMessage = {
-  id: number;
-  role: Role;
+type Message = {
+  id: string;
+  role: "user" | "assistant";
   text: string;
   time: string;
 };
 
-const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
-const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
+const ENDPOINTS = ["/api/chat", "/api/gemini", "/api/lyra"];
 
-const GEMINI_ENDPOINTS = [
-  '/api/gemini-live',
-  '/api/gemini',
-  '/api/gemini-chat',
-  '/api/chat',
-  '/api/lyra',
-  '/api/ai',
+const quickTools = [
+  "PDF Özet",
+  "İçerik Fikri",
+  "Teleprompter",
+  "Ders Modu",
+  "Foto Analiz",
+  "Araştır",
 ];
 
-const PDF_ENDPOINTS = ['/api/pdf', '/api/pdf-summary', '/api/upload-pdf'];
-const IMAGE_ENDPOINTS = ['/api/vision', '/api/image-read', '/api/analyze-image'];
-
-const voiceOptions = [
-  { label: 'Kadın - Nazik', voiceName: 'Kore' },
-  { label: 'Kadın - Enerjik', voiceName: 'Aoede' },
-  { label: 'Doğal', voiceName: 'Puck' },
-  { label: 'Sakin', voiceName: 'Leda' },
-];
-
-const modeLabels: Record<ModeKey, string> = {
-  chat: 'Sohbet',
-  content: 'İçerik',
-  lesson: 'Ders',
-  research: 'Araştırma',
-  image: 'Görsel',
-  pdf: 'PDF',
-};
-
-function nowTime() {
-  return new Date().toLocaleTimeString('tr-TR', {
-    hour: '2-digit',
-    minute: '2-digit',
+function getTime() {
+  return new Date().toLocaleTimeString("tr-TR", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
-function buildPrompt(mode: ModeKey, input: string) {
-  if (mode === 'chat') {
-    return `
-Sen Lyra'sın. Türkçe, doğal, hızlı, sıcak ve gerçek sohbet gibi cevap ver.
-Kullanıcı mesajı: ${input}
-Cevap kısa başlasın, gerekirse detaylandır. Gereksiz bekletme, direkt cevap ver.
-`;
-  }
-
-  if (mode === 'content') {
-    return `
-Sen Lyra'sın. İçerik üretici asistanı gibi çalış.
-Konu: ${input}
-
-Şu formatta cevap ver:
-1) Video Konu Başlıkları
-2) İlk 3 Saniye Hook
-3) Teleprompter Metni
-4) Ekran Yazıları
-5) CTA
-6) Çekim Notu
-`;
-  }
-
-  if (mode === 'lesson') {
-    return `
-Sen Lyra'sın. Öğretmen gibi ama sade anlat.
-Konu/Soru: ${input}
-
-Şu formatta cevap ver:
-1) Konu Özeti
-2) Konu Formülleri / Kuralları
-3) Sınav İpuçları
-4) Çözümlü Sorular
-5) Şıklı Test
-6) Yanlışımı Açıkla
-`;
-  }
-
-  if (mode === 'research') {
-    return `
-Sen Lyra'sın. Araştırma modundasın.
-Konu: ${input}
-
-Şu formatta cevap ver:
-1) Kısa cevap
-2) Detaylı açıklama
-3) Önemli noktalar
-4) Dikkat edilecekler
-5) Sonuç
-`;
-  }
-
-  if (mode === 'image') {
-    return `
-Sen Lyra'sın. Görsel üretim promptu hazırlıyorsun.
-İstek: ${input}
-
-Şu formatta cevap ver:
-1) Konsept
-2) Detaylı prompt
-3) Renk paleti
-4) Kadraj
-5) Alternatif stiller
-`;
-  }
-
-  if (mode === 'pdf') {
-    return `
-Sen Lyra'sın. PDF özetleme modundasın.
-Kullanıcı isteği: ${input}
-PDF yüklendiyse özetle, yüklenmediyse PDF yüklemesini söyle.
-`;
-  }
-
-  return input;
+function cleanText(text: string) {
+  return text.replace(/\s+/g, " ").trim();
 }
 
-async function postGeminiFast(body: Record<string, unknown>) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 22000);
+function localFallbackAnswer(prompt: string) {
+  const lower = prompt.toLowerCase();
 
-  for (const endpoint of GEMINI_ENDPOINTS) {
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) continue;
-
-      const data = await res.json().catch(() => null);
-
-      const text =
-        data?.answer ||
-        data?.reply ||
-        data?.message ||
-        data?.text ||
-        data?.content ||
-        data?.result ||
-        data?.response ||
-        data?.output;
-
-      if (typeof text === 'string' && text.trim()) {
-        clearTimeout(timeout);
-        return text.trim();
-      }
-    } catch {
-      continue;
-    }
+  if (lower.includes("dgs")) {
+    return "Tabii kanka. Bugün için mini ama etkili bir DGS planı yapalım: 35 dakika Temel Kavramlar, 10 dakika mola, 30 dakika problem çözümü, sonra 15 dakika yanlış analizi. En önemlisi bugün konuyu bitirmeye değil, masaya oturma ritmini geri kazanmaya odaklan.";
   }
 
-  clearTimeout(timeout);
-  return null;
-}
-
-async function postFileFast(endpoints: string[], file: File, extra: Record<string, string>) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 26000);
-
-  for (const endpoint of endpoints) {
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      Object.entries(extra).forEach(([key, value]) => form.append(key, value));
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        body: form,
-        signal: controller.signal,
-      });
-
-      if (!res.ok) continue;
-
-      const data = await res.json().catch(() => null);
-
-      const text =
-        data?.summary ||
-        data?.answer ||
-        data?.reply ||
-        data?.message ||
-        data?.text ||
-        data?.content ||
-        data?.result ||
-        data?.response;
-
-      if (typeof text === 'string' && text.trim()) {
-        clearTimeout(timeout);
-        return text.trim();
-      }
-    } catch {
-      continue;
-    }
+  if (lower.includes("içerik") || lower.includes("video")) {
+    return "Bence bunu içerik olarak şöyle kurabiliriz: İlk 3 saniyede merak uyandıran bir cümle, sonra kısa bir bilimsel açıklama, ardından net çözüm. Mesela: ‘Cildin kuru değil, bariyerin bozulmuş olabilir.’ Bu tarz cümleler hem dikkat çeker hem de seni uzman gösterir.";
   }
 
-  clearTimeout(timeout);
-  return null;
-}
+  if (lower.includes("formül") || lower.includes("inci")) {
+    return "Formül tarafında önce ürün tipini, hedef etkiyi ve kullanılacak aktifleri netleştirmek lazım. INCI mantığında da her içerik; çözücü, nemlendirici, emülgatör, koruyucu, aktif veya kıvam verici gibi görev alır. İstersen ürünü söyle, sana mantıklı bir başlangıç formülü kurayım.";
+  }
 
-function Avatar() {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const loop = () => {
-      if (video && Number.isFinite(video.duration) && video.duration > 0) {
-        if (video.currentTime >= video.duration - 0.28) {
-          video.currentTime = 0.04;
-          video.play().catch(() => {});
-        }
-      }
-
-      rafRef.current = requestAnimationFrame(loop);
-    };
-
-    rafRef.current = requestAnimationFrame(loop);
-
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
-  return (
-    <div className="avatar-wrap">
-      <img className="avatar-img" src={AVATAR_IMAGE} alt="Lyra avatar" />
-      <video
-        ref={videoRef}
-        className="avatar-video"
-        src={AVATAR_VIDEO}
-        poster={AVATAR_IMAGE}
-        autoPlay
-        muted
-        playsInline
-        preload="auto"
-        onLoadedData={(event) => {
-          setReady(true);
-          event.currentTarget.currentTime = 0.04;
-          event.currentTarget.play().catch(() => {});
-        }}
-        onEnded={(event) => {
-          event.currentTarget.currentTime = 0.04;
-          event.currentTarget.play().catch(() => {});
-        }}
-        onError={(event) => {
-          event.currentTarget.style.display = 'none';
-        }}
-      />
-      {!ready && <div className="avatar-loading">Lyra avatar</div>}
-    </div>
-  );
+  return "Duydum kanka. Bunu şöyle toparlayabiliriz: Önce ne istediğini netleştirip sonra adım adım çözeriz. Ben olsam burada işi büyütmeden, en pratik ve çalışan versiyondan başlardım.";
 }
 
 export default function Page() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<Message[]>([
     {
-      id: 1,
-      role: 'assistant',
-      text: 'Merhaba kanka, ben Lyra. İster yazışalım, ister canlı Gemini konuşma açalım. Ne konuşuyoruz?',
-      time: nowTime(),
+      id: "welcome",
+      role: "assistant",
+      text: "Merhaba kanka, ben Lyra. İstersen yaz, istersen canlı moddan konuş. Bu alan artık ana sohbet alanın.",
+      time: getTime(),
     },
   ]);
 
-  const [input, setInput] = useState('');
-  const [mode, setMode] = useState<ModeKey>('chat');
-  const [isThinking, setIsThinking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [input, setInput] = useState("");
   const [liveMode, setLiveMode] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [showVisual, setShowVisual] = useState(true);
-  const [voiceIndex, setVoiceIndex] = useState(0);
-  const [connectionText, setConnectionText] = useState('Canlı bağlantı kapandı');
+  const [listening, setListening] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
 
-  const messageIdRef = useRef(2);
   const recognitionRef = useRef<any>(null);
-  const shouldRestartRef = useRef(false);
-  const isSpeakingRef = useRef(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
-  const pdfRef = useRef<HTMLInputElement | null>(null);
-  const imageRef = useRef<HTMLInputElement | null>(null);
-
-  const voice = voiceOptions[voiceIndex];
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const liveModeRef = useRef(false);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isThinking]);
+    liveModeRef.current = liveMode;
+  }, [liveMode]);
 
-  const addMessage = (role: Role, text: string) => {
-    const id = messageIdRef.current++;
-    setMessages((prev) => [...prev, { id, role, text, time: nowTime() }].slice(-60));
-  };
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
 
-  const startListening = (continuous = false) => {
-    if (typeof window === 'undefined') return;
-
+  useEffect(() => {
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      typeof window !== "undefined" &&
+      ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
-    if (!SpeechRecognition) {
-      addMessage('assistant', 'Bu tarayıcı canlı konuşmayı desteklemiyor. Chrome ya da Safari ile dene.');
-      return;
+    setSpeechSupported(Boolean(SpeechRecognition));
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  async function callAI(userText: string) {
+    const history = messages.slice(-8).map((m) => ({
+      role: m.role,
+      content: m.text,
+    }));
+
+    for (const endpoint of ENDPOINTS) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: userText,
+            prompt: userText,
+            messages: history,
+          }),
+        });
+
+        if (!res.ok) continue;
+
+        const data = await res.json();
+
+        const answer =
+          data?.answer ||
+          data?.reply ||
+          data?.response ||
+          data?.text ||
+          data?.message ||
+          data?.content;
+
+        if (typeof answer === "string" && answer.trim()) {
+          return answer.trim();
+        }
+      } catch {
+        continue;
+      }
     }
 
-    if (isSpeakingRef.current) return;
+    return localFallbackAnswer(userText);
+  }
 
+  function speak(text: string) {
+    if (typeof window === "undefined") return;
+    if (!("speechSynthesis" in window)) return;
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "tr-TR";
+    utterance.rate = 1.02;
+    utterance.pitch = 1.08;
+    utterance.volume = 1;
+
+    const voices = window.speechSynthesis.getVoices();
+    const trVoice =
+      voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
+      voices.find((v) => v.name?.toLowerCase().includes("female")) ||
+      voices[0];
+
+    if (trVoice) utterance.voice = trVoice;
+
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function sendMessage(customText?: string, shouldSpeak = false) {
+    const text = cleanText(customText ?? input);
+
+    if (!text || loadingRef.current) return;
+
+    setInput("");
+    setLoading(true);
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text,
+      time: getTime(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+
+    try {
+      const answer = await callAI(text);
+
+      const assistantMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: answer,
+        time: getTime(),
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      if (shouldSpeak || liveModeRef.current) {
+        speak(answer);
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Kanka bağlantıda bir sorun oldu ama ekran bozulmadı. API tarafını kontrol edip tekrar deneyelim.",
+          time: getTime(),
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function stopListening() {
     try {
       recognitionRef.current?.stop?.();
     } catch {}
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'tr-TR';
-    recognition.continuous = continuous;
-    recognition.interimResults = true;
+    recognitionRef.current = null;
+    setListening(false);
+  }
 
-    shouldRestartRef.current = continuous;
+  function startListening() {
+    if (!speechSupported) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Kanka bu tarayıcı ses algılamayı desteklemiyor olabilir. Chrome’dan açarsan daha iyi çalışır.",
+          time: getTime(),
+        },
+      ]);
+      return;
+    }
+
+    if (recognitionRef.current) {
+      stopListening();
+    }
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = "tr-TR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      setIsListening(true);
-      setConnectionText(continuous ? 'Canlı Gemini dinliyor' : 'Dinliyorum');
-    };
-
-    recognition.onresult = (event: any) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalTranscript += transcript;
-        else interimTranscript += transcript;
-      }
-
-      setInput(finalTranscript || interimTranscript);
-
-      if (finalTranscript.trim()) {
-        recognition.stop();
-        sendMessage(finalTranscript.trim());
-      }
+      setListening(true);
     };
 
     recognition.onerror = () => {
-      setIsListening(false);
-      setConnectionText('Mikrofon bağlantısı kapandı');
-
-      if (continuous && shouldRestartRef.current && !isSpeakingRef.current) {
-        setTimeout(() => startListening(true), 450);
-      }
+      setListening(false);
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      setListening(false);
 
-      if (continuous && shouldRestartRef.current && !isSpeakingRef.current && !isThinking) {
-        setTimeout(() => startListening(true), 350);
-      } else if (!continuous) {
-        setConnectionText('Canlı bağlantı kapandı');
+      if (liveModeRef.current && !loadingRef.current) {
+        setTimeout(() => {
+          try {
+            startListening();
+          } catch {}
+        }, 350);
+      }
+    };
+
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      let finalText = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0]?.transcript || "";
+
+        if (event.results[i].isFinal) {
+          finalText += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+
+      const visibleText = cleanText(finalText || interim);
+
+      if (visibleText) {
+        setInput(visibleText);
+      }
+
+      if (finalText && liveModeRef.current) {
+        const finalClean = cleanText(finalText);
+
+        if (finalClean.length > 1) {
+          stopListening();
+          sendMessage(finalClean, true);
+        }
       }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-  };
-
-  const stopListening = () => {
-    shouldRestartRef.current = false;
-    recognitionRef.current?.stop?.();
-    recognitionRef.current = null;
-    setIsListening(false);
-    setConnectionText('Canlı bağlantı kapandı');
-  };
-
-  const speak = async (text: string) => {
-    if (muted || typeof window === 'undefined') return;
-
-    const cleanText = text
-      .replace(/\*\*/g, '')
-      .replace(/[#>`]/g, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .slice(0, 3600);
 
     try {
-      isSpeakingRef.current = true;
+      recognition.start();
+    } catch {}
+  }
 
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-      }
-
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-
-      const response = await fetch('/api/tts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text: cleanText,
-          voice: voice.voiceName,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Gemini TTS çalışmadı');
-      }
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-
-      audioRef.current = audio;
-
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        isSpeakingRef.current = false;
-
-        if (liveMode && shouldRestartRef.current) {
-          setTimeout(() => startListening(true), 180);
-        }
-      };
-
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        isSpeakingRef.current = false;
-
-        if (liveMode && shouldRestartRef.current) {
-          setTimeout(() => startListening(true), 180);
-        }
-      };
-
-      await audio.play();
-    } catch {
-      isSpeakingRef.current = false;
-
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-
-        const fallback = new SpeechSynthesisUtterance(cleanText);
-        fallback.lang = 'tr-TR';
-        fallback.rate = 1.04;
-        fallback.pitch = 1.05;
-
-        fallback.onend = () => {
-          if (liveMode && shouldRestartRef.current) {
-            setTimeout(() => startListening(true), 220);
-          }
-        };
-
-        window.speechSynthesis.speak(fallback);
-      } else if (liveMode && shouldRestartRef.current) {
-        setTimeout(() => startListening(true), 220);
-      }
-    }
-  };
-
-  const fallbackAnswer = (raw: string) => {
-    if (mode === 'content') {
-      return `Harika, “${raw}” için içerik moduna geçtim.
-
-Video Konu Başlıkları:
-1. ${raw} hakkında herkesin yanlış bildiği şey
-2. ${raw} için 3 adımlı mini rehber
-3. ${raw} kullanırken yapılan hata
-4. ${raw} gerçek mi abartı mı?
-5. ${raw} için 45 saniyelik pratik anlatım
-
-Hook:
-“Bunu yapıyorsan sonucu fark etmeden bozuyor olabilirsin.”
-
-Teleprompter:
-“Bugün sana ${raw} konusunu çok basit anlatacağım. Çünkü çoğu kişi burada yanlış noktaya odaklanıyor. Önce problemi anlayacağız, sonra doğru adımı seçeceğiz. Eğer bunu kaydedersen sonra uygularken elinin altında olur.”
-
-CTA:
-“Kaydet, sonra birlikte tekrar bakalım.”`;
-    }
-
-    if (mode === 'lesson') {
-      return `Ders modunda “${raw}” konusunu çalışalım.
-
-Konu Özeti:
-Bu konuyu önce temel mantık, sonra örnek, sonra test şeklinde çalışmalısın.
-
-Formüller / Kurallar:
-- Verilenleri ayır
-- İstenen şeyi bul
-- Uygun kuralı seç
-- Sonucu kontrol et
-
-Sınav İpuçları:
-- Sorunun son cümlesini iyi oku.
-- Verilenleri kenara yaz.
-- Uzun sorudan korkma, parçala.
-
-Çözümlü Soru:
-Örnek soru üzerinden adım adım ilerleyebiliriz.
-
-Mini Test:
-1) İlk yapılacak şey nedir?
-A) Verilenleri ayırmak
-B) Şıkları ezberlemek
-C) Rastgele işlem yapmak
-D) Sonucu tahmin etmek
-Cevap: A`;
-    }
-
-    if (mode === 'research') {
-      return `“${raw}” için hızlı araştırma özeti:
-- Konunun ana fikrini çıkarırız.
-- Alt başlıklarını ayırırız.
-- Sonra sade, net ve uygulanabilir şekilde toparlarız.`;
-    }
-
-    return `Anladım kanka. “${raw}” için buradayım. İstersen bunu sohbet gibi konuşalım, istersen alttaki modlardan içerik/ders/araştırma tarafına taşıyalım.`;
-  };
-
-  const sendMessage = async (text?: string) => {
-    const raw = (text ?? input).trim();
-    if (!raw || isThinking) return;
-
-    setInput('');
-    addMessage('user', raw);
-    setIsThinking(true);
-
-    const prompt = buildPrompt(mode, raw);
-
-    const answer =
-      (await postGeminiFast({
-        message: prompt,
-        rawMessage: raw,
-        mode,
-        provider: 'gemini',
-        model: 'gemini-2.5-flash',
-        live: liveMode,
-        voice: voice.label,
-        realtime: true,
-      })) || fallbackAnswer(raw);
-
-    setIsThinking(false);
-    addMessage('assistant', answer);
-    await speak(answer);
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage();
-    }
-  };
-
-  const toggleLiveMode = () => {
+  function toggleLiveMode() {
     const next = !liveMode;
+
     setLiveMode(next);
 
     if (next) {
-      shouldRestartRef.current = true;
-      setConnectionText('Canlı Gemini hazır');
-      addMessage(
-        'assistant',
-        'Canlı Gemini ana ekranda açıldı kanka. Artık yazabilir ya da “Ses ile Konuş” ile mikrofonu açabilirsin.'
-      );
+      startListening();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Canlı mod açık kanka. Konuş, seni yazıya döküp buradan cevaplayacağım.",
+          time: getTime(),
+        },
+      ]);
     } else {
       stopListening();
-      addMessage('assistant', 'Canlı mod kapandı. Yazışma modunda devam edebiliriz.');
+      window.speechSynthesis?.cancel?.();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Canlı modu kapattım. İstersen yazılı sohbetten devam edebiliriz.",
+          time: getTime(),
+        },
+      ]);
     }
-  };
+  }
 
-  const handlePdf = async (file?: File) => {
-    if (!file) return;
-
-    setMode('pdf');
-    addMessage('user', `PDF yüklendi: ${file.name}`);
-    setIsThinking(true);
-
-    const result =
-      (await postFileFast(PDF_ENDPOINTS, file, {
-        mode: 'pdf',
-        provider: 'gemini',
-      })) || `PDF yüklendi: ${file.name}. PDF API bağlantısı yoksa özet burada dönemeyebilir.`;
-
-    setIsThinking(false);
-    addMessage('assistant', result);
-    await speak(result);
-  };
-
-  const handleImage = async (file?: File) => {
-    if (!file) return;
-
-    setMode('image');
-    addMessage('user', `Görsel yüklendi: ${file.name}`);
-    setIsThinking(true);
-
-    const result =
-      (await postFileFast(IMAGE_ENDPOINTS, file, {
-        mode: 'image',
-        provider: 'gemini',
-      })) || `Görsel yüklendi: ${file.name}. Görsel analiz API bağlantısı yoksa analiz burada dönemeyebilir.`;
-
-    setIsThinking(false);
-    addMessage('assistant', result);
-    await speak(result);
-  };
-
-  const clearChat = () => {
-    stopListening();
-
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
     }
-
-    setMessages([
-      {
-        id: messageIdRef.current++,
-        role: 'assistant',
-        text: 'Sohbeti temizledim kanka. Yeni konuya geçebiliriz.',
-        time: nowTime(),
-      },
-    ]);
-  };
+  }
 
   return (
-    <main className="page">
-      <input
-        ref={pdfRef}
-        type="file"
-        accept="application/pdf"
-        hidden
-        onChange={(event) => handlePdf(event.target.files?.[0])}
-      />
+    <main className="lyraPage">
+      <section className="lyraShell">
+        <header className="topBar">
+          <div className="brandBlock">
+            <div className="avatarOrb">
+              <div className="avatarFace">L</div>
+            </div>
 
-      <input
-        ref={imageRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(event) => handleImage(event.target.files?.[0])}
-      />
+            <div>
+              <h1>Lyra Clean</h1>
+              <p>
+                {liveMode
+                  ? "Canlı mod aktif — aynı ekrandayız"
+                  : "Yazılı sohbet ve canlı konuşma hazır"}
+              </p>
+            </div>
+          </div>
 
-      <section className="live-hero">
-        <div className="status-row">
-          <div className="ready-pill">
+          <div className={`statusPill ${listening ? "active" : ""}`}>
             <span />
-            {liveMode ? 'Canlı' : 'Hazır'}
+            {listening ? "Dinliyor" : loading ? "Cevaplıyor" : "Hazır"}
           </div>
-          <em>{isListening ? '~Dinliyorum' : '~Ses dalgası'}</em>
-          <b>{connectionText}</b>
-        </div>
-
-        {showVisual && (
-          <div className="avatar-stage">
-            <Avatar />
-          </div>
-        )}
-
-        <div className="top-actions">
-          <button onClick={() => setVoiceIndex((prev) => (prev + 1) % voiceOptions.length)}>
-            🎙 Ses <strong>{voice.label}</strong>
-          </button>
-          <button className={liveMode ? 'active' : ''} onClick={toggleLiveMode}>
-            ⚡ Live Mod
-          </button>
-          <button className="primary" onClick={() => startListening(liveMode)}>
-            🎙 Ses ile Konuş
-          </button>
-          <button onClick={() => setMuted((prev) => !prev)}>
-            ▷ {muted ? 'Sesi Aç' : 'Sessize Al'}
-          </button>
-          <button onClick={() => setShowVisual((prev) => !prev)}>
-            🖼 Görsel Göster
-          </button>
-        </div>
-      </section>
-
-      <section className="chat-section">
-        <header className="chat-head">
-          <div>
-            <h1>Yazışma</h1>
-            <span>Lyra ile yazış ve üret</span>
-          </div>
-
-          <button onClick={clearChat}>🗑 Sohbeti Temizle</button>
         </header>
 
-        <div className="messages">
-          {messages.map((item) => (
-            <div key={item.id} className={`bubble ${item.role}`}>
-              <p>{item.text}</p>
-              <small>{item.time}</small>
+        <section className="chatPanel">
+          <div className="chatHeader">
+            <div>
+              <h2>Sohbet Alanı</h2>
+              <p>Konuşmalar burada akacak. Canlı mod da bu alanın içinde.</p>
             </div>
+
+            <button
+              type="button"
+              className={`liveButton ${liveMode ? "on" : ""}`}
+              onClick={toggleLiveMode}
+            >
+              {liveMode ? "Canlı Mod Açık" : "Canlı Mod"}
+            </button>
+          </div>
+
+          <div className="messagesArea">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`messageRow ${message.role === "user" ? "user" : "assistant"}`}
+              >
+                <div className="messageBubble">
+                  <p>{message.text}</p>
+                  <small>{message.time}</small>
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="messageRow assistant">
+                <div className="messageBubble typingBubble">
+                  <div className="typingDots">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="inputArea">
+            <button
+              type="button"
+              className={`micButton ${listening ? "active" : ""}`}
+              onClick={listening ? stopListening : startListening}
+            >
+              {listening ? "Durdur" : "Ses"}
+            </button>
+
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                liveMode
+                  ? "Konuşman burada yazıya dökülür..."
+                  : "Lyra’ya yaz veya sesle söyle..."
+              }
+            />
+
+            <button
+              type="button"
+              className="sendButton"
+              onClick={() => sendMessage()}
+              disabled={loading || !input.trim()}
+            >
+              Gönder
+            </button>
+          </div>
+        </section>
+
+        <nav className="bottomTools">
+          {quickTools.map((tool) => (
+            <button
+              key={tool}
+              type="button"
+              onClick={() =>
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    role: "assistant",
+                    text: `${tool} alanını açabiliriz kanka. Şimdilik ana sohbet bozulmasın diye bu butonları küçük tuttum.`,
+                    time: getTime(),
+                  },
+                ])
+              }
+            >
+              {tool}
+            </button>
           ))}
-
-          {isThinking && (
-            <div className="bubble assistant thinking">
-              <p>Lyra cevaplıyor...</p>
-              <small>{nowTime()}</small>
-            </div>
-          )}
-
-          <div ref={endRef} />
-        </div>
-
-        <div className="mode-dock">
-          <button className={mode === 'chat' ? 'selected' : ''} onClick={() => setMode('chat')}>
-            Sohbet
-          </button>
-          <button className={mode === 'content' ? 'selected' : ''} onClick={() => setMode('content')}>
-            İçerik
-          </button>
-          <button className={mode === 'lesson' ? 'selected' : ''} onClick={() => setMode('lesson')}>
-            Ders
-          </button>
-          <button className={mode === 'research' ? 'selected' : ''} onClick={() => setMode('research')}>
-            Araştırma
-          </button>
-          <button className={mode === 'image' ? 'selected' : ''} onClick={() => imageRef.current?.click()}>
-            Görsel
-          </button>
-          <button className={mode === 'pdf' ? 'selected' : ''} onClick={() => pdfRef.current?.click()}>
-            PDF
-          </button>
-        </div>
-
-        <div className="quick-panel">
-          {mode === 'content' && (
-            <>
-              <button onClick={() => sendMessage(input || 'Video konu başlıkları üret')}>Video Başlıkları</button>
-              <button onClick={() => sendMessage(input || 'Hook yaz')}>Hook</button>
-              <button onClick={() => sendMessage(input || 'Teleprompter metni yaz')}>Teleprompter</button>
-              <button onClick={() => sendMessage(input || 'CTA ve ekran yazıları üret')}>CTA</button>
-            </>
-          )}
-
-          {mode === 'lesson' && (
-            <>
-              <button onClick={() => sendMessage(input || 'Konu özeti çıkar')}>Konu Özeti</button>
-              <button onClick={() => sendMessage(input || 'Formülleri çıkar')}>Formüller</button>
-              <button onClick={() => sendMessage(input || 'Sınav ipuçları ver')}>Sınav İpuçları</button>
-              <button onClick={() => sendMessage(input || 'Çözümlü soru üret')}>Çözümlü Soru</button>
-              <button onClick={() => sendMessage(input || 'Şıklı test üret')}>Test</button>
-              <button onClick={() => imageRef.current?.click()}>Soru Görseli</button>
-            </>
-          )}
-
-          {mode === 'research' && (
-            <>
-              <button onClick={() => sendMessage(input || 'Derin araştırma yap')}>Derin Araştır</button>
-              <button onClick={() => sendMessage(input || 'Kısa özet çıkar')}>Özet</button>
-              <button onClick={() => sendMessage(input || 'Karşılaştırmalı analiz yap')}>Karşılaştır</button>
-            </>
-          )}
-        </div>
-
-        <div className="composer">
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={`Lyra’ya yaz... (${modeLabels[mode]} modu)`}
-          />
-
-          <button onClick={() => sendMessage()} disabled={isThinking}>
-            Gönder
-          </button>
-        </div>
+        </nav>
       </section>
 
-      <style jsx global>{`
-        :root {
-          --pink: #f72585;
-          --pink-soft: #ffe5f1;
-          --pink-mid: #ff8fc4;
-          --ink: #17142b;
-          --muted: #8b8ca3;
-          --line: rgba(247, 37, 133, 0.22);
-          --bg: #fffafb;
-        }
-
+      <style jsx>{`
         * {
           box-sizing: border-box;
         }
 
-        html,
-        body {
-          margin: 0;
-          min-height: 100%;
-          background: var(--bg);
-          color: var(--ink);
+        .lyraPage {
+          width: 100vw;
+          height: 100dvh;
+          overflow: hidden;
+          background:
+            radial-gradient(circle at top left, rgba(246, 215, 137, 0.35), transparent 34%),
+            radial-gradient(circle at bottom right, rgba(126, 176, 132, 0.25), transparent 32%),
+            linear-gradient(135deg, #fffdf8 0%, #f8f3e8 48%, #eef5ec 100%);
+          color: #2a241c;
           font-family:
             Inter,
             ui-sans-serif,
             system-ui,
             -apple-system,
             BlinkMacSystemFont,
-            'Segoe UI',
+            "Segoe UI",
             sans-serif;
         }
 
-        button,
-        textarea {
-          font: inherit;
-        }
-
-        button {
-          border: 0;
-          cursor: pointer;
-        }
-
-        .page {
-          min-height: 100vh;
-          background:
-            radial-gradient(circle at 50% 5%, rgba(255, 229, 241, 0.68), transparent 34%),
-            linear-gradient(180deg, #fff 0%, #fffafd 54%, #fff4f9 100%);
-        }
-
-        .live-hero {
-          min-height: 405px;
-          padding: 28px 18px 30px;
-          border-bottom: 1px solid var(--line);
-          background:
-            radial-gradient(circle at 50% 48%, rgba(247, 37, 133, 0.12), transparent 19%),
-            #fffefe;
-        }
-
-        .status-row {
+        .lyraShell {
+          width: 100%;
+          height: 100%;
+          padding: 14px;
           display: grid;
-          grid-template-columns: auto 1fr auto;
-          align-items: center;
+          grid-template-rows: auto minmax(0, 1fr) auto;
           gap: 10px;
-          min-height: 28px;
         }
 
-        .ready-pill {
-          height: 30px;
-          display: inline-flex;
+        .topBar {
+          width: 100%;
+          min-height: 74px;
+          border: 1px solid rgba(132, 105, 56, 0.16);
+          background: rgba(255, 255, 255, 0.72);
+          backdrop-filter: blur(18px);
+          border-radius: 26px;
+          padding: 12px 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          box-shadow: 0 16px 45px rgba(93, 70, 31, 0.08);
+        }
+
+        .brandBlock {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+
+        .avatarOrb {
+          width: 50px;
+          height: 50px;
+          border-radius: 50%;
+          padding: 3px;
+          background:
+            linear-gradient(135deg, rgba(227, 178, 87, 0.95), rgba(121, 169, 123, 0.9));
+          box-shadow: 0 12px 30px rgba(113, 132, 81, 0.22);
+          flex: 0 0 auto;
+        }
+
+        .avatarFace {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          background:
+            radial-gradient(circle at 35% 25%, #ffffff, #f5ead8 58%, #d7b76e);
+          display: grid;
+          place-items: center;
+          font-weight: 800;
+          font-size: 22px;
+          color: #7a5b1f;
+        }
+
+        h1,
+        h2,
+        p {
+          margin: 0;
+        }
+
+        h1 {
+          font-size: clamp(20px, 2.4vw, 30px);
+          letter-spacing: -0.04em;
+          color: #292117;
+        }
+
+        .brandBlock p {
+          margin-top: 3px;
+          color: rgba(42, 36, 28, 0.62);
+          font-size: 13px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .statusPill {
+          height: 36px;
+          padding: 0 13px;
+          border-radius: 999px;
+          display: flex;
           align-items: center;
           gap: 8px;
-          border-radius: 999px;
-          padding: 0 13px;
-          background: var(--pink-soft);
-          color: var(--pink);
+          background: rgba(255, 255, 255, 0.78);
+          border: 1px solid rgba(132, 105, 56, 0.16);
+          color: rgba(42, 36, 28, 0.68);
           font-size: 13px;
-          font-weight: 950;
+          font-weight: 650;
+          flex: 0 0 auto;
         }
 
-        .ready-pill span {
+        .statusPill span {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: var(--pink);
+          background: #8fa072;
         }
 
-        .status-row em {
-          color: var(--pink);
-          font-size: 13px;
-          font-style: italic;
-          font-weight: 700;
+        .statusPill.active span {
+          background: #d8a539;
+          box-shadow: 0 0 0 7px rgba(216, 165, 57, 0.17);
         }
 
-        .status-row b {
-          justify-self: end;
-          color: var(--muted);
-          font-size: 12px;
-          font-weight: 850;
-        }
-
-        .avatar-stage {
-          width: 230px;
-          height: 230px;
-          margin: 34px auto 28px;
+        .chatPanel {
+          min-height: 0;
+          border-radius: 30px;
+          border: 1px solid rgba(132, 105, 56, 0.16);
+          background: rgba(255, 255, 255, 0.64);
+          backdrop-filter: blur(22px);
+          box-shadow: 0 22px 60px rgba(86, 67, 31, 0.11);
           display: grid;
-          place-items: center;
-          border-radius: 50%;
-          background:
-            radial-gradient(circle, rgba(255, 229, 241, 1), rgba(255, 229, 241, 0.92)),
-            #fff;
-          border: 9px solid white;
-          outline: 8px solid rgba(247, 37, 133, 0.2);
-          box-shadow:
-            0 0 0 1px rgba(247, 37, 133, 0.18),
-            0 0 46px rgba(247, 37, 133, 0.42);
+          grid-template-rows: auto minmax(0, 1fr) auto;
           overflow: hidden;
         }
 
-        .avatar-wrap {
-          position: relative;
-          width: 100%;
-          height: 100%;
-          display: grid;
-          place-items: center;
-          border-radius: inherit;
-          overflow: hidden;
-          background: #ffe5f1;
-        }
-
-        .avatar-img,
-        .avatar-video {
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          object-position: center center;
-        }
-
-        .avatar-img {
-          z-index: 1;
-        }
-
-        .avatar-video {
-          z-index: 2;
-        }
-
-        .avatar-loading {
-          position: relative;
-          z-index: 3;
-          font-size: 13px;
-          font-weight: 850;
-        }
-
-        .top-actions {
+        .chatHeader {
+          padding: 15px 16px 10px;
           display: flex;
-          justify-content: center;
           align-items: center;
-          flex-wrap: wrap;
-          gap: 12px;
-        }
-
-        .top-actions button {
-          min-height: 44px;
-          border-radius: 999px;
-          padding: 0 20px;
-          background: white;
-          color: var(--ink);
-          border: 1px solid var(--line);
-          font-weight: 950;
-          box-shadow: 0 10px 26px rgba(247, 37, 133, 0.08);
-        }
-
-        .top-actions button strong {
-          margin-left: 6px;
-          color: var(--pink);
-        }
-
-        .top-actions .primary,
-        .top-actions button.active {
-          background: var(--pink);
-          color: white;
-          border-color: var(--pink);
-        }
-
-        .chat-section {
-          padding: 28px 12px 18px;
-        }
-
-        .chat-head {
-          display: flex;
           justify-content: space-between;
-          align-items: center;
-          gap: 16px;
-          margin-bottom: 20px;
+          gap: 12px;
+          border-bottom: 1px solid rgba(132, 105, 56, 0.1);
         }
 
-        .chat-head h1 {
-          margin: 0;
-          font-size: 21px;
-          font-weight: 950;
+        .chatHeader h2 {
+          font-size: 17px;
+          letter-spacing: -0.02em;
         }
 
-        .chat-head span {
-          margin-left: 8px;
+        .chatHeader p {
+          margin-top: 3px;
+          font-size: 12.5px;
+          color: rgba(42, 36, 28, 0.58);
+        }
+
+        .liveButton {
+          border: 0;
           border-radius: 999px;
-          padding: 6px 10px;
-          background: var(--pink-soft);
-          color: var(--pink);
-          font-size: 11px;
-          font-weight: 950;
+          padding: 11px 15px;
+          cursor: pointer;
+          background: rgba(143, 160, 114, 0.16);
+          color: #586743;
+          font-weight: 750;
+          white-space: nowrap;
+          transition:
+            transform 0.15s ease,
+            background 0.15s ease,
+            color 0.15s ease;
         }
 
-        .chat-head button {
-          color: var(--pink);
-          background: transparent;
-          font-weight: 950;
-          font-size: 16px;
+        .liveButton:hover {
+          transform: translateY(-1px);
         }
 
-        .messages {
-          height: calc(100vh - 590px);
-          min-height: 290px;
-          max-height: 560px;
-          overflow: auto;
+        .liveButton.on {
+          background: linear-gradient(135deg, #d9a83c, #8fa072);
+          color: white;
+          box-shadow: 0 12px 24px rgba(137, 127, 63, 0.24);
+        }
+
+        .messagesArea {
+          min-height: 0;
+          overflow-y: auto;
+          padding: 16px;
           display: flex;
           flex-direction: column;
-          gap: 14px;
-          padding-bottom: 18px;
-        }
-
-        .bubble {
-          width: fit-content;
-          max-width: min(980px, 86%);
-          border-radius: 22px;
-          padding: 16px 18px 10px;
-          background: var(--pink-soft);
-          color: var(--ink);
-          white-space: pre-wrap;
-        }
-
-        .bubble p {
-          margin: 0;
-          line-height: 1.55;
-          font-size: 15px;
-        }
-
-        .bubble small {
-          display: block;
-          margin-top: 8px;
-          text-align: right;
-          color: var(--muted);
-          font-size: 11px;
-        }
-
-        .bubble.user {
-          align-self: flex-start;
-          background: #fff1f7;
-        }
-
-        .bubble.assistant {
-          align-self: flex-end;
-          background: #ffe5f1;
-        }
-
-        .bubble.system {
-          align-self: center;
-          background: #fff;
-          border: 1px solid var(--line);
-        }
-
-        .thinking {
-          opacity: 0.78;
-        }
-
-        .mode-dock {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-bottom: 10px;
-        }
-
-        .mode-dock button,
-        .quick-panel button {
-          min-height: 36px;
-          border-radius: 999px;
-          padding: 0 13px;
-          background: white;
-          border: 1px solid var(--line);
-          color: var(--ink);
-          font-size: 13px;
-          font-weight: 900;
-        }
-
-        .mode-dock button.selected {
-          background: var(--pink);
-          border-color: var(--pink);
-          color: white;
-        }
-
-        .quick-panel {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-bottom: 12px;
-        }
-
-        .composer {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 110px;
           gap: 12px;
-          position: sticky;
-          bottom: 10px;
-          background: transparent;
+          scroll-behavior: smooth;
         }
 
-        .composer textarea {
-          min-height: 58px;
-          max-height: 160px;
-          resize: vertical;
-          border-radius: 18px;
-          border: 1px solid var(--line);
-          outline: none;
-          padding: 18px;
-          background: white;
-          color: var(--ink);
-          font-size: 15px;
-          font-weight: 750;
+        .messagesArea::-webkit-scrollbar {
+          width: 8px;
         }
 
-        .composer textarea::placeholder {
-          color: #77758a;
+        .messagesArea::-webkit-scrollbar-thumb {
+          background: rgba(126, 103, 57, 0.2);
+          border-radius: 999px;
         }
 
-        .composer button {
-          border-radius: 18px;
-          background: var(--pink);
+        .messageRow {
+          width: 100%;
+          display: flex;
+        }
+
+        .messageRow.user {
+          justify-content: flex-end;
+        }
+
+        .messageRow.assistant {
+          justify-content: flex-start;
+        }
+
+        .messageBubble {
+          max-width: min(78%, 760px);
+          padding: 12px 13px 9px;
+          border-radius: 22px;
+          line-height: 1.45;
+          font-size: 14.5px;
+          box-shadow: 0 10px 28px rgba(73, 57, 25, 0.08);
+        }
+
+        .messageRow.assistant .messageBubble {
+          background: rgba(255, 255, 255, 0.92);
+          border: 1px solid rgba(132, 105, 56, 0.11);
+          color: #2c241b;
+          border-bottom-left-radius: 7px;
+        }
+
+        .messageRow.user .messageBubble {
+          background: linear-gradient(135deg, #2f3428, #6c7b56);
           color: white;
-          font-weight: 950;
-          font-size: 16px;
+          border-bottom-right-radius: 7px;
         }
 
-        .composer button:disabled {
+        .messageBubble small {
+          display: block;
+          margin-top: 6px;
+          font-size: 10.5px;
           opacity: 0.55;
+          text-align: right;
+        }
+
+        .typingBubble {
+          width: 72px;
+        }
+
+        .typingDots {
+          display: flex;
+          gap: 5px;
+          align-items: center;
+          height: 18px;
+        }
+
+        .typingDots span {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: rgba(88, 103, 67, 0.55);
+          animation: bounce 0.85s infinite ease-in-out;
+        }
+
+        .typingDots span:nth-child(2) {
+          animation-delay: 0.12s;
+        }
+
+        .typingDots span:nth-child(3) {
+          animation-delay: 0.24s;
+        }
+
+        @keyframes bounce {
+          0%,
+          80%,
+          100% {
+            transform: translateY(0);
+            opacity: 0.45;
+          }
+          40% {
+            transform: translateY(-5px);
+            opacity: 1;
+          }
+        }
+
+        .inputArea {
+          padding: 12px;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          gap: 9px;
+          border-top: 1px solid rgba(132, 105, 56, 0.1);
+          background: rgba(255, 255, 255, 0.47);
+        }
+
+        .inputArea input {
+          width: 100%;
+          min-width: 0;
+          height: 46px;
+          border: 1px solid rgba(132, 105, 56, 0.16);
+          border-radius: 999px;
+          padding: 0 15px;
+          outline: none;
+          background: rgba(255, 255, 255, 0.9);
+          color: #2a241c;
+          font-size: 14px;
+        }
+
+        .inputArea input:focus {
+          border-color: rgba(143, 160, 114, 0.72);
+          box-shadow: 0 0 0 4px rgba(143, 160, 114, 0.13);
+        }
+
+        .micButton,
+        .sendButton {
+          height: 46px;
+          border: 0;
+          border-radius: 999px;
+          padding: 0 16px;
+          font-weight: 800;
+          cursor: pointer;
+          transition:
+            transform 0.15s ease,
+            opacity 0.15s ease;
+        }
+
+        .micButton:hover,
+        .sendButton:hover {
+          transform: translateY(-1px);
+        }
+
+        .micButton {
+          background: rgba(143, 160, 114, 0.16);
+          color: #586743;
+        }
+
+        .micButton.active {
+          background: #d9a83c;
+          color: white;
+        }
+
+        .sendButton {
+          background: #2f3428;
+          color: white;
+        }
+
+        .sendButton:disabled {
+          opacity: 0.42;
           cursor: not-allowed;
+          transform: none;
+        }
+
+        .bottomTools {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .bottomTools button {
+          height: 42px;
+          border: 1px solid rgba(132, 105, 56, 0.13);
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.66);
+          backdrop-filter: blur(14px);
+          color: rgba(42, 36, 28, 0.78);
+          font-size: 12.5px;
+          font-weight: 750;
+          cursor: pointer;
+          box-shadow: 0 10px 30px rgba(70, 54, 26, 0.06);
+        }
+
+        .bottomTools button:hover {
+          background: rgba(255, 255, 255, 0.92);
         }
 
         @media (max-width: 760px) {
-          .live-hero {
-            min-height: 360px;
+          .lyraShell {
+            padding: 9px;
+            gap: 8px;
           }
 
-          .status-row {
-            grid-template-columns: 1fr;
+          .topBar {
+            min-height: 66px;
+            border-radius: 22px;
+            padding: 10px;
           }
 
-          .status-row b {
-            justify-self: start;
+          .avatarOrb {
+            width: 44px;
+            height: 44px;
           }
 
-          .avatar-stage {
-            width: 190px;
-            height: 190px;
-            margin: 24px auto;
+          h1 {
+            font-size: 20px;
           }
 
-          .top-actions button {
-            min-height: 40px;
-            padding: 0 14px;
-            font-size: 13px;
+          .brandBlock p {
+            max-width: 190px;
+            font-size: 12px;
           }
 
-          .messages {
-            height: calc(100vh - 560px);
-            min-height: 260px;
+          .statusPill {
+            height: 32px;
+            padding: 0 10px;
+            font-size: 12px;
           }
 
-          .bubble {
-            max-width: 94%;
+          .chatPanel {
+            border-radius: 24px;
           }
 
-          .composer {
-            grid-template-columns: 1fr;
+          .chatHeader {
+            padding: 12px 12px 8px;
           }
 
-          .composer button {
-            min-height: 48px;
+          .chatHeader p {
+            display: none;
+          }
+
+          .liveButton {
+            padding: 10px 12px;
+            font-size: 12.5px;
+          }
+
+          .messagesArea {
+            padding: 12px;
+            gap: 10px;
+          }
+
+          .messageBubble {
+            max-width: 88%;
+            font-size: 14px;
+          }
+
+          .inputArea {
+            padding: 9px;
+            gap: 7px;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+          }
+
+          .inputArea input {
+            height: 43px;
+            padding: 0 12px;
+          }
+
+          .micButton,
+          .sendButton {
+            height: 43px;
+            padding: 0 12px;
+            font-size: 12px;
+          }
+
+          .bottomTools {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 6px;
+          }
+
+          .bottomTools button {
+            height: 36px;
+            border-radius: 14px;
+            font-size: 11.5px;
           }
         }
       `}</style>
