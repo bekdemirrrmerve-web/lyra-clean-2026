@@ -185,7 +185,7 @@ async function postGeminiText(body: Record<string, unknown>) {
     clearTimeout(timeout);
 
     if (!res.ok) {
-      throw new Error('Gemini text route failed');
+      return null;
     }
 
     const data = await res.json().catch(() => null);
@@ -202,7 +202,7 @@ async function postGeminiText(body: Record<string, unknown>) {
 
     if (typeof text === 'string' && text.trim()) return text.trim();
 
-    throw new Error('Gemini cevabı boş döndü.');
+    return null;
   } catch {
     return null;
   }
@@ -360,7 +360,11 @@ export default function Page() {
   const placeholderText = active?.starter || 'Lyra’ya bir şey sor veya yaz...';
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, isThinking]);
 
   const addMessage = (role: Role, text: string) => {
@@ -1032,26 +1036,6 @@ export default function Page() {
           );
         }
 
-        * {
-          box-sizing: border-box;
-        }
-
-        html,
-        body {
-          margin: 0;
-          width: 100%;
-          min-height: 100%;
-          overflow-x: hidden;
-          overflow-y: auto;
-          font-family:
-            Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            'Segoe UI', sans-serif;
-          color: var(--graphite);
-          background:
-            radial-gradient(circle at 48% 22%, rgba(255, 255, 255, 1), transparent 32%),
-            linear-gradient(135deg, #ffffff 0%, #f5f7f8 44%, #e6eaee 100%);
-        }
-
         button,
         textarea {
           font: inherit;
@@ -1070,6 +1054,9 @@ export default function Page() {
           overflow-y: auto;
           padding: 14px 10px 10px;
           scroll-padding-top: 14px;
+          background:
+            radial-gradient(circle at 48% 22%, rgba(255, 255, 255, 1), transparent 32%),
+            linear-gradient(135deg, #ffffff 0%, #f5f7f8 44%, #e6eaee 100%);
         }
 
         .page::before,
@@ -1129,9 +1116,6 @@ export default function Page() {
         }
 
         .logo-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
           padding: 2px 12px 16px;
           font-size: 28px;
           letter-spacing: 0.08em;
@@ -1177,12 +1161,6 @@ export default function Page() {
           transition: 0.2s ease;
         }
 
-        .menu-item.active,
-        .menu-item:hover {
-          border-color: var(--line-strong);
-          transform: translateY(-1px);
-        }
-
         .side-bottom {
           margin-top: auto;
           display: grid;
@@ -1194,21 +1172,6 @@ export default function Page() {
         .usage-box {
           border-radius: 18px;
           padding: 14px;
-        }
-
-        .mini-box strong,
-        .profile-box strong,
-        .usage-box strong {
-          display: block;
-          font-weight: 950;
-        }
-
-        .mini-box small,
-        .profile-box small,
-        .usage-box small {
-          display: block;
-          color: var(--muted);
-          font-weight: 750;
         }
 
         .profile-box {
@@ -1384,7 +1347,7 @@ export default function Page() {
           inset: 0;
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          object-fit: contain;
           object-position: center center;
           background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
         }
@@ -1434,13 +1397,6 @@ export default function Page() {
           font-size: 14px;
           font-weight: 950;
           transition: 0.2s ease;
-        }
-
-        .control:hover,
-        .mode-card:hover,
-        .phone-grid button:hover {
-          transform: translateY(-2px);
-          border-color: var(--line-strong);
         }
 
         .control.selected {
@@ -1922,8 +1878,6 @@ export default function Page() {
             min-height: calc(100dvh - 20px);
             padding: 14px 12px;
             border-radius: 22px;
-            display: flex;
-            flex-direction: column;
           }
 
           .main-head {
