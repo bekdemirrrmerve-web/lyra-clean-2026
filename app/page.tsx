@@ -24,19 +24,19 @@ const avatarSources = [
   "/avatar.jpg",
 ];
 
-const bgSources = [
-  "/lyra-room-bg.jpg",
-  "/replika-bg.jpg",
-  "/room-bg.jpg",
-  "/background.jpg",
-  "/bg.jpg",
-];
-
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "lyra",
-      text: "Merhaba Merve 💜 Buradayım. İstersen yazışalım, istersen canlı moda geçelim.",
+      text: 'Harika! "Test" konusuyla sosyal medyayı sallayacak bir içerik paketi hazırlayalım hemen, kanka. Bak bakalım beğenecek misin:',
+    },
+    {
+      role: "user",
+      text: "nasılsın kanka",
+    },
+    {
+      role: "lyra",
+      text: "Selam kanka! Ben süperim, her zamanki gibi enerjiyim ve sana yardımcı olmak için hazırım. Senin nasıl geçti günün?",
     },
   ]);
 
@@ -46,16 +46,12 @@ export default function Home() {
   const [isThinking, setIsThinking] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
-  const [autoNudge, setAutoNudge] = useState(true);
   const [interimText, setInterimText] = useState("");
-
   const [avatarIndex, setAvatarIndex] = useState(0);
-  const [bgIndex, setBgIndex] = useState(0);
   const [avatarVisible, setAvatarVisible] = useState(true);
-  const [bgVisible, setBgVisible] = useState(true);
 
   const recognitionRef = useRef<any>(null);
-  const liveOpenRef = useRef(false);
+  const liveRef = useRef(false);
   const speakingRef = useRef(false);
   const thinkingRef = useRef(false);
   const lastActivityRef = useRef(Date.now());
@@ -64,7 +60,7 @@ export default function Home() {
   const lastMessage = messages[messages.length - 1];
 
   useEffect(() => {
-    liveOpenRef.current = liveOpen;
+    liveRef.current = liveOpen;
   }, [liveOpen]);
 
   useEffect(() => {
@@ -77,7 +73,7 @@ export default function Home() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!liveOpenRef.current || !autoNudge) return;
+      if (!liveRef.current) return;
       if (speakingRef.current || thinkingRef.current) return;
 
       const now = Date.now();
@@ -85,13 +81,7 @@ export default function Home() {
       const nudgeGap = now - lastNudgeRef.current;
 
       if (idle > 24000 && nudgeGap > 35000) {
-        const nudges = [
-          "Merve, buradayım. Devam etmek istersen seni dinliyorum.",
-          "Sessiz kaldın, ben hâlâ buradayım. İstersen konuşmaya devam edelim.",
-          "Seni bekliyorum Merve. Bir şey sormak istersen dinliyorum.",
-        ];
-
-        const text = nudges[Math.floor(Math.random() * nudges.length)];
+        const text = "Merve, buradayım. Devam etmek istersen seni dinliyorum.";
         lastNudgeRef.current = now;
         addLyra(text);
         speak(text);
@@ -99,14 +89,12 @@ export default function Home() {
     }, 3000);
 
     return () => clearInterval(timer);
-  }, [autoNudge]);
+  }, []);
 
   useEffect(() => {
     return () => {
       stopListening();
-      if (typeof window !== "undefined") {
-        window.speechSynthesis?.cancel();
-      }
+      window.speechSynthesis?.cancel();
     };
   }, []);
 
@@ -116,6 +104,14 @@ export default function Home() {
 
   function addLyra(text: string) {
     setMessages((prev) => [...prev, { role: "lyra", text }].slice(-16));
+  }
+
+  function handleAvatarError() {
+    if (avatarIndex < avatarSources.length - 1) {
+      setAvatarIndex((i) => i + 1);
+    } else {
+      setAvatarVisible(false);
+    }
   }
 
   function stopListening() {
@@ -169,9 +165,7 @@ export default function Home() {
         }
       }
 
-      if (tempText) {
-        setInterimText(tempText);
-      }
+      if (tempText) setInterimText(tempText);
 
       const clean = finalText.trim();
 
@@ -189,9 +183,9 @@ export default function Home() {
     recognition.onend = () => {
       setIsListening(false);
 
-      if (liveOpenRef.current && !speakingRef.current && !thinkingRef.current) {
+      if (liveRef.current && !speakingRef.current && !thinkingRef.current) {
         setTimeout(() => {
-          if (liveOpenRef.current && !speakingRef.current && !thinkingRef.current) {
+          if (liveRef.current && !speakingRef.current && !thinkingRef.current) {
             startListening();
           }
         }, 500);
@@ -207,7 +201,7 @@ export default function Home() {
     if (typeof window === "undefined") return;
 
     if (!voiceOn) {
-      if (liveOpenRef.current) startListening();
+      if (liveRef.current) startListening();
       return;
     }
 
@@ -222,16 +216,13 @@ export default function Home() {
       utterance.volume = 1;
 
       const voices = window.speechSynthesis.getVoices();
-
       const selectedVoice =
         voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
         voices.find((v) => v.name?.toLowerCase().includes("female")) ||
         voices.find((v) => v.name?.toLowerCase().includes("woman")) ||
         voices[0];
 
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
+      if (selectedVoice) utterance.voice = selectedVoice;
 
       utterance.onstart = () => {
         setIsSpeaking(true);
@@ -239,16 +230,14 @@ export default function Home() {
 
       utterance.onend = () => {
         setIsSpeaking(false);
-
-        if (liveOpenRef.current) {
+        if (liveRef.current) {
           setTimeout(() => startListening(), 450);
         }
       };
 
       utterance.onerror = () => {
         setIsSpeaking(false);
-
-        if (liveOpenRef.current) {
+        if (liveRef.current) {
           setTimeout(() => startListening(), 450);
         }
       };
@@ -256,10 +245,7 @@ export default function Home() {
       window.speechSynthesis.speak(utterance);
     } catch {
       setIsSpeaking(false);
-
-      if (liveOpenRef.current) {
-        startListening();
-      }
+      if (liveRef.current) startListening();
     }
   }
 
@@ -321,18 +307,18 @@ export default function Home() {
       setIsThinking(false);
       thinkingRef.current = false;
 
-      if (liveOpenRef.current || fromVoice) {
+      if (liveRef.current || fromVoice) {
         speak(finalReply);
       }
     } catch {
       const fallback =
-        "Gemini bağlantısında küçük bir takılma oldu kanka. Ekran çalışıyor, bağlantıyı birazdan birlikte düzeltiriz.";
+        "Gemini bağlantısında küçük bir takılma oldu kanka. Ekran çalışıyor, bağlantıyı sonra birlikte düzeltiriz.";
 
       addLyra(fallback);
       setIsThinking(false);
       thinkingRef.current = false;
 
-      if (liveOpenRef.current || fromVoice) {
+      if (liveRef.current || fromVoice) {
         speak(fallback);
       }
     }
@@ -340,7 +326,7 @@ export default function Home() {
 
   function openLiveCall() {
     setLiveOpen(true);
-    liveOpenRef.current = true;
+    liveRef.current = true;
     lastActivityRef.current = Date.now();
 
     const intro = "Canlı mod açıldı Merve. Seni dinliyorum.";
@@ -353,31 +339,11 @@ export default function Home() {
 
   function closeLiveCall() {
     setLiveOpen(false);
-    liveOpenRef.current = false;
+    liveRef.current = false;
     stopListening();
-
-    if (typeof window !== "undefined") {
-      window.speechSynthesis?.cancel();
-    }
-
+    window.speechSynthesis?.cancel();
     setIsSpeaking(false);
     setInterimText("");
-  }
-
-  function handleAvatarError() {
-    if (avatarIndex < avatarSources.length - 1) {
-      setAvatarIndex((i) => i + 1);
-    } else {
-      setAvatarVisible(false);
-    }
-  }
-
-  function handleBgError() {
-    if (bgIndex < bgSources.length - 1) {
-      setBgIndex((i) => i + 1);
-    } else {
-      setBgVisible(false);
-    }
   }
 
   const statusText = isThinking
@@ -395,23 +361,34 @@ export default function Home() {
     : lastMessage?.text || "Buradayım.";
 
   return (
-    <main className="lyra-main">
-      <div className="main-bg" />
-      <div className="main-shell">
-        <header className="main-header">
-          <div>
-            <p className="eyebrow">LYRA CLEAN 2026</p>
-            <h1>Lyra</h1>
-            <span>{statusText}</span>
+    <main className="page">
+      <div className="brand">
+        <div className="brand-icon">✦</div>
+        <h1>LYRA</h1>
+      </div>
+
+      <div className="layout">
+        <aside className="sidebar">
+          <h2>✦ LYRA</h2>
+
+          {["＋ Yeni Sohbet", "▢ Sohbetler", "⌘ Modlar", "▤ Araçlar", "♢ Hatırlatıcılar", "⚙ Ayarlar"].map(
+            (item) => (
+              <button key={item}>{item}</button>
+            )
+          )}
+        </aside>
+
+        <section className="center-card">
+          <div className="top-actions">
+            <h2>LYRA AI ASİSTANINIZ</h2>
+
+            <div className="mini-actions">
+              <button>ⓘ Lyra Hakkında</button>
+              <button>♢</button>
+            </div>
           </div>
 
-          <button className="small-pill" onClick={openLiveCall}>
-            Canlı Mod
-          </button>
-        </header>
-
-        <section className="hero-card">
-          <div className="hero-orb">
+          <div className="avatar-card">
             {avatarVisible ? (
               <img
                 src={avatarSources[avatarIndex]}
@@ -419,78 +396,98 @@ export default function Home() {
                 onError={handleAvatarError}
               />
             ) : (
-              <div className="orb-fallback">L</div>
+              <div className="avatar-fallback">Lyra</div>
             )}
           </div>
 
-          <div className="hero-text">
-            <p>Bugün ne yapıyoruz?</p>
-            <h2>Yaz, konuş, fikir al.</h2>
-          </div>
-        </section>
-
-        <section className="chat-card">
-          <div className="chat-list">
-            {messages.slice(-7).map((msg, index) => (
-              <div
-                key={`${msg.role}-${index}-${msg.text}`}
-                className={msg.role === "user" ? "bubble user" : "bubble lyra"}
-              >
-                <b>{msg.role === "user" ? "Sen" : "Lyra"}</b>
-                <span>{msg.text}</span>
-              </div>
-            ))}
+          <div className="mode-row">
+            <button>≋ Ses: Gemini Live⌄</button>
+            <button>♫ Sessize Al</button>
+            <button>♙ Kadın</button>
+            <button>♟ Erkek</button>
+            <button onClick={openLiveCall}>≋ Canlı Konuşma</button>
           </div>
 
-          <div className="input-row">
-            <input
+          <div className="chat-panel">
+            <div className="messages">
+              {messages.slice(-5).map((msg, index) => (
+                <div
+                  key={`${msg.role}-${index}-${msg.text}`}
+                  className={msg.role === "user" ? "msg user" : "msg lyra"}
+                >
+                  {msg.text}
+                </div>
+              ))}
+            </div>
+
+            <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              placeholder="Araştırılacak konuyu yaz."
               onKeyDown={(e) => {
-                if (e.key === "Enter") sendMessage();
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
               }}
-              placeholder="Lyra'ya yaz..."
             />
-            <button onClick={() => sendMessage()} disabled={isThinking}>
-              Gönder
-            </button>
+
+            <div className="chat-bottom">
+              <div>
+                <button>◒</button>
+                <button>▧</button>
+                <button>PDF</button>
+              </div>
+
+              <button className="send" onClick={() => sendMessage()}>
+                ▶
+              </button>
+            </div>
           </div>
         </section>
 
-        <section className="quick-actions">
-          <button onClick={openLiveCall}>
-            <span>🎙️</span>
-            <b>Canlı Konuşma</b>
-            <small>Tam ekran görüntülü mod</small>
-          </button>
+        <aside className="phone-preview">
+          <div className="phone-shell">
+            <div className="phone-top">
+              <button>☰</button>
+              <h2>✦ LYRA</h2>
+              <button>♢</button>
+            </div>
 
-          <button>
-            <span>📄</span>
-            <b>PDF Özet</b>
-            <small>Dosya alanı</small>
-          </button>
+            <div className="phone-avatar">
+              {avatarVisible ? (
+                <img
+                  src={avatarSources[avatarIndex]}
+                  alt="Lyra"
+                  onError={handleAvatarError}
+                />
+              ) : (
+                <div className="avatar-fallback">Lyra</div>
+              )}
+            </div>
 
-          <button>
-            <span>✨</span>
-            <b>İçerik Fikri</b>
-            <small>Hook ve metin</small>
-          </button>
-        </section>
+            <div className="phone-grid">
+              <button>≋ Ses: Gemini Live</button>
+              <button>Sessize Al</button>
+              <button>Kadın</button>
+              <button>Erkek</button>
+            </div>
+
+            <button className="phone-live" onClick={openLiveCall}>
+              ≋ Canlı Konuşma ›
+            </button>
+
+            <div className="phone-input">
+              <span>Lyra’ya bir şey sor veya yaz...</span>
+              <button>▶</button>
+            </div>
+          </div>
+        </aside>
       </div>
 
       {liveOpen && (
         <section className="live-overlay">
-          <div className="live-art-bg" />
-
-          {bgVisible && (
-            <img
-              className="live-bg-photo"
-              src={bgSources[bgIndex]}
-              alt=""
-              onError={handleBgError}
-            />
-          )}
-
+          <div className="live-room" />
           <div className="live-shade" />
 
           <header className="live-header">
@@ -499,7 +496,7 @@ export default function Home() {
             </button>
 
             <div className="live-title">
-              <h2>Lyra</h2>
+              <h2>Lyra ✦</h2>
               <p>{statusText}</p>
             </div>
 
@@ -512,7 +509,7 @@ export default function Home() {
           <section className="live-avatar-stage">
             <div
               className={[
-                "live-avatar-glow",
+                "live-glow",
                 isListening ? "listen" : "",
                 isSpeaking ? "speak" : "",
               ].join(" ")}
@@ -530,15 +527,7 @@ export default function Home() {
                 onError={handleAvatarError}
               />
             ) : (
-              <div
-                className={[
-                  "live-avatar",
-                  "fallback-live-avatar",
-                  isSpeaking ? "talking" : "",
-                ].join(" ")}
-              >
-                <span>Lyra</span>
-              </div>
+              <div className="live-avatar live-fallback">Lyra</div>
             )}
           </section>
 
@@ -579,7 +568,7 @@ export default function Home() {
             </button>
 
             <button
-              className="live-main-btn"
+              className="live-main"
               onClick={() => {
                 if (isListening) {
                   stopListening();
@@ -592,9 +581,9 @@ export default function Home() {
               <small>{isListening ? "Dinliyor" : "Konuş"}</small>
             </button>
 
-            <button onClick={() => setAutoNudge((v) => !v)}>
-              <span>{autoNudge ? "✦" : "○"}</span>
-              <small>Seslen</small>
+            <button onClick={closeLiveCall}>
+              <span>×</span>
+              <small>Kapat</small>
             </button>
           </footer>
         </section>
@@ -610,291 +599,350 @@ export default function Home() {
           margin: 0;
           padding: 0;
           min-height: 100%;
-          background: #f5f2ee;
+          background: #eef0f1;
           font-family: Inter, ui-sans-serif, system-ui, -apple-system,
             BlinkMacSystemFont, "Segoe UI", sans-serif;
+          color: #080b10;
         }
 
         button,
-        input {
+        textarea {
           font: inherit;
         }
 
         button {
           cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
         }
 
-        .lyra-main {
-          position: relative;
+        .page {
           min-height: 100dvh;
-          overflow: hidden;
-          color: #191713;
-          background: #f5f2ee;
-        }
-
-        .main-bg {
-          position: absolute;
-          inset: 0;
-          background:
-            radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.95), transparent 28%),
-            radial-gradient(circle at 88% 22%, rgba(213, 207, 198, 0.75), transparent 28%),
-            radial-gradient(circle at 50% 100%, rgba(230, 224, 216, 0.96), transparent 45%),
-            linear-gradient(135deg, #fffdfb, #ebe6df);
-        }
-
-        .main-shell {
           position: relative;
-          z-index: 2;
-          width: min(980px, calc(100vw - 28px));
-          margin: 0 auto;
-          padding: 24px 0 28px;
+          overflow-x: hidden;
+          background:
+            radial-gradient(circle at 44% 35%, rgba(255, 255, 255, 0.98), transparent 28%),
+            radial-gradient(circle at 55% 50%, rgba(216, 219, 222, 0.75), transparent 28%),
+            linear-gradient(135deg, #ffffff, #e9ecee);
+          padding: 28px 28px 40px;
         }
 
-        .main-header {
+        .brand {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+          margin-bottom: 22px;
+        }
+
+        .brand-icon {
+          width: 46px;
+          height: 46px;
+          display: grid;
+          place-items: center;
+          border-radius: 999px;
+          background: #ffd4ce;
+          font-size: 28px;
+        }
+
+        .brand h1 {
+          margin: 0;
+          font-size: 35px;
+          letter-spacing: 0.18em;
+          line-height: 1;
+        }
+
+        .layout {
+          width: min(1680px, 100%);
+          margin: 0 auto;
+          display: grid;
+          grid-template-columns: 240px minmax(560px, 1fr) 390px;
+          gap: 24px;
+          align-items: center;
+        }
+
+        .sidebar,
+        .center-card,
+        .phone-shell {
+          background: rgba(255, 255, 255, 0.58);
+          border: 1px solid rgba(188, 192, 197, 0.75);
+          box-shadow:
+            0 28px 80px rgba(73, 78, 86, 0.14),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+          backdrop-filter: blur(22px);
+        }
+
+        .sidebar {
+          min-height: 560px;
+          border-radius: 34px;
+          padding: 28px 18px;
+        }
+
+        .sidebar h2 {
+          margin: 0 0 24px;
+          font-size: 29px;
+          letter-spacing: 0.08em;
+        }
+
+        .sidebar button {
+          width: 100%;
+          height: 48px;
+          border: 1px solid rgba(170, 176, 184, 0.75);
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.48);
+          margin-bottom: 13px;
+          text-align: left;
+          padding: 0 18px;
+          font-weight: 800;
+          color: #111318;
+        }
+
+        .center-card {
+          position: relative;
+          min-height: 630px;
+          border-radius: 34px;
+          padding: 34px 34px 28px;
+        }
+
+        .top-actions {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 16px;
-          margin-bottom: 18px;
         }
 
-        .eyebrow {
-          margin: 0 0 5px;
-          color: #9b9287;
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 0.18em;
-        }
-
-        .main-header h1 {
+        .top-actions h2 {
           margin: 0;
-          font-size: clamp(38px, 7vw, 72px);
-          letter-spacing: -0.07em;
-          line-height: 0.92;
-          color: #1d1a17;
+          flex: 1;
+          text-align: center;
+          font-size: 31px;
+          letter-spacing: 0.2em;
         }
 
-        .main-header span {
-          display: inline-block;
-          margin-top: 8px;
-          color: #8b8379;
-          font-weight: 650;
+        .mini-actions {
+          display: flex;
+          gap: 10px;
         }
 
-        .small-pill {
-          border: 0;
-          padding: 13px 18px;
+        .mini-actions button {
+          height: 36px;
           border-radius: 999px;
-          color: #24201c;
-          background: rgba(255, 255, 255, 0.76);
-          box-shadow:
-            0 18px 60px rgba(61, 53, 43, 0.12),
-            inset 0 0 0 1px rgba(255, 255, 255, 0.8);
-          backdrop-filter: blur(18px);
+          border: 1px solid rgba(191, 196, 201, 0.8);
+          background: rgba(255, 255, 255, 0.72);
+          padding: 0 16px;
           font-weight: 800;
         }
 
-        .hero-card {
-          min-height: 260px;
-          border-radius: 36px;
-          padding: 24px;
-          display: grid;
-          grid-template-columns: minmax(160px, 260px) 1fr;
-          align-items: center;
-          gap: 24px;
-          background: rgba(255, 255, 255, 0.68);
-          border: 1px solid rgba(255, 255, 255, 0.88);
-          box-shadow: 0 28px 90px rgba(65, 56, 46, 0.12);
-          backdrop-filter: blur(22px);
-        }
-
-        .hero-orb {
-          position: relative;
-          width: min(240px, 52vw);
-          aspect-ratio: 1;
-          margin: 0 auto;
-          border-radius: 999px;
+        .avatar-card {
+          width: 250px;
+          height: 300px;
+          margin: 26px auto 0;
+          border-radius: 25px;
+          overflow: hidden;
+          background: #e9ecef;
+          border: 1px solid rgba(173, 179, 186, 0.75);
           display: grid;
           place-items: center;
-          overflow: hidden;
-          background:
-            radial-gradient(circle at 50% 30%, #ffffff, transparent 38%),
-            linear-gradient(145deg, #f8f5ef, #cfc8bd);
-          box-shadow:
-            0 24px 70px rgba(70, 61, 50, 0.16),
-            inset 0 0 0 1px rgba(255, 255, 255, 0.9);
         }
 
-        .hero-orb::after {
-          content: "";
-          position: absolute;
-          inset: 10px;
-          border-radius: inherit;
-          border: 1px solid rgba(255, 255, 255, 0.72);
-        }
-
-        .hero-orb img {
-          position: relative;
-          z-index: 2;
-          width: 112%;
-          height: 112%;
+        .avatar-card img,
+        .phone-avatar img {
+          width: 100%;
+          height: 100%;
           object-fit: cover;
           object-position: center top;
         }
 
-        .orb-fallback {
-          width: 86px;
-          height: 86px;
-          border-radius: 999px;
+        .avatar-fallback {
+          width: 100%;
+          height: 100%;
           display: grid;
           place-items: center;
-          background: #1f1b17;
-          color: white;
-          font-size: 42px;
+          font-size: 30px;
+          font-weight: 900;
+          background: linear-gradient(145deg, #f4ede6, #cfc7bd);
+        }
+
+        .mode-row {
+          margin: 0 auto;
+          margin-top: -2px;
+          position: relative;
+          z-index: 3;
+          display: grid;
+          grid-template-columns: 1.2fr 1fr 0.75fr 0.75fr 1.2fr;
+          gap: 12px;
+          width: min(870px, 100%);
+        }
+
+        .mode-row button {
+          height: 55px;
+          border-radius: 18px;
+          border: 1px solid rgba(190, 196, 202, 0.78);
+          background: rgba(255, 255, 255, 0.76);
+          box-shadow: 0 16px 36px rgba(74, 78, 84, 0.1);
           font-weight: 900;
         }
 
-        .hero-text p {
-          margin: 0 0 8px;
-          color: #92887d;
-          font-weight: 750;
-          font-size: 18px;
+        .chat-panel {
+          margin-top: 22px;
+          border-radius: 28px;
+          padding: 18px;
+          background: rgba(255, 255, 255, 0.58);
+          border: 1px solid rgba(190, 196, 202, 0.78);
         }
 
-        .hero-text h2 {
-          margin: 0;
-          font-size: clamp(32px, 6vw, 64px);
-          line-height: 0.96;
-          letter-spacing: -0.07em;
-          color: #211e1a;
-        }
-
-        .chat-card {
-          margin-top: 14px;
-          border-radius: 32px;
-          padding: 16px;
-          background: rgba(255, 255, 255, 0.66);
-          border: 1px solid rgba(255, 255, 255, 0.88);
-          box-shadow: 0 26px 80px rgba(65, 56, 46, 0.1);
-          backdrop-filter: blur(20px);
-        }
-
-        .chat-list {
-          max-height: 280px;
+        .messages {
+          max-height: 150px;
           overflow-y: auto;
+          padding-right: 6px;
           display: flex;
           flex-direction: column;
           gap: 10px;
-          padding: 4px 3px 14px;
-          scrollbar-width: none;
         }
 
-        .chat-list::-webkit-scrollbar {
-          display: none;
-        }
-
-        .bubble {
-          max-width: 84%;
+        .msg {
           padding: 12px 14px;
-          border-radius: 20px;
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
+          border-radius: 16px;
+          font-weight: 750;
+          line-height: 1.35;
+          font-size: 14px;
         }
 
-        .bubble b {
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          opacity: 0.55;
-        }
-
-        .bubble span {
-          font-size: 15px;
-          line-height: 1.38;
-        }
-
-        .bubble.lyra {
+        .msg.lyra {
           align-self: flex-start;
-          background: rgba(246, 243, 238, 0.9);
-          color: #1d1915;
-          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+          max-width: 86%;
+          background: white;
+          color: #111318;
+          border: 1px solid rgba(214, 218, 222, 0.9);
         }
 
-        .bubble.user {
+        .msg.user {
           align-self: flex-end;
-          background: linear-gradient(145deg, #ffffff, #ddd6cd);
-          color: #171411;
-          box-shadow: 0 16px 40px rgba(65, 56, 46, 0.12);
+          max-width: 55%;
+          color: white;
+          background: #0e1117;
         }
 
-        .input-row {
-          display: flex;
-          gap: 10px;
-        }
-
-        .input-row input {
-          flex: 1;
-          min-width: 0;
+        textarea {
+          width: 100%;
+          min-height: 88px;
+          margin-top: 14px;
+          resize: none;
           border: 0;
           outline: 0;
-          border-radius: 999px;
-          padding: 15px 17px;
-          color: #181511;
-          background: rgba(255, 255, 255, 0.92);
-          box-shadow: inset 0 0 0 1px rgba(55, 48, 40, 0.08);
+          background: transparent;
+          color: #15181f;
+          font-size: 20px;
+          font-weight: 850;
         }
 
-        .input-row button {
+        textarea::placeholder {
+          color: #5d646d;
+        }
+
+        .chat-bottom {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .chat-bottom div {
+          display: flex;
+          gap: 10px;
+        }
+
+        .chat-bottom button {
+          height: 42px;
+          min-width: 42px;
           border: 0;
           border-radius: 999px;
-          padding: 0 18px;
-          color: white;
-          background: #1f1b17;
-          font-weight: 800;
+          background: rgba(255, 255, 255, 0.8);
+          box-shadow: 0 10px 28px rgba(73, 78, 86, 0.12);
+          font-weight: 900;
         }
 
-        .input-row button:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
+        .chat-bottom .send {
+          width: 48px;
+          height: 48px;
         }
 
-        .quick-actions {
-          margin-top: 14px;
+        .phone-preview {
+          display: flex;
+          justify-content: center;
+        }
+
+        .phone-shell {
+          width: 365px;
+          min-height: 620px;
+          border-radius: 42px;
+          padding: 30px 24px;
+          border-width: 8px;
+          border-color: rgba(183, 188, 194, 0.8);
+        }
+
+        .phone-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .phone-top button {
+          width: 34px;
+          height: 34px;
+          border-radius: 999px;
+          border: 1px solid #d4d7dc;
+          background: white;
+        }
+
+        .phone-top h2 {
+          margin: 0;
+          font-size: 27px;
+          letter-spacing: 0.12em;
+        }
+
+        .phone-avatar {
+          width: 130px;
+          height: 190px;
+          overflow: hidden;
+          border-radius: 22px;
+          margin: 26px auto 10px;
+          border: 1px solid rgba(190, 196, 202, 0.8);
+        }
+
+        .phone-grid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 12px;
+          grid-template-columns: 1fr 1fr;
+          gap: 9px;
         }
 
-        .quick-actions button {
-          min-height: 118px;
-          border: 0;
-          border-radius: 28px;
-          padding: 16px;
-          text-align: left;
-          background: rgba(255, 255, 255, 0.62);
-          border: 1px solid rgba(255, 255, 255, 0.82);
-          box-shadow: 0 22px 70px rgba(65, 56, 46, 0.1);
-          color: #1d1915;
-          backdrop-filter: blur(18px);
+        .phone-grid button,
+        .phone-live,
+        .phone-input {
+          min-height: 48px;
+          border-radius: 15px;
+          border: 1px solid rgba(190, 196, 202, 0.78);
+          background: rgba(255, 255, 255, 0.75);
+          font-weight: 900;
         }
 
-        .quick-actions span {
-          display: block;
-          font-size: 24px;
-          margin-bottom: 10px;
+        .phone-live {
+          width: 100%;
+          margin-top: 10px;
         }
 
-        .quick-actions b {
-          display: block;
-          font-size: 17px;
-          margin-bottom: 5px;
-        }
-
-        .quick-actions small {
-          color: #8b8379;
+        .phone-input {
+          margin-top: 14px;
+          padding: 0 10px 0 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
           font-size: 13px;
+        }
+
+        .phone-input button {
+          width: 36px;
+          height: 36px;
+          border-radius: 999px;
+          border: 1px solid #d4d7dc;
+          background: white;
         }
 
         .live-overlay {
@@ -906,29 +954,16 @@ export default function Home() {
           background: #120c08;
         }
 
-        .live-bg-photo {
+        .live-room {
           position: absolute;
           inset: 0;
-          z-index: 0;
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          object-position: center;
-          transform: scale(1.04);
-          filter: saturate(1.08) contrast(1.05) blur(0.2px);
-        }
-
-        .live-art-bg {
-          position: absolute;
-          inset: 0;
-          z-index: 0;
           background:
             radial-gradient(circle at 18% 35%, rgba(255, 180, 82, 0.38), transparent 18%),
             radial-gradient(circle at 86% 48%, rgba(255, 195, 116, 0.24), transparent 22%),
             linear-gradient(90deg, #150d09, #5a3a25 48%, #100a08);
         }
 
-        .live-art-bg::before {
+        .live-room::before {
           content: "";
           position: absolute;
           left: -95px;
@@ -940,7 +975,7 @@ export default function Home() {
           opacity: 0.75;
         }
 
-        .live-art-bg::after {
+        .live-room::after {
           content: "";
           position: absolute;
           right: 8%;
@@ -958,9 +993,8 @@ export default function Home() {
         .live-shade {
           position: absolute;
           inset: 0;
-          z-index: 1;
           background:
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.2), transparent 28%, rgba(0, 0, 0, 0.78)),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), transparent 28%, rgba(0, 0, 0, 0.78)),
             radial-gradient(circle at 50% 42%, transparent 25%, rgba(0, 0, 0, 0.56));
           pointer-events: none;
         }
@@ -972,7 +1006,7 @@ export default function Home() {
           left: 22px;
           right: 22px;
           display: grid;
-          grid-template-columns: 54px 1fr 86px;
+          grid-template-columns: 54px 1fr 92px;
           align-items: center;
           gap: 12px;
         }
@@ -995,15 +1029,15 @@ export default function Home() {
 
         .live-title h2 {
           margin: 0;
-          font-size: 34px;
+          font-size: 38px;
           line-height: 1;
           letter-spacing: -0.04em;
         }
 
         .live-title p {
-          margin: 7px 0 0;
+          margin: 8px 0 0;
           color: rgba(255, 255, 255, 0.78);
-          font-size: 15px;
+          font-size: 16px;
         }
 
         .live-pill {
@@ -1015,7 +1049,7 @@ export default function Home() {
           border-radius: 999px;
           background: rgba(48, 112, 62, 0.35);
           color: #72ff9c;
-          font-weight: 800;
+          font-weight: 900;
           font-size: 13px;
           backdrop-filter: blur(18px);
         }
@@ -1025,41 +1059,40 @@ export default function Home() {
           height: 9px;
           border-radius: 999px;
           background: #72ff9c;
-          box-shadow: 0 0 0 0 rgba(114, 255, 156, 0.6);
           animation: livePulse 1.25s infinite;
         }
 
         .live-avatar-stage {
           position: absolute;
           z-index: 2;
-          inset: 94px 0 190px;
+          inset: 90px 0 180px;
           display: flex;
           align-items: center;
           justify-content: center;
           pointer-events: none;
         }
 
-        .live-avatar-glow {
+        .live-glow {
           position: absolute;
-          width: min(86vw, 560px);
-          height: min(86vw, 560px);
+          width: min(78vw, 540px);
+          height: min(78vw, 540px);
           border-radius: 999px;
           background: radial-gradient(circle, rgba(255, 225, 181, 0.28), transparent 68%);
           filter: blur(10px);
         }
 
-        .live-avatar-glow.listen {
+        .live-glow.listen {
           background: radial-gradient(circle, rgba(178, 255, 225, 0.25), transparent 68%);
         }
 
-        .live-avatar-glow.speak {
+        .live-glow.speak {
           animation: liveGlow 1.1s ease-in-out infinite;
         }
 
         .live-avatar {
           position: relative;
           z-index: 2;
-          width: min(88vw, 500px);
+          width: min(82vw, 510px);
           max-height: 78dvh;
           object-fit: contain;
           object-position: center bottom;
@@ -1075,30 +1108,18 @@ export default function Home() {
         .live-avatar.listening {
           filter:
             drop-shadow(0 32px 70px rgba(0, 0, 0, 0.55))
-            drop-shadow(0 0 20px rgba(168, 85, 247, 0.26));
+            drop-shadow(0 0 22px rgba(168, 85, 247, 0.3));
         }
 
-        .fallback-live-avatar {
-          width: min(78vw, 430px);
-          aspect-ratio: 0.72;
-          border-radius: 46% 46% 28% 28%;
+        .live-fallback {
+          width: min(80vw, 430px);
+          aspect-ratio: 0.74;
           display: grid;
           place-items: center;
-          background:
-            radial-gradient(circle at 50% 24%, #ffe4c7, #e5b18d 30%, #111 31%, #050505 80%);
-        }
-
-        .fallback-live-avatar span {
-          width: 150px;
-          height: 150px;
-          display: grid;
-          place-items: center;
-          border-radius: 999px;
-          background: linear-gradient(145deg, #ffe4c7, #e5b18d);
-          color: #2b1c14;
-          font-size: 30px;
+          border-radius: 44% 44% 28% 28%;
+          background: linear-gradient(145deg, #f4ddc5, #111);
+          font-size: 40px;
           font-weight: 900;
-          margin-top: -180px;
         }
 
         .live-caption {
@@ -1198,7 +1219,7 @@ export default function Home() {
         .live-wave-box p {
           margin: 5px 0 0;
           color: #bd73ff;
-          font-weight: 700;
+          font-weight: 800;
         }
 
         .live-controls {
@@ -1241,7 +1262,7 @@ export default function Home() {
           color: rgba(255, 255, 255, 0.86);
         }
 
-        .live-main-btn span {
+        .live-main span {
           width: 84px;
           height: 84px;
           background: linear-gradient(145deg, #a855ff, #6d28d9);
@@ -1301,107 +1322,52 @@ export default function Home() {
           }
         }
 
-        @media (max-width: 720px) {
-          .main-shell {
-            width: calc(100vw - 22px);
-            padding-top: 16px;
+        @media (max-width: 1250px) {
+          .layout {
+            grid-template-columns: 220px minmax(520px, 1fr);
           }
 
-          .hero-card {
-            grid-template-columns: 1fr;
-            text-align: center;
-            gap: 14px;
-            padding: 20px;
-          }
-
-          .quick-actions {
-            grid-template-columns: 1fr;
-          }
-
-          .chat-list {
-            max-height: 250px;
+          .phone-preview {
+            display: none;
           }
         }
 
-        @media (max-width: 430px) {
-          .main-header {
-            align-items: flex-start;
+        @media (max-width: 850px) {
+          .page {
+            padding: 18px 12px 28px;
           }
 
-          .small-pill {
-            padding: 12px 15px;
+          .layout {
+            grid-template-columns: 1fr;
           }
 
-          .hero-orb {
-            width: min(220px, 70vw);
+          .sidebar {
+            display: none;
           }
 
-          .input-row {
-            gap: 8px;
+          .center-card {
+            padding: 22px 14px;
           }
 
-          .input-row input {
-            padding: 14px;
+          .top-actions {
+            flex-direction: column;
           }
 
-          .input-row button {
-            padding: 0 15px;
+          .top-actions h2 {
+            font-size: 22px;
           }
 
-          .live-header {
-            left: 16px;
-            right: 16px;
-            grid-template-columns: 48px 1fr 76px;
+          .avatar-card {
+            width: 170px;
+            height: 230px;
           }
 
-          .live-back {
-            width: 46px;
-            height: 46px;
+          .mode-row {
+            grid-template-columns: 1fr 1fr;
           }
 
-          .live-title h2 {
-            font-size: 30px;
-          }
-
-          .live-pill {
-            height: 34px;
-            font-size: 12px;
-          }
-
-          .live-avatar-stage {
-            inset: 86px 0 180px;
-          }
-
-          .live-avatar {
-            width: min(96vw, 450px);
-            max-height: 76dvh;
-          }
-
-          .live-caption {
-            bottom: 238px;
-            width: calc(100vw - 34px);
-          }
-
-          .live-caption p {
-            font-size: 19px;
-          }
-
-          .live-wave-box {
-            bottom: 162px;
-          }
-
-          .live-controls {
-            padding: 0 24px;
-          }
-
-          .live-controls span {
-            width: 62px;
-            height: 62px;
-          }
-
-          .live-main-btn span {
-            width: 78px;
-            height: 78px;
+          .mode-row button:last-child {
+            grid-column: 1 / -1;
           }
         }
 
@@ -1427,7 +1393,7 @@ export default function Home() {
             height: 60px;
           }
 
-          .live-main-btn span {
+          .live-main span {
             width: 72px;
             height: 72px;
           }
