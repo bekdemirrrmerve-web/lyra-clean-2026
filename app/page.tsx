@@ -1,2323 +1,1343 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from "react";
 
-type ModeKey = 'research' | 'content' | 'lesson' | 'image' | 'read' | 'pdf' | 'live';
-type Role = 'user' | 'assistant' | 'system';
-
-type ChatMessage = {
-  id: number;
-  role: Role;
+type Message = {
+  role: "user" | "lyra";
   text: string;
 };
 
-const AVATAR_VIDEO = '/lyra-avatar-mp4.mp4';
-const AVATAR_IMAGE = '/lyra-avatar.jpg.jpeg';
+declare global {
+  interface Window {
+    SpeechRecognition?: any;
+    webkitSpeechRecognition?: any;
+  }
+}
 
-const GEMINI_TEXT_ENDPOINT = '/api/gemini';
-const GEMINI_TTS_ENDPOINT = '/api/tts';
-
-const PDF_ENDPOINTS = ['/api/pdf', '/api/pdf-summary', '/api/upload-pdf'];
-const IMAGE_ENDPOINTS = ['/api/vision', '/api/image-read', '/api/analyze-image'];
-
-const voices = [
-  { label: 'Gemini Live', voiceName: 'Kore' },
-  { label: 'Kadın - Nazik', voiceName: 'Kore' },
-  { label: 'Kadın - Enerjik', voiceName: 'Aoede' },
-  { label: 'Doğal', voiceName: 'Puck' },
-  { label: 'Sakin', voiceName: 'Leda' },
+const avatarSources = [
+  "/lyra-avatar.png",
+  "/avatar-lyra.png",
+  "/avatar.png",
+  "/lyra.png",
+  "/ai-avatar.png",
+  "/avatar.jpeg",
+  "/avatar.jpg",
 ];
 
-const modes: {
-  key: ModeKey;
-  title: string;
-  desc: string;
-  icon: string;
-  starter: string;
-}[] = [
-  {
-    key: 'research',
-    title: 'Araştırma Modu',
-    desc: 'Bilgi bul, analiz et ve net cevaplar üret.',
-    icon: '⌕',
-    starter: 'Araştırılacak konuyu yaz.',
-  },
-  {
-    key: 'content',
-    title: 'İçerik Üretme',
-    desc: 'Hook, başlık, video metni ve teleprompter hazırla.',
-    icon: '✎',
-    starter: 'Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım.',
-  },
-  {
-    key: 'lesson',
-    title: 'Ders Modu',
-    desc: 'Konu anlat, test üret, yanlış açıkla.',
-    icon: '▰',
-    starter: 'Çalışmak istediğin konuyu, soruyu ya da görseli gönder.',
-  },
-  {
-    key: 'image',
-    title: 'Görsel Üretme',
-    desc: 'Görsel promptu ve konsept hazırla.',
-    icon: '▧',
-    starter: 'Nasıl bir görsel istediğini yaz.',
-  },
-  {
-    key: 'read',
-    title: 'Görselle Okut',
-    desc: 'Görsel, belge ve ekranları analiz et.',
-    icon: '◌',
-    starter: 'Görsel yükle veya ne okutmak istediğini yaz.',
-  },
-  {
-    key: 'pdf',
-    title: 'PDF Özeti',
-    desc: 'PDF yükle, özetle ve not çıkar.',
-    icon: '▤',
-    starter: 'PDF yükle, sana özet ve önemli notlar çıkarayım.',
-  },
-  {
-    key: 'live',
-    title: 'Canlı Mod',
-    desc: 'Gerçek zamanlı konuşma alanı.',
-    icon: '≋',
-    starter: 'Canlı konuşma açık. Konuşmaya başlayabilirsin.',
-  },
+const bgSources = [
+  "/lyra-room-bg.jpg",
+  "/replika-bg.jpg",
+  "/room-bg.jpg",
+  "/background.jpg",
+  "/bg.jpg",
 ];
 
-function buildPrompt(mode: ModeKey, input: string, action?: string) {
-  if (mode === 'content') {
-    return `
-Sen Lyra'sın. Türkçe, sıcak, akıcı ve sosyal medya odaklı içerik üret.
-Konu: ${input}
-İstenen aksiyon: ${action || 'tam içerik paketi'}
-
-Şu formatta cevap ver:
-1) Video Konu Başlıkları: 5 fikir
-2) İlk 3 Saniye Hook: 5 seçenek
-3) Teleprompter Metni: 45-60 saniyelik, konuşur gibi
-4) Ekran Yazıları
-5) CTA
-6) Çekim Notu
-`;
-  }
-
-  if (mode === 'lesson') {
-    return `
-Sen Lyra'sın. Öğretmen gibi ama çok anlaşılır anlat.
-Konu/Soru: ${input}
-İstenen aksiyon: ${action || 'ders anlatımı'}
-
-Şu formatta cevap ver:
-1) Konu Özeti
-2) Bilmen Gereken Formüller / Kurallar
-3) Sınav İpuçları
-4) Çözümlü Örnek Sorular
-5) Şıklı Mini Test
-6) Yanlış Yapılırsa Nasıl Düşünülmeli?
-`;
-  }
-
-  if (mode === 'research') {
-    return `
-Sen Lyra'sın. Konuyu sade, net ve düzenli anlat.
-Konu: ${input}
-
-Şu formatta cevap ver:
-1) Kısa cevap
-2) Detaylı açıklama
-3) Önemli maddeler
-4) Dikkat edilmesi gerekenler
-5) Sonuç
-`;
-  }
-
-  if (mode === 'image') {
-    return `
-Sen Lyra'sın. Görsel üretim promptu hazırlıyorsun.
-İstek: ${input}
-
-Şu formatta cevap ver:
-1) Kısa konsept
-2) Detaylı prompt
-3) Renk paleti
-4) Kadraj
-5) Stil alternatifleri
-`;
-  }
-
-  if (mode === 'read') {
-    return `
-Sen Lyra'sın. Görsel okuma/analiz modundasın.
-Kullanıcı isteği: ${input}
-Görsel yüklendiyse analiz et; yüklenmediyse ne yüklemesi gerektiğini söyle.
-`;
-  }
-
-  if (mode === 'pdf') {
-    return `
-Sen Lyra'sın. PDF özetleme modundasın.
-Kullanıcı isteği: ${input}
-PDF yüklendiyse özetle; yüklenmediyse PDF yüklemesini iste.
-`;
-  }
-
-  return `
-Sen Lyra'sın. Türkçe, doğal, sıcak ve hızlı cevap veren bir AI asistansın.
-Kullanıcı mesajı: ${input}
-Kısa başla, gerekirse detaylandır.
-`;
-}
-
-async function postGeminiText(body: Record<string, unknown>) {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 22000);
-
-    const res = await fetch(GEMINI_TEXT_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!res.ok) return null;
-
-    const data = await res.json().catch(() => null);
-
-    const text =
-      data?.answer ||
-      data?.reply ||
-      data?.message ||
-      data?.text ||
-      data?.content ||
-      data?.result ||
-      data?.response ||
-      data?.output;
-
-    if (typeof text === 'string' && text.trim()) return text.trim();
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function postFileFast(endpoints: string[], file: File, extra: Record<string, string>) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 26000);
-
-  for (const endpoint of endpoints) {
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      Object.entries(extra).forEach(([key, value]) => form.append(key, value));
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        body: form,
-        signal: controller.signal,
-      });
-
-      if (!res.ok) continue;
-
-      const data = await res.json().catch(() => null);
-
-      const text =
-        data?.summary ||
-        data?.answer ||
-        data?.reply ||
-        data?.message ||
-        data?.text ||
-        data?.content ||
-        data?.result ||
-        data?.response;
-
-      if (typeof text === 'string' && text.trim()) {
-        clearTimeout(timeout);
-        return text.trim();
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  clearTimeout(timeout);
-  return null;
-}
-
-function AvatarVideo({
-  className,
-  imageClassName,
-}: {
-  className: string;
-  imageClassName: string;
-}) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [videoReady, setVideoReady] = useState(false);
-  const [videoFailed, setVideoFailed] = useState(false);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    let frame = 0;
-
-    const keepAlive = () => {
-      if (video && Number.isFinite(video.duration) && video.duration > 0) {
-        if (video.currentTime >= video.duration - 0.28) {
-          video.currentTime = 0.04;
-          video.play().catch(() => {});
-        }
-      }
-
-      frame = requestAnimationFrame(keepAlive);
-    };
-
-    frame = requestAnimationFrame(keepAlive);
-
-    const playTimer = setTimeout(() => {
-      video.play().catch(() => {});
-    }, 300);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(playTimer);
-    };
-  }, []);
-
-  return (
-    <div className="avatar-media-root">
-      <img className={imageClassName} src={AVATAR_IMAGE} alt="Lyra avatar" />
-
-      {!videoFailed && (
-        <video
-          ref={videoRef}
-          className={className}
-          src={AVATAR_VIDEO}
-          poster={AVATAR_IMAGE}
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
-          onCanPlay={(event) => {
-            setVideoReady(true);
-            event.currentTarget.play().catch(() => {});
-          }}
-          onLoadedData={(event) => {
-            setVideoReady(true);
-            event.currentTarget.currentTime = 0.04;
-            event.currentTarget.play().catch(() => {});
-          }}
-          onEnded={(event) => {
-            event.currentTarget.currentTime = 0.04;
-            event.currentTarget.play().catch(() => {});
-          }}
-          onError={() => setVideoFailed(true)}
-        />
-      )}
-
-      {!videoReady && !videoFailed && <div className="video-loading">LYRA</div>}
-    </div>
-  );
-}
-
-export default function Page() {
-  const [activeMode, setActiveMode] = useState<ModeKey>('content');
-  const [muted, setMuted] = useState(false);
-  const [gender, setGender] = useState<'Kadın' | 'Erkek'>('Kadın');
-  const [liveOpen, setLiveOpen] = useState(false);
-  const [voiceIndex, setVoiceIndex] = useState(0);
-  const [message, setMessage] = useState('');
-  const [isThinking, setIsThinking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [liveContinuous, setLiveContinuous] = useState(false);
-  const [speakingUi, setSpeakingUi] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
+export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([
     {
-      id: 1,
-      role: 'assistant',
-      text: 'Merhaba, ben Lyra. Gemini bağlantısı hazırsa direkt ondan cevap vereceğim. Konu yaz; içerik, ders, araştırma, PDF veya görsel alanında çalışayım.',
+      role: "lyra",
+      text: "Merhaba Merve 💜 Buradayım, konuşmaya hazırım.",
     },
   ]);
 
-  const pdfInputRef = useRef<HTMLInputElement | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const shouldRestartRef = useRef(false);
-  const isSpeakingRef = useRef(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const messageIdRef = useRef(2);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [input, setInput] = useState("");
+  const [isLive, setIsLive] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [interimText, setInterimText] = useState("");
 
-  const voice = voices[voiceIndex];
-  const active = useMemo(() => modes.find((item) => item.key === activeMode), [activeMode]);
-  const placeholderText = active?.starter || 'Lyra’ya bir şey sor veya yaz...';
+  const [avatarIndex, setAvatarIndex] = useState(0);
+  const [bgIndex, setBgIndex] = useState(0);
+  const [avatarVisible, setAvatarVisible] = useState(true);
+  const [bgVisible, setBgVisible] = useState(true);
+
+  const recognitionRef = useRef<any>(null);
+  const liveRef = useRef(false);
+  const speakingRef = useRef(false);
+  const thinkingRef = useRef(false);
+  const lastActivityRef = useRef(Date.now());
+  const lastNudgeRef = useRef(0);
+
+  const lastMessage = messages[messages.length - 1];
 
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    liveRef.current = isLive;
+  }, [isLive]);
+
+  useEffect(() => {
+    speakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    thinkingRef.current = isThinking;
+  }, [isThinking]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!liveRef.current) return;
+      if (speakingRef.current || thinkingRef.current) return;
+
+      const now = Date.now();
+      const idle = now - lastActivityRef.current;
+      const nudgeGap = now - lastNudgeRef.current;
+
+      if (idle > 24000 && nudgeGap > 35000) {
+        const nudges = [
+          "Merve, buradayım. Devam etmek istersen seni dinliyorum.",
+          "Sessiz kaldın, ben hâlâ buradayım. İstersen konuşmaya devam edelim.",
+          "Seni bekliyorum Merve. Bir şey sormak istersen dinliyorum.",
+        ];
+
+        const text = nudges[Math.floor(Math.random() * nudges.length)];
+        lastNudgeRef.current = now;
+        addLyra(text);
+        speak(text);
+      }
+    }, 3000);
+
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [messages, isThinking]);
+    return () => {
+      stopListening();
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
 
-  const addMessage = (role: Role, text: string) => {
-    const id = messageIdRef.current++;
-    setMessages((prev) => [...prev, { id, role, text }].slice(-24));
-  };
+  function addUser(text: string) {
+    setMessages((prev) => [...prev, { role: "user", text }].slice(-14));
+  }
 
-  const stopListening = () => {
-    shouldRestartRef.current = false;
-    recognitionRef.current?.stop?.();
+  function addLyra(text: string) {
+    setMessages((prev) => [...prev, { role: "lyra", text }].slice(-14));
+  }
+
+  function stopListening() {
+    try {
+      recognitionRef.current?.stop?.();
+      recognitionRef.current?.abort?.();
+    } catch {}
+
     recognitionRef.current = null;
     setIsListening(false);
-    setLiveContinuous(false);
-  };
+  }
 
-  const speak = async (text: string) => {
-    if (muted || typeof window === 'undefined') return;
-
-    const cleanText = text
-      .replace(/\*\*/g, '')
-      .replace(/[#>`]/g, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .slice(0, 3600);
-
-    try {
-      isSpeakingRef.current = true;
-      setSpeakingUi(true);
-
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-      }
-
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-
-      const response = await fetch(GEMINI_TTS_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: cleanText,
-          voice: voice.voiceName,
-        }),
-      });
-
-      if (!response.ok) throw new Error('Gemini TTS çalışmadı');
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        isSpeakingRef.current = false;
-        setSpeakingUi(false);
-
-        if (liveOpen && shouldRestartRef.current) {
-          setTimeout(() => startListening(true), 180);
-        }
-      };
-
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        isSpeakingRef.current = false;
-        setSpeakingUi(false);
-
-        if (liveOpen && shouldRestartRef.current) {
-          setTimeout(() => startListening(true), 180);
-        }
-      };
-
-      await audio.play();
-    } catch {
-      isSpeakingRef.current = false;
-      setSpeakingUi(false);
-
-      addMessage(
-        'system',
-        'Gemini sesi çalışmadı. /api/tts route’unu ve GEMINI_API_KEY env ayarını kontrol et.'
-      );
-
-      if (liveOpen && shouldRestartRef.current) {
-        setTimeout(() => startListening(true), 220);
-      }
-    }
-  };
-
-  const sendMessage = async (input?: string, action?: string) => {
-    const raw = (input ?? message).trim();
-    if (!raw || isThinking) return;
-
-    setMessage('');
-    addMessage('user', raw);
-    setIsThinking(true);
-
-    const prompt = buildPrompt(activeMode, raw, action);
-
-    const aiText = await postGeminiText({
-      message: prompt,
-      rawMessage: raw,
-      mode: activeMode,
-      action: action || null,
-      voice: voice.label,
-      gender,
-      live: liveOpen,
-      provider: 'gemini',
-      model: 'gemini-2.5-flash',
-      realtime: true,
-    });
-
-    setIsThinking(false);
-
-    if (!aiText) {
-      addMessage(
-        'assistant',
-        'Gemini bağlantısı çalışmadı kanka. Eski bot fallback kapalı. app/api/gemini/route.ts ve GEMINI_API_KEY ayarını kontrol edelim.'
-      );
-      return;
-    }
-
-    addMessage('assistant', aiText);
-    await speak(aiText);
-  };
-
-  const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage();
-    }
-  };
-
-  const cycleVoice = () => {
-    setVoiceIndex((prev) => (prev + 1) % voices.length);
-  };
-
-  const openMode = (key: ModeKey) => {
-    setActiveMode(key);
-
-    if (key === 'live') {
-      setLiveOpen(true);
-      return;
-    }
-
-    if (key === 'pdf') {
-      setTimeout(() => pdfInputRef.current?.click(), 120);
-      return;
-    }
-
-    if (key === 'read') {
-      setTimeout(() => imageInputRef.current?.click(), 120);
-    }
-  };
-
-  const startListening = (continuous = false) => {
-    if (typeof window === 'undefined') return;
+  function startListening() {
+    if (typeof window === "undefined") return;
 
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      addMessage('assistant', 'Bu tarayıcı mikrofonla konuşmayı desteklemiyor. Chrome veya Safari dene.');
+      addLyra("Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’dan dene.");
       return;
     }
 
-    if (isSpeakingRef.current) return;
+    if (speakingRef.current || thinkingRef.current) return;
 
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-    }
+    stopListening();
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'tr-TR';
-    recognition.continuous = continuous;
-    recognition.interimResults = true;
+    recognitionRef.current = recognition;
 
-    shouldRestartRef.current = continuous;
+    recognition.lang = "tr-TR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
-      setLiveContinuous(continuous);
-      setLiveOpen(true);
     };
 
     recognition.onresult = (event: any) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
+      let finalText = "";
+      let tempText = "";
 
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalTranscript += transcript;
-        else interimTranscript += transcript;
+
+        if (event.results[i].isFinal) {
+          finalText += transcript;
+        } else {
+          tempText += transcript;
+        }
       }
 
-      setMessage(finalTranscript || interimTranscript);
+      if (tempText) setInterimText(tempText);
 
-      if (finalTranscript.trim()) {
-        recognition.stop();
-        sendMessage(finalTranscript.trim());
+      const clean = finalText.trim();
+
+      if (clean.length > 1) {
+        setInterimText("");
+        lastActivityRef.current = Date.now();
+        sendMessage(clean);
       }
     };
 
     recognition.onerror = () => {
       setIsListening(false);
-      setLiveContinuous(false);
-
-      if (continuous && shouldRestartRef.current && !isSpeakingRef.current) {
-        setTimeout(() => startListening(true), 450);
-      }
     };
 
     recognition.onend = () => {
       setIsListening(false);
 
-      if (continuous && shouldRestartRef.current && !isSpeakingRef.current && !isThinking) {
-        setTimeout(() => startListening(true), 350);
-      } else {
-        setLiveContinuous(false);
+      if (liveRef.current && !speakingRef.current && !thinkingRef.current) {
+        setTimeout(() => {
+          if (liveRef.current && !speakingRef.current && !thinkingRef.current) {
+            startListening();
+          }
+        }, 500);
       }
     };
 
-    recognitionRef.current = recognition;
-    recognition.start();
-  };
+    try {
+      recognition.start();
+    } catch {}
+  }
 
-  const handlePdfUpload = async (file?: File) => {
-    if (!file) return;
-
-    setActiveMode('pdf');
-    addMessage('user', `PDF yüklendi: ${file.name}`);
-    setIsThinking(true);
-
-    const result =
-      (await postFileFast(PDF_ENDPOINTS, file, { mode: 'pdf', provider: 'gemini' })) ||
-      `PDF yüklendi. PDF API bağlantısı bulunamadı ama dosya alındı: ${file.name}.`;
-
-    setIsThinking(false);
-    addMessage('assistant', result);
-    await speak(result);
-  };
-
-  const handleImageUpload = async (file?: File) => {
-    if (!file) return;
-
-    setActiveMode('read');
-    addMessage('user', `Görsel yüklendi: ${file.name}`);
-    setIsThinking(true);
-
-    const result =
-      (await postFileFast(IMAGE_ENDPOINTS, file, { mode: 'read', provider: 'gemini' })) ||
-      `Görsel yüklendi. Görsel analiz API bağlantısı bulunamadı ama dosya alındı: ${file.name}.`;
-
-    setIsThinking(false);
-    addMessage('assistant', result);
-    await speak(result);
-  };
-
-  const quickAction = (action: string) => {
-    const text = message.trim();
-
-    if (!text) {
-      setMessage(action);
+  function speak(text: string) {
+    if (!voiceOn || typeof window === "undefined") {
+      if (liveRef.current) startListening();
       return;
     }
 
-    sendMessage(text, action);
-  };
+    try {
+      stopListening();
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "tr-TR";
+      utterance.rate = 1.06;
+      utterance.pitch = 1.08;
+      utterance.volume = 1;
+
+      const voices = window.speechSynthesis.getVoices();
+
+      const selectedVoice =
+        voices.find((v) => v.lang?.toLowerCase().includes("tr")) ||
+        voices.find((v) => v.name?.toLowerCase().includes("female")) ||
+        voices.find((v) => v.name?.toLowerCase().includes("woman")) ||
+        voices[0];
+
+      if (selectedVoice) utterance.voice = selectedVoice;
+
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+      };
+
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        if (liveRef.current) {
+          setTimeout(() => startListening(), 450);
+        }
+      };
+
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        if (liveRef.current) {
+          setTimeout(() => startListening(), 450);
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      setIsSpeaking(false);
+      if (liveRef.current) startListening();
+    }
+  }
+
+  async function askGemini(text: string) {
+    const history = messages.slice(-8).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.text,
+    }));
+
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: text,
+        prompt: text,
+        input: text,
+        history,
+      }),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Gemini cevabı alınamadı.");
+    }
+
+    return (
+      data?.answer ||
+      data?.reply ||
+      data?.text ||
+      data?.message ||
+      data?.content ||
+      "Cevap geldi ama metni düzgün okuyamadım."
+    );
+  }
+
+  async function sendMessage(value?: string) {
+    const text = (value || input).trim();
+    if (!text || isThinking) return;
+
+    lastActivityRef.current = Date.now();
+    setInput("");
+    addUser(text);
+    setIsThinking(true);
+    thinkingRef.current = true;
+
+    try {
+      stopListening();
+
+      const reply = await askGemini(text);
+      const finalReply =
+        typeof reply === "string"
+          ? reply
+          : "Bunu aldım ama cevabı metne çeviremedim.";
+
+      addLyra(finalReply);
+
+      setIsThinking(false);
+      thinkingRef.current = false;
+
+      speak(finalReply);
+    } catch {
+      const fallback =
+        "Gemini bağlantısında küçük bir takılma oldu kanka. Ekran çalışıyor, bağlantıyı birazdan birlikte düzeltiriz.";
+
+      addLyra(fallback);
+      setIsThinking(false);
+      thinkingRef.current = false;
+      speak(fallback);
+    }
+  }
+
+  function toggleLive() {
+    if (isLive) {
+      setIsLive(false);
+      liveRef.current = false;
+      stopListening();
+      window.speechSynthesis?.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    setIsLive(true);
+    liveRef.current = true;
+    lastActivityRef.current = Date.now();
+
+    const intro = "Canlı mod açıldı Merve. Seni dinliyorum.";
+    addLyra(intro);
+    speak(intro);
+  }
+
+  function handleAvatarError() {
+    if (avatarIndex < avatarSources.length - 1) {
+      setAvatarIndex((i) => i + 1);
+    } else {
+      setAvatarVisible(false);
+    }
+  }
+
+  function handleBgError() {
+    if (bgIndex < bgSources.length - 1) {
+      setBgIndex((i) => i + 1);
+    } else {
+      setBgVisible(false);
+    }
+  }
+
+  const statusText = isThinking
+    ? "Düşünüyor..."
+    : isSpeaking
+    ? "Konuşuyor..."
+    : isListening
+    ? "Seni dinliyor..."
+    : isLive
+    ? "Hazır"
+    : "Canlı değil";
+
+  const captionText = interimText
+    ? interimText
+    : isThinking
+    ? "Düşünüyorum..."
+    : lastMessage?.text;
 
   return (
-    <main className="page">
-      <input
-        ref={pdfInputRef}
-        type="file"
-        accept="application/pdf"
-        hidden
-        onChange={(event) => handlePdfUpload(event.target.files?.[0])}
-      />
+    <main className="screen">
+      <div className="room-art" />
 
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(event) => handleImageUpload(event.target.files?.[0])}
-      />
+      {bgVisible && (
+        <img
+          className="room-photo"
+          src={bgSources[bgIndex]}
+          alt=""
+          onError={handleBgError}
+        />
+      )}
 
-      <section className="app-layout">
-        <aside className="sidebar glass">
-          <div className="logo-row">
-            <strong>LYRA</strong>
-          </div>
+      <div className="dark-layer" />
 
-          <nav className="menu">
-            <button
-              className="menu-item active"
-              onClick={() =>
-                setMessages([
-                  {
-                    id: messageIdRef.current++,
-                    role: 'assistant',
-                    text: 'Yeni sohbet açıldı. Gemini bağlantısı hazırsa direkt ona bağlanacağım.',
-                  },
-                ])
-              }
-            >
-              <span>＋</span> Yeni Sohbet
-            </button>
-            <button className="menu-item">
-              <span>▢</span> Sohbetler
-            </button>
-            <button className="menu-item" onClick={() => setActiveMode('content')}>
-              <span>⌘</span> Modlar
-            </button>
-            <button className="menu-item">
-              <span>▤</span> Araçlar
-            </button>
-            <button className="menu-item">
-              <span>♢</span> Hatırlatıcılar
-            </button>
-            <button className="menu-item">
-              <span>⚙</span> Ayarlar
-            </button>
-          </nav>
+      <div className="phone-status">
+        <span>9:41</span>
+        <div className="phone-icons">
+          <span className="signal">▮▮▮</span>
+          <span>⌁</span>
+          <span className="battery" />
+        </div>
+      </div>
 
-          <div className="side-bottom">
-            <div className="mini-box">
-              <div>
-                <strong>LYRA PRO</strong>
-                <small>AI Asistan</small>
-              </div>
-            </div>
+      <header className="top">
+        <div className={isLive ? "live-pill on" : "live-pill"}>
+          <span />
+          {isLive ? "CANLI" : "HAZIR"}
+        </div>
 
-            <div className="profile-box">
-              <div className="profile-dot">M</div>
-              <div>
-                <strong>Merve</strong>
-                <small>Pro Üye</small>
-              </div>
-              <span>⌄</span>
-            </div>
+        <div className="title">
+          <h1>
+            Lyra <b>✦</b>
+          </h1>
+          <p>{statusText}</p>
+        </div>
 
-            <div className="usage-box">
-              <div>
-                <strong>Aylık Kullanım</strong>
-                <b>%68</b>
-              </div>
-              <span className="usage-line">
-                <i />
-              </span>
-              <small>6.8 / 10 saat</small>
+        <button className="menu-btn" aria-label="Menü">
+          •••
+        </button>
+      </header>
+
+      <section className="avatar-wrap">
+        <div
+          className={[
+            "avatar-light",
+            isListening ? "listening" : "",
+            isSpeaking ? "speaking" : "",
+          ].join(" ")}
+        />
+
+        {avatarVisible ? (
+          <img
+            className={[
+              "avatar",
+              isSpeaking ? "talking" : "",
+              isListening ? "hearing" : "",
+            ].join(" ")}
+            src={avatarSources[avatarIndex]}
+            alt="Lyra"
+            onError={handleAvatarError}
+          />
+        ) : (
+          <div
+            className={[
+              "avatar fallback-avatar",
+              isSpeaking ? "talking" : "",
+              isListening ? "hearing" : "",
+            ].join(" ")}
+          >
+            <div className="fallback-face">
+              <span>Lyra</span>
             </div>
           </div>
-        </aside>
-
-        <section className="main-panel glass">
-          <header className="main-head">
-            <h1>LYRA AI ASİSTANINIZ</h1>
-
-            <div className="head-actions">
-              <button
-                onClick={() =>
-                  addMessage(
-                    'assistant',
-                    'Ben Lyra. Bu sürümde eski bot fallback kapalı. Mesajlar sadece Gemini route’a gider.'
-                  )
-                }
-              >
-                Lyra Hakkında
-              </button>
-              <button onClick={cycleVoice}>⌄</button>
-            </div>
-          </header>
-
-          <section className="top-zone">
-            <div className="avatar-block">
-              <div className="silver-orbit orbit-one" />
-              <div className="silver-orbit orbit-two" />
-
-              <div className="avatar-video-wrap">
-                <AvatarVideo className="avatar-video" imageClassName="avatar-poster" />
-              </div>
-            </div>
-
-            <div className="controls">
-              <button className="control" onClick={cycleVoice}>
-                <span className="sound">≋</span>
-                Ses: {voice.label}
-                <b>⌄</b>
-              </button>
-
-              <button
-                className={`control ${muted ? 'selected' : ''}`}
-                onClick={() => setMuted((value) => !value)}
-              >
-                <span>♬</span>
-                {muted ? 'Sesi Aç' : 'Sessize Al'}
-              </button>
-
-              <button
-                className={`control ${gender === 'Kadın' ? 'selected' : ''}`}
-                onClick={() => setGender('Kadın')}
-              >
-                <span>♙</span>
-                Kadın
-              </button>
-
-              <button
-                className={`control ${gender === 'Erkek' ? 'selected' : ''}`}
-                onClick={() => setGender('Erkek')}
-              >
-                <span>♙</span>
-                Erkek
-              </button>
-
-              <button className="control live" onClick={() => setLiveOpen(true)}>
-                <span className="sound">≋</span>
-                Canlı Konuşma
-              </button>
-            </div>
-          </section>
-
-          <section className="write-box">
-            <div className="message-list">
-              {messages.map((item) => (
-                <div key={item.id} className={`message ${item.role}`}>
-                  {item.text}
-                </div>
-              ))}
-              {isThinking && <div className="message assistant">Gemini cevaplıyor...</div>}
-              <div ref={messagesEndRef} />
-            </div>
-
-            <textarea
-              placeholder={placeholderText}
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              onKeyDown={handleTextareaKeyDown}
-            />
-
-            <div className="write-actions">
-              <div>
-                <button onClick={() => startListening(false)}>{isListening ? '■' : '🎙'}</button>
-                <button onClick={() => imageInputRef.current?.click()}>▧</button>
-                <button onClick={() => pdfInputRef.current?.click()}>PDF</button>
-              </div>
-
-              <button className="send" onClick={() => sendMessage()}>
-                ▶
-              </button>
-            </div>
-          </section>
-
-          <section className="mode-grid">
-            {modes.map((mode) => (
-              <button
-                key={mode.key}
-                className={`mode-card ${activeMode === mode.key ? 'active' : ''}`}
-                onClick={() => openMode(mode.key)}
-              >
-                <span className="mode-icon">{mode.icon}</span>
-                <strong>{mode.title}</strong>
-                <small>{mode.desc}</small>
-                <b>⌄</b>
-              </button>
-            ))}
-          </section>
-
-          <section className="sub-panel">
-            {activeMode === 'content' && (
-              <>
-                <strong>İçerik Üretme</strong>
-                <div>
-                  <button onClick={() => quickAction('Video konu başlıkları üret')}>
-                    Video Konu Başlıkları
-                  </button>
-                  <button onClick={() => quickAction('Hook yaz')}>Hook Alanı</button>
-                  <button onClick={() => quickAction('Teleprompter video metni yaz')}>
-                    Teleprompter Metni
-                  </button>
-                  <button onClick={() => quickAction('Ekran yazıları ve CTA üret')}>
-                    Ekran Yazısı + CTA
-                  </button>
-                </div>
-              </>
-            )}
-
-            {activeMode === 'lesson' && (
-              <>
-                <strong>Ders Modu</strong>
-                <div>
-                  <button onClick={() => quickAction('Konu özeti çıkar')}>Konu Özeti</button>
-                  <button onClick={() => quickAction('Konu formülleri ve kuralları çıkar')}>
-                    Konu Formülleri
-                  </button>
-                  <button onClick={() => quickAction('Sınav ipuçları ver')}>Sınav İpuçları</button>
-                  <button onClick={() => quickAction('Çözümlü sorular üret')}>
-                    Çözümlü Sorular
-                  </button>
-                  <button onClick={() => quickAction('Şıklı test üret')}>Test Üret</button>
-                  <button onClick={() => quickAction('Yanlışımı açıkla')}>Yanlışımı Açıkla</button>
-                  <button onClick={() => imageInputRef.current?.click()}>Soru Görseli Yükle</button>
-                </div>
-              </>
-            )}
-
-            {activeMode === 'research' && (
-              <>
-                <strong>Araştırma Modu</strong>
-                <div>
-                  <button onClick={() => quickAction('Derin araştırma yap')}>Derin Araştır</button>
-                  <button onClick={() => quickAction('Kaynaklı özet çıkar')}>Kaynaklı Özet</button>
-                  <button onClick={() => quickAction('Karşılaştırmalı analiz yap')}>Karşılaştır</button>
-                </div>
-              </>
-            )}
-
-            {activeMode === 'image' && (
-              <>
-                <strong>Görsel Üretme</strong>
-                <div>
-                  <button onClick={() => quickAction('Görsel promptu yaz')}>Prompt Yaz</button>
-                  <button onClick={() => quickAction('Konsept tasarla')}>Konsept Tasarla</button>
-                  <button onClick={() => quickAction('Renk paleti oluştur')}>Renk Paleti</button>
-                </div>
-              </>
-            )}
-
-            {activeMode === 'read' && (
-              <>
-                <strong>Görselle Okut</strong>
-                <div>
-                  <button onClick={() => imageInputRef.current?.click()}>Görsel Yükle</button>
-                  <button onClick={() => quickAction('Görseldeki yazıyı oku')}>Yazıyı Oku</button>
-                  <button onClick={() => quickAction('Görseli analiz et')}>Analiz Et</button>
-                </div>
-              </>
-            )}
-
-            {activeMode === 'pdf' && (
-              <>
-                <strong>PDF Özeti</strong>
-                <div>
-                  <button onClick={() => pdfInputRef.current?.click()}>PDF Yükle</button>
-                  <button onClick={() => quickAction('PDF ana başlıkları çıkar')}>Başlık Çıkar</button>
-                  <button onClick={() => quickAction('PDF çalışma notu hazırla')}>Not Hazırla</button>
-                </div>
-              </>
-            )}
-          </section>
-        </section>
-
-        <aside className="phone-shell">
-          <div className="phone">
-            <div className="phone-status">
-              <strong>9:41</strong>
-              <span />
-              <b>▮▮▮</b>
-            </div>
-
-            <div className="phone-head">
-              <button onClick={() => startListening(false)}>☰</button>
-              <strong>LYRA</strong>
-              <button onClick={cycleVoice}>⌄</button>
-            </div>
-
-            <div className="phone-hero">
-              <div className="phone-avatar-video-wrap">
-                <AvatarVideo className="phone-avatar-video" imageClassName="phone-avatar-poster" />
-              </div>
-            </div>
-
-            <div className="phone-controls">
-              <button onClick={cycleVoice}>≋ Ses: {voice.label}</button>
-              <button onClick={() => setMuted((value) => !value)}>
-                {muted ? 'Sesi Aç' : 'Sessize Al'}
-              </button>
-              <button
-                className={gender === 'Kadın' ? 'selected' : ''}
-                onClick={() => setGender('Kadın')}
-              >
-                Kadın
-              </button>
-              <button
-                className={gender === 'Erkek' ? 'selected' : ''}
-                onClick={() => setGender('Erkek')}
-              >
-                Erkek
-              </button>
-              <button className="phone-live" onClick={() => setLiveOpen(true)}>
-                ≋ Canlı Konuşma ›
-              </button>
-            </div>
-
-            <div className="phone-input" onClick={() => sendMessage(message || 'Merhaba Lyra')}>
-              <span>{message || 'Lyra’ya bir şey sor veya yaz...'}</span>
-              <button>▶</button>
-            </div>
-
-            <div className="phone-grid">
-              {modes.map((mode) => (
-                <button key={mode.key} onClick={() => openMode(mode.key)}>
-                  <span>{mode.icon}</span>
-                  <strong>{mode.title}</strong>
-                  <small>⌄</small>
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
+        )}
       </section>
 
-      {liveOpen && (
-        <section className="live-room">
-          <div className="live-bg-orb live-bg-one" />
-          <div className="live-bg-orb live-bg-two" />
+      <aside className="side-controls">
+        <button onClick={() => setVoiceOn((v) => !v)}>
+          <span>{voiceOn ? "🔊" : "🔇"}</span>
+          <small>Ses</small>
+        </button>
 
-          <header className="live-topbar">
-            <button
-              onClick={() => {
-                setLiveOpen(false);
-                stopListening();
-              }}
-            >
-              ‹
-            </button>
+        <button>
+          <span>▣</span>
+          <small>Kamera</small>
+        </button>
 
-            <div>
-              <strong>LYRA LIVE</strong>
-              <span>
-                {liveContinuous
-                  ? 'Gemini Live dinliyor'
-                  : isThinking
-                    ? 'Lyra düşünüyor'
-                    : speakingUi
-                      ? 'Lyra konuşuyor'
-                      : 'Canlı konuşmaya hazır'}
-              </span>
-            </div>
+        <button onClick={isListening ? stopListening : startListening}>
+          <span>{isListening ? "🎙️" : "🎤"}</span>
+          <small>{isListening ? "Dinliyor" : "Sessize al"}</small>
+        </button>
+      </aside>
 
-            <button onClick={cycleVoice}>≋</button>
-          </header>
+      <section className="speech-card">
+        <strong>{lastMessage?.role === "user" ? "Sen" : "Lyra"}</strong>
+        <p>{captionText}</p>
+      </section>
 
-          <div className="live-stage">
-            <div
-              className={`live-avatar-scene ${liveContinuous ? 'listening' : ''} ${
-                isThinking ? 'thinking' : ''
-              } ${speakingUi ? 'speaking' : ''}`}
-            >
-              <div className="live-ring ring-a" />
-              <div className="live-ring ring-b" />
-              <div className="live-ring ring-c" />
+      <section className="wave-area">
+        <div
+          className={[
+            "wave",
+            isListening || isSpeaking || isThinking ? "active" : "",
+          ].join(" ")}
+        >
+          <span />
+          <i />
+          <span />
+          <i />
+          <span />
+          <i />
+          <span />
+          <i />
+          <span />
+        </div>
 
-              <div className="live-avatar-card">
-                <AvatarVideo className="live-avatar-video" imageClassName="live-avatar-poster" />
+        <p>
+          {isThinking
+            ? "Düşünüyorum..."
+            : isSpeaking
+            ? "Cevap veriyorum..."
+            : isListening
+            ? "Dinliyorum..."
+            : "Hazırım..."}
+        </p>
+      </section>
+
+      {showChat && (
+        <section className="chat-panel">
+          <div className="chat-list">
+            {messages.slice(-6).map((msg, index) => (
+              <div
+                key={`${msg.role}-${index}`}
+                className={msg.role === "user" ? "bubble user" : "bubble lyra"}
+              >
+                <b>{msg.role === "user" ? "Sen" : "Lyra"}</b>
+                <span>{msg.text}</span>
               </div>
-            </div>
-
-            <div className="live-name">
-              <h2>Lyra</h2>
-              <p>
-                {voice.label} · {gender} avatar · {muted ? 'Sessiz' : 'Ses açık'}
-              </p>
-            </div>
-
-            <div className="live-transcript">
-              {messages.slice(-3).map((item) => (
-                <div key={item.id} className={`live-line ${item.role}`}>
-                  {item.text}
-                </div>
-              ))}
-
-              {isListening && <div className="live-line system">Seni dinliyorum...</div>}
-              {isThinking && <div className="live-line assistant">Cevabı hazırlıyorum...</div>}
-            </div>
+            ))}
           </div>
 
-          <footer className="live-controls">
-            <button
-              className={`live-control-btn ${muted ? 'active' : ''}`}
-              onClick={() => setMuted((value) => !value)}
-            >
-              {muted ? '🔇' : '🔊'}
-              <span>{muted ? 'Sesi Aç' : 'Sessiz'}</span>
-            </button>
-
-            <button
-              className={`live-control-btn mic ${liveContinuous ? 'active' : ''}`}
-              onClick={() => startListening(true)}
-            >
-              🎙
-              <span>{liveContinuous ? 'Dinliyor' : 'Konuş'}</span>
-            </button>
-
-            <button
-              className="live-control-btn end"
-              onClick={() => {
-                setLiveOpen(false);
-                stopListening();
+          <div className="chat-input">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") sendMessage();
               }}
-            >
-              ✕
-              <span>Kapat</span>
-            </button>
+              placeholder="Lyra'ya yaz..."
+            />
 
-            <button className="live-control-btn" onClick={cycleVoice}>
-              ≋
-              <span>Ses</span>
-            </button>
-          </footer>
+            <button onClick={() => sendMessage()}>Gönder</button>
+          </div>
         </section>
       )}
 
+      <footer className="bottom-controls">
+        <button onClick={() => setShowChat((v) => !v)}>
+          <span>💬</span>
+          <small>Yazış</small>
+        </button>
+
+        <button className={isLive ? "end-btn live" : "end-btn"} onClick={toggleLive}>
+          <span>{isLive ? "☎" : "▶"}</span>
+          <small>{isLive ? "Bitir" : "Başlat"}</small>
+        </button>
+
+        <button>
+          <span>✦</span>
+          <small>Konular</small>
+        </button>
+      </footer>
+
       <style jsx global>{`
-        :root {
-          --white: #ffffff;
-          --silver-1: #f8f9fa;
-          --silver-2: #eef1f3;
-          --silver-3: #dfe3e7;
-          --silver-4: #c5cbd1;
-          --graphite: #111417;
-          --graphite-soft: #30363b;
-          --muted: #555d64;
-          --line: rgba(20, 24, 28, 0.13);
-          --line-strong: rgba(20, 24, 28, 0.22);
-          --shadow: 0 20px 70px rgba(18, 22, 26, 0.12);
-          --shadow-soft: 0 12px 30px rgba(18, 22, 26, 0.08);
-          --glass: linear-gradient(
-            145deg,
-            rgba(255, 255, 255, 0.95),
-            rgba(235, 238, 241, 0.8),
-            rgba(255, 255, 255, 0.9)
-          );
+        * {
+          box-sizing: border-box;
+        }
+
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          overflow: hidden;
+          background: #100b08;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+            BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         button,
-        textarea {
+        input {
           font: inherit;
         }
 
         button {
-          cursor: pointer;
-          border: 0;
+          -webkit-tap-highlight-color: transparent;
         }
 
-        .page {
+        .screen {
           position: relative;
-          width: 100%;
-          min-height: 100dvh;
-          overflow-x: hidden;
-          overflow-y: auto;
-          padding: 14px 10px 10px;
-          scroll-padding-top: 14px;
-          background:
-            radial-gradient(circle at 48% 22%, rgba(255, 255, 255, 1), transparent 32%),
-            linear-gradient(135deg, #ffffff 0%, #f5f7f8 44%, #e6eaee 100%);
+          width: 100vw;
+          height: 100dvh;
+          overflow: hidden;
+          color: white;
+          background: #120c08;
         }
 
-        .page::before,
-        .page::after {
-          content: '';
+        .room-photo {
           position: absolute;
-          inset: -12%;
-          pointer-events: none;
-          background:
-            radial-gradient(
-              ellipse at 50% 40%,
-              transparent 0 28%,
-              rgba(255, 255, 255, 0.92) 29%,
-              transparent 30%
-            ),
-            radial-gradient(
-              ellipse at 48% 44%,
-              transparent 0 36%,
-              rgba(218, 224, 229, 0.48) 37%,
-              transparent 38%
-            );
-          opacity: 0.7;
-        }
-
-        .page::after {
-          transform: rotate(-15deg) scale(1.05);
-          opacity: 0.22;
-        }
-
-        .app-layout {
-          position: relative;
-          z-index: 2;
+          inset: 0;
+          z-index: 0;
           width: 100%;
-          min-height: calc(100dvh - 24px);
-          margin: 0 auto;
+          height: 100%;
+          object-fit: cover;
+          object-position: center;
+          transform: scale(1.04);
+          filter: saturate(1.08) contrast(1.05) blur(0.2px);
+        }
+
+        .room-art {
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          background:
+            radial-gradient(circle at 18% 38%, rgba(255, 177, 76, 0.4), transparent 18%),
+            radial-gradient(circle at 86% 48%, rgba(255, 183, 96, 0.24), transparent 20%),
+            radial-gradient(circle at 72% 20%, rgba(255, 221, 174, 0.14), transparent 20%),
+            linear-gradient(90deg, rgba(26, 15, 10, 1), rgba(82, 56, 39, 0.7), rgba(16, 10, 8, 1));
+        }
+
+        .room-art::before {
+          content: "";
+          position: absolute;
+          left: -92px;
+          top: 145px;
+          width: 280px;
+          height: 520px;
+          border-radius: 999px;
+          border: 18px solid rgba(255, 181, 82, 0.44);
+          filter: blur(1px);
+          opacity: 0.78;
+        }
+
+        .room-art::after {
+          content: "";
+          position: absolute;
+          right: 40px;
+          top: 345px;
+          width: 132px;
+          height: 340px;
+          border-radius: 26px;
+          background:
+            radial-gradient(circle at 50% 25%, rgba(255, 202, 112, 0.92), transparent 12%),
+            radial-gradient(circle at 50% 65%, rgba(255, 202, 112, 0.82), transparent 13%),
+            linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          filter: blur(0.4px);
+          opacity: 0.68;
+        }
+
+        .dark-layer {
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          background:
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.24), transparent 24%, rgba(0, 0, 0, 0.28) 65%, rgba(0, 0, 0, 0.82)),
+            radial-gradient(circle at 50% 42%, transparent 26%, rgba(0, 0, 0, 0.16) 58%, rgba(0, 0, 0, 0.7));
+          pointer-events: none;
+        }
+
+        .phone-status {
+          position: absolute;
+          z-index: 10;
+          top: max(18px, env(safe-area-inset-top));
+          left: 34px;
+          right: 34px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 22px;
+          font-weight: 800;
+          letter-spacing: -0.03em;
+          text-shadow: 0 6px 18px rgba(0, 0, 0, 0.36);
+        }
+
+        .phone-icons {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 18px;
+        }
+
+        .signal {
+          font-size: 15px;
+          letter-spacing: -4px;
+          transform: translateY(1px);
+        }
+
+        .battery {
+          width: 30px;
+          height: 15px;
+          border: 2px solid rgba(255, 255, 255, 0.92);
+          border-radius: 4px;
+          position: relative;
+        }
+
+        .battery::before {
+          content: "";
+          position: absolute;
+          right: -5px;
+          top: 3px;
+          width: 3px;
+          height: 7px;
+          border-radius: 0 2px 2px 0;
+          background: rgba(255, 255, 255, 0.92);
+        }
+
+        .battery::after {
+          content: "";
+          position: absolute;
+          inset: 2px;
+          border-radius: 2px;
+          background: rgba(255, 255, 255, 0.92);
+        }
+
+        .top {
+          position: absolute;
+          z-index: 10;
+          top: max(78px, calc(env(safe-area-inset-top) + 60px));
+          left: 32px;
+          right: 32px;
           display: grid;
-          grid-template-columns: 220px minmax(620px, 1fr) 320px;
-          gap: 14px;
+          grid-template-columns: 120px 1fr 62px;
           align-items: start;
         }
 
-        .glass {
-          background: var(--glass);
-          border: 1px solid var(--line);
-          box-shadow: var(--shadow);
-          backdrop-filter: blur(22px);
-          -webkit-backdrop-filter: blur(22px);
-        }
-
-        .sidebar {
-          min-height: calc(100dvh - 24px);
-          border-radius: 28px;
-          padding: 18px 14px;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-
-        .logo-row {
-          padding: 2px 12px 16px;
-          font-size: 28px;
-          letter-spacing: 0.08em;
-        }
-
-        .logo-row strong {
-          font-weight: 950;
-        }
-
-        .menu {
-          display: grid;
-          gap: 10px;
-        }
-
-        .menu-item,
-        .mini-box,
-        .profile-box,
-        .usage-box,
-        .control,
-        .write-box,
-        .mode-card,
-        .phone-controls button,
-        .phone-input,
-        .phone-grid button,
-        .head-actions button {
-          color: var(--graphite);
-          background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 242, 244, 0.9));
-          border: 1px solid rgba(25, 29, 33, 0.1);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 8px 20px rgba(18, 22, 26, 0.07);
-        }
-
-        .menu-item {
-          min-height: 44px;
-          border-radius: 18px;
-          padding: 0 16px;
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          text-align: left;
-          font-weight: 900;
-          transition: 0.2s ease;
-        }
-
-        .side-bottom {
-          margin-top: auto;
-          display: grid;
-          gap: 10px;
-        }
-
-        .mini-box,
-        .profile-box,
-        .usage-box {
-          border-radius: 18px;
-          padding: 14px;
-        }
-
-        .profile-box {
-          display: grid;
-          grid-template-columns: 42px 1fr auto;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .profile-dot {
-          width: 42px;
-          height: 42px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          background:
-            radial-gradient(circle at 30% 22%, #ffffff, transparent 28%),
-            linear-gradient(145deg, #202428, #7e858b);
-          color: #ffffff;
-          font-weight: 950;
-        }
-
-        .usage-line {
-          display: block;
-          height: 7px;
-          margin: 10px 0 6px;
-          overflow: hidden;
-          border-radius: 999px;
-          background: #d8dde1;
-        }
-
-        .usage-line i {
-          display: block;
-          width: 68%;
-          height: 100%;
-          border-radius: inherit;
-          background: linear-gradient(90deg, #70777e, #c9ced2);
-        }
-
-        .main-panel {
-          position: relative;
-          min-height: calc(100dvh - 24px);
-          border-radius: 28px;
-          padding: 14px 18px;
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .main-panel::before {
-          content: '';
-          position: absolute;
-          inset: -20%;
-          pointer-events: none;
-          background:
-            radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.95), transparent 20%),
-            radial-gradient(circle at 50% 30%, rgba(226, 231, 235, 0.52), transparent 36%);
-        }
-
-        .main-head,
-        .top-zone,
-        .write-box,
-        .mode-grid,
-        .sub-panel {
-          position: relative;
-          z-index: 1;
-        }
-
-        .main-head {
-          min-height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          flex-shrink: 0;
-        }
-
-        .main-head h1 {
-          margin: 0;
-          font-size: clamp(20px, 2vw, 28px);
-          letter-spacing: 0.12em;
-          font-weight: 950;
-          text-align: center;
-        }
-
-        .head-actions {
-          position: absolute;
-          right: 0;
-          display: flex;
-          gap: 10px;
-        }
-
-        .head-actions button {
-          min-height: 36px;
-          border-radius: 999px;
-          padding: 0 14px;
-          font-weight: 950;
-        }
-
-        .top-zone {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: flex-start;
-          gap: 8px;
-          overflow: visible;
-          flex-shrink: 0;
-        }
-
-        .avatar-block {
-          position: relative;
-          width: 100%;
-          height: 150px;
-          display: grid;
-          place-items: center;
-          isolation: isolate;
-          flex-shrink: 0;
-        }
-
-        .silver-orbit {
-          position: absolute;
-          border-radius: 50%;
-          border: 2px solid rgba(255, 255, 255, 0.92);
-          box-shadow:
-            0 0 24px rgba(255, 255, 255, 0.9),
-            inset 0 0 26px rgba(205, 211, 216, 0.48);
-        }
-
-        .orbit-one {
-          width: 175px;
-          height: 175px;
-          animation: orbit 9s ease-in-out infinite;
-        }
-
-        .orbit-two {
-          width: 220px;
-          height: 220px;
-          opacity: 0.42;
-          animation: orbit 12s ease-in-out infinite reverse;
-        }
-
-        .avatar-video-wrap {
-          position: relative;
-          z-index: 2;
-          width: 128px;
-          height: 156px;
-          border-radius: 20px;
-          overflow: hidden;
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 16px 36px rgba(18, 22, 26, 0.12);
-          flex-shrink: 0;
-        }
-
-        .avatar-media-root {
-          position: relative;
-          width: 100%;
-          height: 100%;
-          display: grid;
-          place-items: center;
-        }
-
-        .avatar-poster,
-        .avatar-video,
-        .phone-avatar-poster,
-        .phone-avatar-video,
-        .live-avatar-poster,
-        .live-avatar-video {
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          object-position: center center;
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-        }
-
-        .avatar-video,
-        .phone-avatar-video,
-        .live-avatar-video {
-          z-index: 2;
-        }
-
-        .avatar-poster,
-        .phone-avatar-poster,
-        .live-avatar-poster {
-          z-index: 1;
-        }
-
-        .video-loading {
-          position: absolute;
-          inset: 0;
-          z-index: 3;
-          display: grid;
-          place-items: center;
-          font-size: 22px;
-          letter-spacing: 0.16em;
-          font-weight: 950;
-          color: #2b2f34;
-          background: linear-gradient(145deg, #ffffff, #edf1f4);
-        }
-
-        .controls {
-          width: 100%;
-          display: grid;
-          grid-template-columns: repeat(5, minmax(100px, auto));
-          justify-content: center;
-          gap: 10px;
-          flex-shrink: 0;
-        }
-
-        .control {
-          min-height: 44px;
-          border-radius: 18px;
-          padding: 0 16px;
+        .live-pill {
+          justify-self: start;
           display: inline-flex;
           align-items: center;
-          justify-content: center;
-          gap: 9px;
-          font-size: 14px;
-          font-weight: 950;
-          transition: 0.2s ease;
-        }
-
-        .control.selected {
-          background: linear-gradient(145deg, #ffffff, rgba(222, 226, 230, 0.94));
-          border-color: var(--line-strong);
-        }
-
-        .control.live {
-          min-width: 180px;
-        }
-
-        .sound {
-          font-size: 21px;
-          line-height: 1;
-        }
-
-        .write-box {
-          min-height: 330px;
-          flex: 1;
-          border-radius: 24px;
-          padding: 14px 16px 12px;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .message-list {
-          flex: 1;
-          min-height: 220px;
-          overflow: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          margin-bottom: 10px;
-          padding-right: 4px;
-        }
-
-        .message {
-          width: fit-content;
-          max-width: 92%;
-          padding: 10px 13px;
-          border-radius: 16px;
-          font-size: 13px;
-          line-height: 1.42;
-          font-weight: 800;
-          white-space: pre-wrap;
-        }
-
-        .message.user {
-          align-self: flex-end;
-          background: #111417;
-          color: white;
-        }
-
-        .message.assistant {
-          align-self: flex-start;
-          background: rgba(255, 255, 255, 0.88);
-          color: var(--graphite);
-          border: 1px solid var(--line);
-        }
-
-        .message.system {
-          align-self: center;
-          background: rgba(225, 230, 234, 0.7);
-          color: var(--graphite-soft);
-          border: 1px solid var(--line);
-        }
-
-        .write-box textarea {
-          width: 100%;
-          height: 54px;
-          min-height: 54px;
-          border: 0;
-          outline: 0;
-          resize: none;
-          background: transparent;
-          color: var(--graphite);
-          font-size: 16px;
-          font-weight: 850;
-        }
-
-        .write-box textarea::placeholder {
-          color: #394047;
-          opacity: 0.9;
-        }
-
-        .write-actions {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .write-actions div {
-          display: flex;
-          gap: 10px;
-        }
-
-        .write-actions button {
-          min-width: 36px;
-          height: 36px;
-          padding: 0 10px;
+          gap: 8px;
+          height: 38px;
+          padding: 0 16px;
           border-radius: 999px;
-          color: var(--graphite);
-          background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(230, 234, 237, 0.92));
-          border: 1px solid var(--line);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 7px 18px rgba(18, 22, 26, 0.1);
-          font-weight: 950;
+          background: rgba(255, 255, 255, 0.12);
+          color: rgba(255, 255, 255, 0.8);
+          font-weight: 800;
+          font-size: 15px;
+          backdrop-filter: blur(18px);
         }
 
-        .write-actions .send {
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
+        .live-pill span {
+          width: 10px;
+          height: 10px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.46);
         }
 
-        .mode-grid {
-          display: grid;
-          grid-template-columns: repeat(7, 1fr);
-          gap: 10px;
-          flex-shrink: 0;
+        .live-pill.on {
+          color: #5eff92;
+          background: rgba(67, 120, 64, 0.35);
         }
 
-        .mode-card {
-          min-height: 96px;
-          border-radius: 20px;
-          padding: 10px 8px 8px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
+        .live-pill.on span {
+          background: #5eff92;
+          box-shadow: 0 0 0 0 rgba(94, 255, 146, 0.55);
+          animation: greenPulse 1.3s infinite;
+        }
+
+        .title {
+          justify-self: center;
           text-align: center;
-          transition: 0.2s ease;
+          margin-top: -6px;
         }
 
-        .mode-card.active {
-          border-color: var(--line-strong);
-          outline: 2px solid rgba(18, 22, 26, 0.08);
-        }
-
-        .mode-icon {
-          height: 24px;
-          display: grid;
-          place-items: center;
-          font-size: 23px;
+        .title h1 {
+          margin: 0;
+          font-size: 34px;
           line-height: 1;
-          color: var(--graphite);
-        }
-
-        .mode-card strong {
-          margin-top: 6px;
-          font-size: 12px;
-          font-weight: 950;
-        }
-
-        .mode-card small {
-          margin-top: 4px;
-          color: var(--graphite-soft);
-          font-size: 9px;
-          line-height: 1.2;
+          letter-spacing: -0.04em;
           font-weight: 800;
+          text-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
         }
 
-        .mode-card b {
-          margin-top: auto;
-          font-weight: 950;
-        }
-
-        .sub-panel {
-          border-radius: 20px;
-          padding: 10px 14px;
-          background: rgba(255, 255, 255, 0.74);
-          border: 1px solid var(--line);
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 12px;
-          overflow: auto;
-          flex-shrink: 0;
-        }
-
-        .sub-panel strong {
-          font-weight: 950;
-        }
-
-        .sub-panel div {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-        }
-
-        .sub-panel button {
-          min-height: 34px;
-          border-radius: 999px;
-          padding: 0 14px;
-          background: #fff;
-          border: 1px solid var(--line);
-          color: var(--graphite);
+        .title h1 b {
+          color: #a855ff;
           font-weight: 900;
         }
 
-        .phone-shell {
-          align-self: start;
-          min-height: calc(100dvh - 24px);
-          padding: 8px;
-          border-radius: 40px;
-          background: linear-gradient(145deg, #f9fafb, #9da3a9, #ffffff);
-          box-shadow:
-            inset 0 0 0 2px rgba(255, 255, 255, 0.7),
-            0 24px 60px rgba(18, 22, 26, 0.18);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
+        .title p {
+          margin: 9px 0 0;
+          color: rgba(255, 255, 255, 0.76);
+          font-size: 18px;
+          text-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         }
 
-        .phone {
-          width: 300px;
-          height: calc(100dvh - 42px);
-          max-height: 820px;
-          overflow: hidden;
-          border-radius: 34px;
-          padding: 14px 12px 16px;
-          background:
-            radial-gradient(circle at 50% 19%, rgba(255, 255, 255, 1), transparent 34%),
-            linear-gradient(145deg, #ffffff, #eef1f3);
-          border: 1px solid rgba(255, 255, 255, 0.94);
-        }
-
-        .phone-status,
-        .phone-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-weight: 950;
-        }
-
-        .phone-status span {
-          width: 82px;
-          height: 24px;
+        .menu-btn {
+          justify-self: end;
+          width: 58px;
+          height: 58px;
+          border: 0;
           border-radius: 999px;
-          background: #080a0c;
+          background: rgba(255, 255, 255, 0.13);
+          color: white;
+          font-size: 24px;
+          letter-spacing: 2px;
+          backdrop-filter: blur(18px);
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
         }
 
-        .phone-head {
-          margin-top: 14px;
+        .avatar-wrap {
+          position: absolute;
+          z-index: 3;
+          inset: 160px 0 190px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          pointer-events: none;
         }
 
-        .phone-head button {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.9);
-          color: var(--graphite);
-          border: 1px solid var(--line);
-          font-weight: 950;
+        .avatar-light {
+          position: absolute;
+          width: min(88vw, 560px);
+          height: min(88vw, 560px);
+          border-radius: 999px;
+          background: radial-gradient(circle, rgba(255, 222, 177, 0.25), transparent 68%);
+          filter: blur(8px);
+          opacity: 0.84;
+          transform: translateY(-16px);
         }
 
-        .phone-head strong {
-          font-size: 22px;
-          letter-spacing: 0.1em;
-          font-weight: 950;
+        .avatar-light.listening {
+          background: radial-gradient(circle, rgba(173, 255, 221, 0.24), transparent 68%);
         }
 
-        .phone-hero {
+        .avatar-light.speaking {
+          animation: avatarGlow 1.1s ease-in-out infinite;
+        }
+
+        .avatar {
           position: relative;
-          height: 176px;
+          z-index: 3;
+          width: min(84vw, 520px);
+          height: auto;
+          max-height: 78dvh;
+          object-fit: contain;
+          object-position: center bottom;
+          filter:
+            drop-shadow(0 30px 70px rgba(0, 0, 0, 0.5))
+            saturate(1.04)
+            contrast(1.02);
+          transform-origin: center bottom;
+          animation: idleMove 6s ease-in-out infinite;
+        }
+
+        .avatar.talking {
+          animation: talkingMove 1.05s ease-in-out infinite;
+        }
+
+        .avatar.hearing {
+          filter:
+            drop-shadow(0 30px 70px rgba(0, 0, 0, 0.5))
+            drop-shadow(0 0 22px rgba(178, 111, 255, 0.22))
+            saturate(1.04)
+            contrast(1.02);
+        }
+
+        .fallback-avatar {
+          width: min(78vw, 430px);
+          aspect-ratio: 0.72;
           display: grid;
           place-items: center;
-          margin-top: 4px;
+          border-radius: 46% 46% 28% 28%;
+          background:
+            radial-gradient(circle at 50% 24%, rgba(255, 228, 200, 1), rgba(225, 178, 140, 0.9) 32%, rgba(20, 20, 20, 1) 33%, rgba(8, 8, 8, 1) 80%);
         }
 
-        .phone-avatar-video-wrap {
-          position: relative;
-          width: 122px;
-          height: 166px;
-          border-radius: 22px;
-          overflow: hidden;
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f4f6f7 48%, #e7ebee 100%);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 14px 32px rgba(18, 22, 26, 0.12);
-        }
-
-        .phone-controls {
+        .fallback-face {
+          width: 160px;
+          height: 160px;
+          border-radius: 999px;
+          background: linear-gradient(145deg, #ffe4c7, #e5b18d);
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
+          place-items: center;
+          color: #332117;
+          font-weight: 900;
+          font-size: 28px;
+          margin-top: -180px;
         }
 
-        .phone-controls button {
-          min-height: 40px;
-          border-radius: 16px;
-          font-weight: 950;
-          font-size: 12px;
-        }
-
-        .phone-controls .selected {
-          background: linear-gradient(145deg, #ffffff, #e2e6e9);
-          border-color: var(--line-strong);
-        }
-
-        .phone-live {
-          grid-column: 1 / -1;
-        }
-
-        .phone-input {
-          min-height: 68px;
-          margin-top: 10px;
-          border-radius: 18px;
-          padding: 12px;
+        .side-controls {
+          position: absolute;
+          z-index: 11;
+          right: 24px;
+          top: 228px;
+          width: 80px;
+          padding: 14px 0;
           display: flex;
-          align-items: center;
-          justify-content: space-between;
-          color: #394047;
-          font-size: 11px;
-          font-weight: 850;
+          flex-direction: column;
+          gap: 2px;
+          border-radius: 38px;
+          background: rgba(18, 12, 9, 0.52);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          backdrop-filter: blur(22px);
+          box-shadow: 0 26px 80px rgba(0, 0, 0, 0.28);
         }
 
-        .phone-input button {
-          width: 34px;
-          height: 34px;
-          border-radius: 50%;
-          background: var(--glass);
-          border: 1px solid var(--line);
-          color: var(--graphite);
-          font-weight: 950;
-        }
-
-        .phone-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin-top: 10px;
-        }
-
-        .phone-grid button {
-          min-height: 76px;
-          border-radius: 16px;
-          padding: 7px 5px;
+        .side-controls button {
+          height: 82px;
+          border: 0;
+          background: transparent;
+          color: white;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
+          gap: 8px;
+          cursor: pointer;
+        }
+
+        .side-controls span {
+          font-size: 26px;
+          line-height: 1;
+        }
+
+        .side-controls small {
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.86);
+        }
+
+        .speech-card {
+          position: absolute;
+          z-index: 12;
+          left: 50%;
+          bottom: 260px;
+          width: min(560px, calc(100vw - 48px));
+          transform: translateX(-50%);
+          padding: 20px 24px;
+          border-radius: 26px;
+          background: rgba(18, 12, 9, 0.64);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          backdrop-filter: blur(22px);
+          box-shadow: 0 22px 80px rgba(0, 0, 0, 0.34);
+        }
+
+        .speech-card strong {
+          display: block;
+          margin-bottom: 8px;
+          color: #b45cff;
+          font-size: 18px;
+        }
+
+        .speech-card p {
+          margin: 0;
+          color: rgba(255, 255, 255, 0.94);
+          font-size: 22px;
+          line-height: 1.34;
+          letter-spacing: -0.02em;
+        }
+
+        .wave-area {
+          position: absolute;
+          z-index: 12;
+          left: 50%;
+          bottom: 180px;
+          transform: translateX(-50%);
+          text-align: center;
+          width: min(520px, calc(100vw - 50px));
+        }
+
+        .wave {
+          height: 56px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 13px;
+          filter: drop-shadow(0 0 16px rgba(158, 78, 255, 0.88));
+        }
+
+        .wave span,
+        .wave i {
+          display: block;
+          width: 7px;
+          border-radius: 999px;
+          background: rgba(185, 112, 255, 0.96);
+        }
+
+        .wave i {
+          width: 5px;
+          height: 5px;
+          opacity: 0.72;
+        }
+
+        .wave span:nth-child(1) {
+          height: 8px;
+        }
+        .wave span:nth-child(3) {
+          height: 34px;
+        }
+        .wave span:nth-child(5) {
+          height: 56px;
+        }
+        .wave span:nth-child(7) {
+          height: 30px;
+        }
+        .wave span:nth-child(9) {
+          height: 26px;
+        }
+
+        .wave.active span {
+          animation: waveDance 0.86s ease-in-out infinite;
+        }
+
+        .wave.active span:nth-child(3) {
+          animation-delay: 0.08s;
+        }
+
+        .wave.active span:nth-child(5) {
+          animation-delay: 0.16s;
+        }
+
+        .wave.active span:nth-child(7) {
+          animation-delay: 0.24s;
+        }
+
+        .wave.active span:nth-child(9) {
+          animation-delay: 0.32s;
+        }
+
+        .wave-area p {
+          margin: 5px 0 0;
+          color: #b45cff;
+          font-size: 18px;
+          font-weight: 700;
+          text-shadow: 0 0 20px rgba(180, 92, 255, 0.7);
+        }
+
+        .bottom-controls {
+          position: absolute;
+          z-index: 13;
+          left: 0;
+          right: 0;
+          bottom: max(22px, env(safe-area-inset-bottom));
+          display: flex;
+          align-items: end;
+          justify-content: space-around;
+          padding: 0 42px;
+        }
+
+        .bottom-controls button {
+          border: 0;
+          background: transparent;
+          color: white;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          cursor: pointer;
+        }
+
+        .bottom-controls button > span {
+          width: 74px;
+          height: 74px;
+          display: grid;
+          place-items: center;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.18);
+          border: 1px solid rgba(255, 255, 255, 0.13);
+          backdrop-filter: blur(20px);
+          font-size: 28px;
+          box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+        }
+
+        .bottom-controls small {
+          font-size: 17px;
+          color: rgba(255, 255, 255, 0.9);
+        }
+
+        .bottom-controls .end-btn > span {
+          width: 86px;
+          height: 86px;
+          background: #ff443b;
+          color: white;
+          font-size: 34px;
+          box-shadow: 0 18px 70px rgba(255, 68, 59, 0.34);
+        }
+
+        .bottom-controls .end-btn:not(.live) > span {
+          background: linear-gradient(145deg, #9e4eff, #6d2cff);
+          box-shadow: 0 18px 70px rgba(158, 78, 255, 0.36);
+        }
+
+        .chat-panel {
+          position: absolute;
+          z-index: 20;
+          left: 16px;
+          right: 16px;
+          bottom: 128px;
+          padding: 12px;
+          border-radius: 26px;
+          background: rgba(15, 10, 8, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          backdrop-filter: blur(22px);
+          box-shadow: 0 28px 100px rgba(0, 0, 0, 0.45);
+        }
+
+        .chat-list {
+          max-height: 210px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding: 4px 2px 12px;
+          scrollbar-width: none;
+        }
+
+        .chat-list::-webkit-scrollbar {
+          display: none;
+        }
+
+        .bubble {
+          max-width: 84%;
+          padding: 10px 12px;
+          border-radius: 18px;
+          display: flex;
+          flex-direction: column;
           gap: 4px;
         }
 
-        .phone-grid span {
-          font-size: 20px;
-          line-height: 1;
+        .bubble b {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          opacity: 0.62;
         }
 
-        .phone-grid strong {
-          font-size: 9.5px;
-          line-height: 1.1;
-          font-weight: 950;
-        }
-
-        .phone-grid small {
-          font-weight: 950;
-        }
-
-        .live-room {
-          position: fixed;
-          inset: 0;
-          z-index: 50;
-          overflow: hidden;
-          display: grid;
-          grid-template-rows: auto 1fr auto;
-          padding: 20px;
-          color: #111417;
-          background:
-            radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.98), transparent 24%),
-            radial-gradient(circle at 48% 45%, rgba(218, 224, 229, 0.78), transparent 36%),
-            linear-gradient(145deg, #ffffff 0%, #eef1f3 46%, #d9dee3 100%);
-        }
-
-        .live-room::before {
-          content: '';
-          position: absolute;
-          inset: -20%;
-          pointer-events: none;
-          background:
-            radial-gradient(
-              ellipse at 50% 38%,
-              transparent 0 30%,
-              rgba(255, 255, 255, 0.9) 31%,
-              transparent 32%
-            ),
-            radial-gradient(
-              ellipse at 50% 42%,
-              transparent 0 42%,
-              rgba(170, 178, 186, 0.22) 43%,
-              transparent 44%
-            );
-          opacity: 0.78;
-          animation: liveFloat 12s ease-in-out infinite;
-        }
-
-        .live-bg-orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(2px);
-          pointer-events: none;
-        }
-
-        .live-bg-one {
-          width: 340px;
-          height: 340px;
-          left: -120px;
-          top: 120px;
-          background: rgba(255, 255, 255, 0.68);
-        }
-
-        .live-bg-two {
-          width: 420px;
-          height: 420px;
-          right: -160px;
-          bottom: 80px;
-          background: rgba(190, 198, 205, 0.26);
-        }
-
-        .live-topbar {
-          position: relative;
-          z-index: 2;
-          height: 58px;
-          display: grid;
-          grid-template-columns: 48px 1fr 48px;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .live-topbar button {
-          width: 48px;
-          height: 48px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.74);
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          color: #111417;
-          font-size: 30px;
-          font-weight: 900;
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 12px 26px rgba(18, 22, 26, 0.1);
-        }
-
-        .live-topbar div {
-          text-align: center;
-        }
-
-        .live-topbar strong {
-          display: block;
-          font-size: 18px;
-          letter-spacing: 0.12em;
-          font-weight: 950;
-        }
-
-        .live-topbar span {
-          display: block;
-          margin-top: 3px;
-          color: #555d64;
-          font-size: 12px;
-          font-weight: 850;
-        }
-
-        .live-stage {
-          position: relative;
-          z-index: 2;
-          min-height: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 18px;
-        }
-
-        .live-avatar-scene {
-          position: relative;
-          width: min(420px, 82vw);
-          height: min(520px, 56vh);
-          display: grid;
-          place-items: center;
-          transform: translateY(2px);
-          transition: transform 0.4s ease;
-        }
-
-        .live-avatar-scene.listening {
-          transform: translateY(-8px) scale(1.025);
-        }
-
-        .live-avatar-scene.thinking {
-          transform: translateY(-4px) scale(0.99);
-        }
-
-        .live-avatar-scene.speaking {
-          transform: translateY(-10px) scale(1.035);
-        }
-
-        .live-ring {
-          position: absolute;
-          border-radius: 50%;
-          border: 2px solid rgba(255, 255, 255, 0.95);
-          box-shadow:
-            0 0 28px rgba(255, 255, 255, 0.92),
-            inset 0 0 34px rgba(205, 211, 216, 0.52);
-        }
-
-        .ring-a {
-          width: 265px;
-          height: 265px;
-          animation: pulseRing 2.8s ease-in-out infinite;
-        }
-
-        .ring-b {
-          width: 360px;
-          height: 360px;
-          opacity: 0.55;
-          animation: pulseRing 3.8s ease-in-out infinite reverse;
-        }
-
-        .ring-c {
-          width: 455px;
-          height: 455px;
-          opacity: 0.25;
-          animation: pulseRing 5.4s ease-in-out infinite;
-        }
-
-        .live-avatar-card {
-          position: relative;
-          z-index: 3;
-          width: min(310px, 68vw);
-          height: min(430px, 50vh);
-          border-radius: 34px;
-          overflow: hidden;
-          background: radial-gradient(circle at 50% 35%, #ffffff 0%, #f4f6f7 52%, #e5e9ed 100%);
-          border: 1px solid rgba(20, 24, 28, 0.14);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 28px 80px rgba(18, 22, 26, 0.18);
-        }
-
-        .live-avatar-card .live-avatar-video,
-        .live-avatar-card .live-avatar-poster {
-          object-fit: contain;
-        }
-
-        .live-name {
-          text-align: center;
-        }
-
-        .live-name h2 {
-          margin: 0;
-          font-size: clamp(34px, 5vw, 54px);
-          letter-spacing: 0.02em;
-          font-weight: 950;
-        }
-
-        .live-name p {
-          margin: 6px 0 0;
-          color: #555d64;
+        .bubble span {
           font-size: 14px;
-          font-weight: 850;
+          line-height: 1.34;
         }
 
-        .live-transcript {
-          width: min(620px, 92vw);
-          max-height: 118px;
-          overflow: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          padding: 10px;
-          border-radius: 24px;
-          background: rgba(255, 255, 255, 0.48);
-          border: 1px solid rgba(20, 24, 28, 0.08);
-          backdrop-filter: blur(18px);
-          -webkit-backdrop-filter: blur(18px);
-        }
-
-        .live-line {
-          width: fit-content;
-          max-width: 88%;
-          padding: 9px 12px;
-          border-radius: 16px;
-          font-size: 13px;
-          line-height: 1.38;
-          font-weight: 800;
-          white-space: pre-wrap;
-        }
-
-        .live-line.user {
-          align-self: flex-end;
-          background: #111417;
-          color: white;
-        }
-
-        .live-line.assistant {
+        .bubble.lyra {
           align-self: flex-start;
-          background: rgba(255, 255, 255, 0.92);
-          border: 1px solid rgba(20, 24, 28, 0.08);
+          background: rgba(255, 255, 255, 0.86);
+          color: #17110e;
         }
 
-        .live-line.system {
-          align-self: center;
-          background: rgba(226, 231, 235, 0.78);
-          color: #30363b;
+        .bubble.user {
+          align-self: flex-end;
+          background: rgba(196, 120, 255, 0.9);
+          color: white;
         }
 
-        .live-controls {
-          position: relative;
-          z-index: 2;
+        .chat-input {
           display: flex;
-          justify-content: center;
-          align-items: center;
-          gap: 16px;
-          padding: 18px 0 4px;
+          gap: 8px;
         }
 
-        .live-control-btn {
-          width: 72px;
-          height: 72px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          gap: 2px;
-          color: #111417;
-          background: rgba(255, 255, 255, 0.82);
-          border: 1px solid rgba(20, 24, 28, 0.12);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 1),
-            0 18px 34px rgba(18, 22, 26, 0.14);
-          font-size: 23px;
-          font-weight: 950;
+        .chat-input input {
+          flex: 1;
+          min-width: 0;
+          border: 0;
+          outline: 0;
+          border-radius: 999px;
+          padding: 13px 15px;
+          background: rgba(255, 255, 255, 0.9);
+          color: #16110e;
         }
 
-        .live-control-btn span {
-          font-size: 10px;
-          font-weight: 950;
-        }
-
-        .live-control-btn.mic {
-          width: 86px;
-          height: 86px;
-          background: linear-gradient(145deg, #111417, #4a5158);
+        .chat-input button {
+          border: 0;
+          border-radius: 999px;
+          padding: 0 16px;
+          background: #a855ff;
           color: white;
-          transform: translateY(-10px);
+          font-weight: 800;
         }
 
-        .live-control-btn.mic.active {
-          animation: micPulse 1.25s ease-in-out infinite;
+        @keyframes greenPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(94, 255, 146, 0.55);
+          }
+          80% {
+            box-shadow: 0 0 0 12px rgba(94, 255, 146, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(94, 255, 146, 0);
+          }
         }
 
-        .live-control-btn.end {
-          background: linear-gradient(145deg, #ff4b5c, #b80f2c);
-          color: white;
-        }
-
-        .live-control-btn.active {
-          outline: 3px solid rgba(17, 20, 23, 0.12);
-        }
-
-        @keyframes orbit {
+        @keyframes idleMove {
           0%,
           100% {
-            transform: scale(1) translateY(0);
+            transform: translateY(0) scale(1);
           }
           50% {
-            transform: scale(1.03) translateY(-6px);
+            transform: translateY(-5px) scale(1.006);
           }
         }
 
-        @keyframes liveFloat {
+        @keyframes talkingMove {
           0%,
           100% {
-            transform: rotate(0deg) scale(1);
+            transform: translateY(0) scale(1);
           }
-          50% {
-            transform: rotate(-4deg) scale(1.03);
+          45% {
+            transform: translateY(-4px) scale(1.012);
           }
         }
 
-        @keyframes pulseRing {
+        @keyframes avatarGlow {
           0%,
           100% {
-            transform: scale(1);
-            opacity: 0.58;
+            transform: translateY(-16px) scale(1);
+            opacity: 0.75;
           }
           50% {
-            transform: scale(1.055);
-            opacity: 0.95;
+            transform: translateY(-16px) scale(1.06);
+            opacity: 1;
           }
         }
 
-        @keyframes micPulse {
+        @keyframes waveDance {
           0%,
           100% {
-            box-shadow:
-              inset 0 1px 0 rgba(255, 255, 255, 0.25),
-              0 0 0 0 rgba(17, 20, 23, 0.28),
-              0 18px 34px rgba(18, 22, 26, 0.14);
+            transform: scaleY(0.55);
           }
           50% {
-            box-shadow:
-              inset 0 1px 0 rgba(255, 255, 255, 0.25),
-              0 0 0 18px rgba(17, 20, 23, 0),
-              0 18px 34px rgba(18, 22, 26, 0.14);
+            transform: scaleY(1.15);
           }
         }
 
-        @media (max-width: 1420px) {
-          .app-layout {
-            grid-template-columns: 210px minmax(640px, 1fr);
+        @media (min-width: 760px) {
+          .screen {
+            max-width: 460px;
+            margin: 0 auto;
+            border-radius: 32px;
+            height: min(100dvh, 960px);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08),
+              0 30px 100px rgba(0, 0, 0, 0.55);
           }
 
-          .phone-shell {
-            display: none;
-          }
-
-          .mode-grid {
-            grid-template-columns: repeat(4, 1fr);
-          }
-        }
-
-        @media (max-width: 980px) {
-          .page {
-            padding: 10px 8px;
-          }
-
-          .app-layout {
-            grid-template-columns: 1fr;
-            min-height: calc(100dvh - 20px);
-          }
-
-          .sidebar,
-          .phone-shell {
-            display: none;
-          }
-
-          .main-panel {
-            min-height: calc(100dvh - 20px);
-            padding: 14px 12px;
-            border-radius: 22px;
-          }
-
-          .main-head {
-            justify-content: center;
-            min-height: 48px;
-          }
-
-          .main-head h1 {
-            font-size: 18px;
-            text-align: center;
-          }
-
-          .head-actions {
-            display: none;
-          }
-
-          .avatar-block {
-            height: 142px;
-          }
-
-          .avatar-video-wrap {
-            width: 118px;
-            height: 144px;
-          }
-
-          .orbit-one {
-            width: 160px;
-            height: 160px;
-          }
-
-          .orbit-two {
-            width: 205px;
-            height: 205px;
-          }
-
-          .controls {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .control.live {
-            grid-column: 1 / -1;
-          }
-
-          .write-box {
-            min-height: 340px;
-          }
-
-          .mode-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .mode-card {
-            min-height: 108px;
+          body {
+            display: grid;
+            place-items: center;
           }
         }
 
-        @media (max-width: 760px) {
-          .live-room {
-            padding: 14px;
-          }
-
-          .live-topbar {
-            height: 52px;
-            grid-template-columns: 44px 1fr 44px;
-          }
-
-          .live-topbar button {
-            width: 44px;
-            height: 44px;
-          }
-
-          .live-avatar-scene {
-            height: 48vh;
-          }
-
-          .ring-a {
-            width: 220px;
-            height: 220px;
-          }
-
-          .ring-b {
-            width: 300px;
-            height: 300px;
-          }
-
-          .ring-c {
-            width: 370px;
-            height: 370px;
-          }
-
-          .live-avatar-card {
-            width: min(260px, 72vw);
-            height: min(360px, 46vh);
-          }
-
-          .live-controls {
-            gap: 11px;
-          }
-
-          .live-control-btn {
-            width: 62px;
-            height: 62px;
+        @media (max-width: 430px) {
+          .phone-status {
+            left: 26px;
+            right: 26px;
             font-size: 20px;
           }
 
-          .live-control-btn.mic {
-            width: 76px;
-            height: 76px;
+          .top {
+            left: 20px;
+            right: 20px;
+            grid-template-columns: 102px 1fr 54px;
+          }
+
+          .live-pill {
+            height: 34px;
+            padding: 0 13px;
+            font-size: 13px;
+          }
+
+          .title h1 {
+            font-size: 30px;
+          }
+
+          .title p {
+            font-size: 16px;
+          }
+
+          .menu-btn {
+            width: 52px;
+            height: 52px;
+          }
+
+          .avatar-wrap {
+            inset: 150px 0 184px;
+          }
+
+          .avatar {
+            width: min(92vw, 430px);
+            max-height: 76dvh;
+          }
+
+          .side-controls {
+            right: 12px;
+            top: 220px;
+            width: 70px;
+          }
+
+          .side-controls button {
+            height: 74px;
+          }
+
+          .side-controls span {
+            font-size: 22px;
+          }
+
+          .side-controls small {
+            font-size: 12px;
+          }
+
+          .speech-card {
+            bottom: 248px;
+            width: calc(100vw - 42px);
+            padding: 17px 19px;
+          }
+
+          .speech-card p {
+            font-size: 20px;
+          }
+
+          .wave-area {
+            bottom: 174px;
+          }
+
+          .bottom-controls {
+            padding: 0 28px;
+          }
+
+          .bottom-controls button > span {
+            width: 66px;
+            height: 66px;
+            font-size: 24px;
+          }
+
+          .bottom-controls .end-btn > span {
+            width: 78px;
+            height: 78px;
+          }
+
+          .bottom-controls small {
+            font-size: 15px;
+          }
+        }
+
+        @media (max-height: 760px) {
+          .avatar-wrap {
+            inset: 128px 0 154px;
+          }
+
+          .avatar {
+            max-height: 70dvh;
+          }
+
+          .speech-card {
+            bottom: 216px;
+          }
+
+          .wave-area {
+            bottom: 146px;
+          }
+
+          .bottom-controls button > span {
+            width: 62px;
+            height: 62px;
+          }
+
+          .bottom-controls .end-btn > span {
+            width: 72px;
+            height: 72px;
           }
         }
       `}</style>
