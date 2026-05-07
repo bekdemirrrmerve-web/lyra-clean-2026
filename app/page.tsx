@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type MessageRole = "user" | "lyra";
 
@@ -97,9 +97,9 @@ const TOOL_META: Record<
     title: "Görsel Üretme",
     icon: "▧",
     placeholder:
-      "Nasıl bir görsel istediğini yaz. Örnek: beyaz gümüş yapay zeka asistan arayüzü, gerçekçi avatar...",
+      "Görsel için prompt yaz veya fotoğraf yükleyip ne değişsin söyle.",
     buttonLabel: "Görsel Oluştur",
-    helper: "Prompt yaz, görsel oluştur ve konsept hazırla.",
+    helper: "Prompt yaz, görsel oluştur; fotoğraf yükle, düzenle ve indir.",
   },
   vision: {
     title: "Görselle Okut",
@@ -112,8 +112,7 @@ const TOOL_META: Record<
   pdf: {
     title: "PDF Özeti",
     icon: "▤",
-    placeholder:
-      "Özetlemek istediğin PDF içeriğini veya konusunu yaz.",
+    placeholder: "Özetlemek istediğin PDF içeriğini veya konusunu yaz.",
     buttonLabel: "Özet Çıkar",
     helper: "PDF içeriğini özetle ve not çıkar.",
   },
@@ -195,10 +194,7 @@ function findBlock(text: string, startNames: string[], endNames: string[]) {
 
   const endIndex = endIndexes[0] ?? clean.length;
 
-  return clean
-    .slice(startIndex, endIndex)
-    .replace(/^[:\s\n\r-]+/, "")
-    .trim();
+  return clean.slice(startIndex, endIndex).replace(/^[:\s\n\r-]+/, "").trim();
 }
 
 function extractStudySections(text: string): StudySections {
@@ -274,14 +270,14 @@ export default function Home() {
   });
 
   const [translateInput, setTranslateInput] = useState("");
-  const [translateOutput, setTranslateOutput] = useState(
-    "Çeviri burada görünecek."
-  );
+  const [translateOutput, setTranslateOutput] =
+    useState("Çeviri burada görünecek.");
   const [sourceLang, setSourceLang] = useState("Otomatik Algıla");
   const [targetLang, setTargetLang] = useState("Türkçe");
 
   const [generatedImageUrl, setGeneratedImageUrl] = useState("");
-  const [generatedImagePrompt, setGeneratedImagePrompt] = useState("");
+  const [uploadedEditImage, setUploadedEditImage] = useState("");
+  const imageUploadRef = useRef<HTMLInputElement | null>(null);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -655,7 +651,7 @@ En altta cevap anahtarı ver.
 Konu: ${text}`;
 
       case "image":
-        return `Kullanıcının istediği görsel için profesyonel image prompt oluştur. Türkçe kısa açıklama + altında İngilizce kopyalanabilir prompt ver. Prompt gerçek görsel üretimine uygun, net ve detaylı olsun.\n\nİstek: ${text}`;
+        return `Kullanıcının istediği görsel için profesyonel image prompt oluştur. Sadece görsel üretimine uygun, detaylı ve İngilizce prompt ver. Açıklama yazma.\n\nİstek: ${text}`;
 
       case "vision":
         return `Kullanıcının verdiği görsel ya da ekran açıklamasını analiz et. Ne anlaşıldığını, önemli noktaları ve kısa yorumunu yaz.\n\nAçıklama: ${text}`;
@@ -668,6 +664,45 @@ Konu: ${text}`;
 
       default:
         return text;
+    }
+  }
+
+  function handleImageUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      setUploadedEditImage(result);
+      setGeneratedImageUrl("");
+      setToolOutput(
+        "Fotoğraf yüklendi. Üstteki alana ne değiştirmek istediğini yaz. Örnek: arka planı beyaz-gümüş yap, ışığı yumuşat, daha gerçekçi hale getir."
+      );
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  async function downloadGeneratedImage() {
+    if (!generatedImageUrl) return;
+
+    try {
+      const response = await fetch(generatedImageUrl);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `lyra-gorsel-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(generatedImageUrl, "_blank");
     }
   }
 
@@ -734,7 +769,7 @@ Konu: ${text}`;
     const image = canvas.toDataURL("image/jpeg", 0.92);
     setCapturedImage(image);
     setToolOutput(
-      "Fotoğraf çekildi. Şimdi 'Analiz Et' butonuna basınca Lyra bu görselde ne olduğunu yorumlamaya çalışacak."
+      "Fotoğraf çekildi. Şimdi Analiz Et butonuna basınca Lyra bu görselde ne olduğunu yorumlamaya çalışacak."
     );
   }
 
@@ -780,7 +815,6 @@ Konu: ${text}`;
     } else if (activeTool === "image") {
       setToolOutput("Görsel hazırlanıyor...");
       setGeneratedImageUrl("");
-      setGeneratedImagePrompt("");
     } else if (activeTool === "vision") {
       setToolOutput("Görsel analiz ediliyor...");
     } else {
@@ -789,14 +823,33 @@ Konu: ${text}`;
 
     try {
       if (activeTool === "image") {
-        const reply = await askGemini(buildToolPrompt("image", text));
-        const imageUrl = makeImageUrl(text);
-        setGeneratedImagePrompt(String(reply));
+        const imageInstruction = uploadedEditImage
+          ? `Kullanıcı bir fotoğraf yükledi ve bu fotoğrafta şu değişikliği yapmak istiyor: ${text}.
+Ana kişi/nesne, yüz oranı, poz, kompozisyon ve kimlik korunmalı.
+Sadece istenen değişiklik uygulanmalı.
+Bu düzenleme için net, İngilizce, profesyonel image edit promptu yaz. Açıklama yazma.`
+          : buildToolPrompt("image", text);
+
+        const reply = await askGemini(imageInstruction, {
+          image: uploadedEditImage || null,
+          imageDataUrl: uploadedEditImage || null,
+        });
+
+        const finalPrompt = uploadedEditImage
+          ? `${text}, based on the uploaded reference image, preserve the original subject, same identity, same pose, same composition, realistic photo edit, high quality, clean details`
+          : String(reply || text);
+
+        const imageUrl = makeImageUrl(finalPrompt);
+
         setGeneratedImageUrl(imageUrl);
-        setToolOutput(String(reply));
+        setToolOutput(
+          uploadedEditImage
+            ? "Fotoğraf düzenlendi. Oluşturulan görsel aşağıda."
+            : "Görsel oluşturuldu. Oluşturulan görsel aşağıda."
+        );
       } else if (activeTool === "vision") {
         const prompt = capturedImage
-          ? `Kullanıcı kamerayla bir nesne fotoğrafı çekti. Fotoğraf data URL olarak gönderiliyor. Görselde ne olduğunu, olası nesneyi, kullanım alanını ve dikkat edilmesi gerekenleri Türkçe anlat. Nesne net değilse olasılıkları yaz. Ek açıklama: ${
+          ? `Kullanıcı kamerayla bir nesne fotoğrafı çekti. Görselde ne olduğunu, olası nesneyi, kullanım alanını ve dikkat edilmesi gerekenleri Türkçe anlat. Nesne net değilse olasılıkları yaz. Ek açıklama: ${
               text || "Ek açıklama yok."
             }`
           : buildToolPrompt("vision", text || "Kamera görüntüsü analiz edilecek.");
@@ -826,13 +879,17 @@ Konu: ${text}`;
           raw: "",
         });
       } else if (activeTool === "image") {
-        const imageUrl = text ? makeImageUrl(text) : "";
+        const finalPrompt = uploadedEditImage
+          ? `${text}, based on uploaded reference image, preserve original subject, realistic photo edit, high quality`
+          : text;
+
+        const imageUrl = finalPrompt ? makeImageUrl(finalPrompt) : "";
+
         setGeneratedImageUrl(imageUrl);
-        setGeneratedImagePrompt(
-          "Gemini prompt cevabı alınamadı ama görsel üretme bağlantısı denendi."
-        );
         setToolOutput(
-          "Görsel prompt cevabı alınamadı ama görsel üreticiye istek gönderildi."
+          uploadedEditImage
+            ? "Fotoğraf düzenleme isteği gönderildi. Oluşturulan görsel aşağıda görünecek."
+            : "Görsel üretme isteği gönderildi. Oluşturulan görsel aşağıda görünecek."
         );
       } else {
         setToolOutput(
@@ -853,7 +910,7 @@ Konu: ${text}`;
 
     if (tool !== "image") {
       setGeneratedImageUrl("");
-      setGeneratedImagePrompt("");
+      setUploadedEditImage("");
     }
   }
 
@@ -1145,7 +1202,9 @@ ${bodyContent}
                           const oldSource = sourceLang;
                           setSourceLang(targetLang);
                           setTargetLang(
-                            oldSource === "Otomatik Algıla" ? "Türkçe" : oldSource
+                            oldSource === "Otomatik Algıla"
+                              ? "Türkçe"
+                              : oldSource
                           );
                         }}
                       >
@@ -1243,13 +1302,17 @@ ${bodyContent}
                   </>
                 ) : activeTool === "image" ? (
                   <>
-                    <label>Görsel Promptu</label>
+                    <label>Görsel Promptu / Düzenleme İsteği</label>
 
                     <textarea
                       className="tool-input"
                       value={toolInput}
                       onChange={(e) => setToolInput(e.target.value)}
-                      placeholder={currentToolMeta?.placeholder}
+                      placeholder={
+                        uploadedEditImage
+                          ? "Yüklediğin fotoğrafta ne değişsin? Örnek: arka planı beyaz yap, ışığı yumuşat..."
+                          : currentToolMeta?.placeholder
+                      }
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
@@ -1258,9 +1321,58 @@ ${bodyContent}
                       }}
                     />
 
+                    <input
+                      ref={imageUploadRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden-file"
+                      onChange={handleImageUpload}
+                    />
+
+                    <div className="image-edit-actions">
+                      <button
+                        type="button"
+                        onClick={() => imageUploadRef.current?.click()}
+                      >
+                        Fotoğraf Yükle
+                      </button>
+
+                      {uploadedEditImage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadedEditImage("");
+                            setGeneratedImageUrl("");
+                            setToolOutput("");
+                          }}
+                        >
+                          Fotoğrafı Kaldır
+                        </button>
+                      )}
+
+                      {generatedImageUrl && (
+                        <button type="button" onClick={downloadGeneratedImage}>
+                          Fotoğrafı İndir
+                        </button>
+                      )}
+                    </div>
+
+                    {uploadedEditImage && (
+                      <>
+                        <label>Yüklenen Fotoğraf</label>
+                        <div className="image-result uploaded">
+                          <img src={uploadedEditImage} alt="Yüklenen fotoğraf" />
+                        </div>
+                      </>
+                    )}
+
                     <div className="tool-actions">
                       <button className="tool-run" onClick={runTool}>
-                        {toolBusy ? "Görsel hazırlanıyor..." : "Görsel Oluştur"}
+                        {toolBusy
+                          ? "Görsel hazırlanıyor..."
+                          : uploadedEditImage
+                          ? "Fotoğrafı Düzenle"
+                          : "Görsel Oluştur"}
                       </button>
 
                       <button className="tool-print" onClick={printToolResult}>
@@ -1269,20 +1381,24 @@ ${bodyContent}
                     </div>
 
                     {generatedImageUrl && (
-                      <div className="image-result">
-                        <img
-                          src={generatedImageUrl}
-                          alt="Lyra görsel üretimi"
-                        />
-                      </div>
+                      <>
+                        <label>Oluşturulan Görsel</label>
+                        <div className="image-result">
+                          <img
+                            src={generatedImageUrl}
+                            alt="Lyra görsel üretimi"
+                          />
+                        </div>
+                      </>
                     )}
 
-                    <label>Prompt / Açıklama</label>
-                    <div className="tool-output">
-                      {generatedImagePrompt ||
-                        toolOutput ||
-                        "Prompt yazınca görsel burada oluşacak..."}
-                    </div>
+                    {!generatedImageUrl && (
+                      <div className="tool-output">
+                        {uploadedEditImage
+                          ? "Fotoğraf yüklendi. Üstteki alana yapmak istediğin değişikliği yazıp Fotoğrafı Düzenle’ye bas."
+                          : "Prompt yazınca oluşturulan görsel burada görünecek."}
+                      </div>
+                    )}
                   </>
                 ) : activeTool === "vision" ? (
                   <>
@@ -1292,7 +1408,9 @@ ${bodyContent}
                       <button onClick={stopCamera}>Kamerayı Kapat</button>
                     </div>
 
-                    {cameraError && <p className="camera-error">{cameraError}</p>}
+                    {cameraError && (
+                      <p className="camera-error">{cameraError}</p>
+                    )}
 
                     <div className="camera-box">
                       {cameraOpen ? (
@@ -2139,6 +2257,26 @@ ${bodyContent}
           color: #222831;
         }
 
+        .hidden-file {
+          display: none;
+        }
+
+        .image-edit-actions {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin: 10px 0;
+        }
+
+        .image-edit-actions button {
+          height: 42px;
+          border-radius: 16px;
+          border: 1px solid rgba(185, 191, 198, 0.72);
+          background: rgba(255, 255, 255, 0.78);
+          color: #11151c;
+          font-weight: 950;
+        }
+
         .image-result {
           margin: 12px 0;
           border-radius: 18px;
@@ -2149,9 +2287,13 @@ ${bodyContent}
 
         .image-result img {
           width: 100%;
-          max-height: 420px;
+          max-height: 520px;
           display: block;
           object-fit: contain;
+        }
+
+        .image-result.uploaded img {
+          max-height: 360px;
         }
 
         .camera-actions {
@@ -2872,7 +3014,8 @@ ${bodyContent}
             grid-template-columns: 1fr;
           }
 
-          .camera-actions {
+          .camera-actions,
+          .image-edit-actions {
             grid-template-columns: 1fr;
           }
 
