@@ -10,37 +10,29 @@ type Message = {
   text: string;
 };
 
-type ModuleKey = "chat" | "creator" | "pdf" | "study" | "settings";
-
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
       role: "lyra",
-      text: "Merhaba Merve ✨ Ben Lyra. Yazabilir, sesle konuşabilir ya da canlı moda geçebilirsin.",
+      text: "Merhaba kanka, ben Lyra ✨ Sesli konuşma ekranım geri geldi. Yazabilir ya da mikrofona basıp konuşabilirsin.",
     },
   ]);
 
   const [input, setInput] = useState("");
-  const [activeModule, setActiveModule] = useState<ModuleKey>("chat");
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [speaking, setSpeaking] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
-  const [statusText, setStatusText] = useState("Hazır");
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [status, setStatus] = useState("Hazır");
   const [lastHeard, setLastHeard] = useState("");
 
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const endRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 80);
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
   const addMessage = (role: Role, text: string) => {
@@ -54,29 +46,29 @@ export default function Home() {
     ]);
   };
 
-  const getLocalFallback = (text: string) => {
-    const lower = text.toLowerCase();
+  const fallbackAnswer = (text: string) => {
+    const q = text.toLowerCase();
 
-    if (lower.includes("hook") || lower.includes("kanca") || lower.includes("içerik")) {
-      return "Tabii kanka. İçerik için en iyi yapı şöyle: ilk 3 saniyede merak uyandıran bir cümle, sonra problemi göster, sonra küçük bir bilimsel açıklama ve en sonda kaydetme çağrısı. Mesela: “Bu içerik cildini mahveden ama herkesin masum sandığı şeyi anlatıyor…”";
+    if (q.includes("mer") || q.includes("merhaba")) {
+      return "Buradayım kanka ✨ Sarı avatarlı sesli ekran geri geldi. Şimdi beni test edebilirsin.";
     }
 
-    if (lower.includes("pdf")) {
-      return "PDF alanını açarsan metni özetleme, önemli yerleri çıkarma ve çalışma notuna çevirme şeklinde ilerleyebiliriz. Şu an bana PDF içeriğini ya da metni atarsan hızlıca toparlarım.";
+    if (q.includes("içerik") || q.includes("hook") || q.includes("reels")) {
+      return "Tamam kanka. İçerik için en güzel akış: ilk 3 saniye güçlü hook, sonra problem, sonra mini bilimsel açıklama, en sonda kaydet çağrısı. İstersen bana ürününü söyle, direkt teleprompter metni yazayım.";
     }
 
-    if (lower.includes("ders") || lower.includes("çalış")) {
-      return "Ders çalışma modunda sana konu özeti, soru-cevap, mini test ve tekrar planı hazırlayabilirim. Ben olsam 25 dakika odak + 5 dakika mola şeklinde başlatırdım.";
+    if (q.includes("ses") || q.includes("konuş")) {
+      return "Ses tarafı açık. Mikrofon butonuna basınca seni dinliyorum, cevap verince de sesli okuyorum. Telefonda çalışmazsa tarayıcı mikrofon iznini kontrol etmen gerekir.";
     }
 
-    if (lower.includes("mer") || lower.includes("merhaba")) {
-      return "Buradayım kanka ✨ Lyra ekranı geri geldi. Şimdi sakin sakin neyi güncelleyeceğimize bakalım.";
+    if (q.includes("pdf")) {
+      return "PDF alanını da bağlayabiliriz kanka. Şimdilik PDF metnini buraya yapıştırırsan sana özet, önemli noktalar ve çalışma notu çıkarırım.";
     }
 
-    return "Cevabı alamadım kanka ama ekran çalışıyor. Gemini route bağlantısını kontrol etmek için /api/gemini?test=merhaba adresini aç. Orası ok ise sadece POST cevap alanı answer, reply veya text olarak dönmeli.";
+    return "Cevabı Gemini’den alamadım kanka ama Lyra ekranı çalışıyor. Büyük ihtimalle /api/gemini route’unu veya POST dönüş alanını kontrol etmemiz gerekiyor. Test için /api/gemini?test=merhaba adresini aç.";
   };
 
-  const speakText = (text: string) => {
+  const speak = (text: string) => {
     if (!voiceEnabled) return;
     if (typeof window === "undefined") return;
     if (!("speechSynthesis" in window)) return;
@@ -86,16 +78,33 @@ export default function Home() {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "tr-TR";
     utterance.rate = 1;
-    utterance.pitch = 1.05;
+    utterance.pitch = 1.08;
     utterance.volume = 1;
 
     const voices = window.speechSynthesis.getVoices();
-    const trVoice =
-      voices.find((voice) => voice.lang.toLowerCase().includes("tr")) ||
-      voices.find((voice) => voice.name.toLowerCase().includes("female")) ||
+    const turkishVoice =
+      voices.find((v) => v.lang.toLowerCase().includes("tr")) ||
+      voices.find((v) => v.name.toLowerCase().includes("female")) ||
       voices[0];
 
-    if (trVoice) utterance.voice = trVoice;
+    if (turkishVoice) {
+      utterance.voice = turkishVoice;
+    }
+
+    utterance.onstart = () => {
+      setSpeaking(true);
+      setStatus("Konuşuyor");
+    };
+
+    utterance.onend = () => {
+      setSpeaking(false);
+      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
+    };
+
+    utterance.onerror = () => {
+      setSpeaking(false);
+      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
+    };
 
     window.speechSynthesis.speak(utterance);
   };
@@ -112,7 +121,7 @@ export default function Home() {
           prompt: text,
           question: text,
           system:
-            "Sen Lyra adında sıcak, doğal, Türkçe konuşan bir kişisel asistansın. Kullanıcıya yakın arkadaş gibi ama akıllı, net ve destekleyici cevap ver. Gerektiğinde içerik üretimi, kozmetik, kimya, günlük plan, PDF özet ve ders çalışma konularında yardım et.",
+            "Sen Lyra adında sıcak, doğal, Türkçe konuşan bir yapay zeka asistansın. Kullanıcıya yakın arkadaş gibi cevap ver. Sesli konuşma ekranındasın. Cevapların kısa, doğal, akıllı ve destekleyici olsun.",
         }),
       });
 
@@ -120,7 +129,7 @@ export default function Home() {
 
       const data = await res.json();
 
-      const possibleAnswer =
+      const answer =
         data.answer ||
         data.reply ||
         data.text ||
@@ -129,11 +138,7 @@ export default function Home() {
         data.output ||
         "";
 
-      if (typeof possibleAnswer === "string") {
-        return possibleAnswer;
-      }
-
-      return "";
+      return typeof answer === "string" ? answer : "";
     } catch {
       return "";
     }
@@ -144,32 +149,39 @@ export default function Home() {
     if (!text || loading) return;
 
     setInput("");
-    setLastHeard(fromVoice ? text : "");
-    addMessage("user", text);
     setLoading(true);
-    setStatusText("Düşünüyor");
+    setStatus("Düşünüyor");
 
-    const aiAnswer = await askGemini(text);
-    const finalAnswer = aiAnswer || getLocalFallback(text);
+    if (fromVoice) {
+      setLastHeard(text);
+    }
+
+    addMessage("user", text);
+
+    const geminiAnswer = await askGemini(text);
+    const finalAnswer = geminiAnswer || fallbackAnswer(text);
 
     addMessage("lyra", finalAnswer);
-    speakText(finalAnswer);
-
     setLoading(false);
-    setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
+
+    speak(finalAnswer);
+    if (!voiceEnabled) {
+      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
+    }
   };
 
   const startListening = () => {
     if (typeof window === "undefined") return;
 
     const SpeechRecognitionImpl =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognitionImpl) {
-      const warning =
-        "Bu tarayıcı ses tanımayı desteklemiyor kanka. Chrome kullanıyorsan mikrofon iznini kontrol et.";
-      addMessage("lyra", warning);
-      speakText(warning);
+      const msg =
+        "Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’da açıp mikrofon iznini vererek tekrar dene.";
+      addMessage("lyra", msg);
+      speak(msg);
       return;
     }
 
@@ -180,13 +192,13 @@ export default function Home() {
 
     const recognition = new SpeechRecognitionImpl();
     recognition.lang = "tr-TR";
-    recognition.interimResults = false;
     recognition.continuous = false;
+    recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setListening(true);
-      setStatusText("Dinliyorum");
+      setStatus("Dinliyorum");
     };
 
     recognition.onresult = (event: any) => {
@@ -196,16 +208,18 @@ export default function Home() {
         .trim();
 
       setListening(false);
-      setStatusText("Duydum, cevaplıyorum");
 
       if (transcript) {
+        setStatus("Duydum");
         sendMessage(transcript, true);
+      } else {
+        setStatus(liveMode ? "Canlı mod açık" : "Hazır");
       }
     };
 
     recognition.onerror = () => {
       setListening(false);
-      setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
+      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
       addMessage(
         "lyra",
         "Mikrofonu alamadım kanka. Tarayıcıdan mikrofon iznini açıp tekrar dene."
@@ -214,8 +228,8 @@ export default function Home() {
 
     recognition.onend = () => {
       setListening(false);
-      if (!loading) {
-        setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
+      if (!loading && !speaking) {
+        setStatus(liveMode ? "Canlı mod açık" : "Hazır");
       }
     };
 
@@ -223,7 +237,7 @@ export default function Home() {
     recognition.start();
   };
 
-  const stopVoice = () => {
+  const stopAllVoice = () => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -234,589 +248,629 @@ export default function Home() {
     }
 
     setListening(false);
-    setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
+    setSpeaking(false);
+    setStatus(liveMode ? "Canlı mod açık" : "Hazır");
   };
 
   const toggleLiveMode = () => {
     setLiveMode((prev) => {
       const next = !prev;
-      setStatusText(next ? "Canlı mod açık" : "Hazır");
 
-      if (!next) {
-        stopVoice();
-      } else {
+      if (next) {
+        setStatus("Canlı mod açık");
         const msg =
-          "Canlı mod açıldı kanka. Konuş butonuna basınca seni dinleyip cevap vereceğim.";
+          "Canlı mod açıldı kanka. Mikrofona basınca seni dinleyip sesli cevap vereceğim.";
         addMessage("lyra", msg);
-        speakText(msg);
+        speak(msg);
+      } else {
+        stopAllVoice();
+        setStatus("Hazır");
       }
 
       return next;
     });
   };
 
-  const moduleTitle =
-    activeModule === "chat"
-      ? "Ana Sohbet"
-      : activeModule === "creator"
-      ? "İçerik Üretici Alanı"
-      : activeModule === "pdf"
-      ? "PDF Özet Alanı"
-      : activeModule === "study"
-      ? "Ders Çalışma Alanı"
-      : "Ayarlar";
-
-  const moduleDescription =
-    activeModule === "chat"
-      ? "Yazış, sesle konuş veya canlı moda geç."
-      : activeModule === "creator"
-      ? "Hook, video metni, teleprompter ve keşfet stratejisi üret."
-      : activeModule === "pdf"
-      ? "PDF veya uzun metinleri özetle, notlara çevir."
-      : activeModule === "study"
-      ? "Konu anlatımı, soru üretimi ve tekrar planı hazırla."
-      : "Ses, canlı mod ve görünüm ayarlarını yönet.";
-
-  const quickPrompts =
-    activeModule === "creator"
-      ? [
-          "Bana 30 saniyelik kozmetik reels metni yaz.",
-          "Bu video için ilk 3 saniye hook öner.",
-          "Keşfete düşecek içerik fikri üret.",
-        ]
-      : activeModule === "pdf"
-      ? [
-          "Bu metni kısa özetle.",
-          "Bunu madde madde çalışma notu yap.",
-          "Bu içerikten sınav sorusu üret.",
-        ]
-      : activeModule === "study"
-      ? [
-          "Bugün için 45 dakikalık çalışma planı yap.",
-          "Bu konudan mini test hazırla.",
-          "Bana motive edici ama gerçekçi bir plan yap.",
-        ]
-      : [
-          "Bugün ne yapmalıyım?",
-          "Bana içerik fikri ver.",
-          "Lyra çalışıyor mu test edelim.",
-        ];
+  const quickPrompts = [
+    "Lyra çalışıyor musun?",
+    "Bana bugün için içerik fikri ver.",
+    "Sesli konuşmayı test edelim.",
+    "30 saniyelik reels metni yaz.",
+  ];
 
   return (
-    <main className="lyra-page">
-      <section className="shell">
-        <header className="topbar">
-          <div className="brand">
-            <div className="logoOrb">
-              <span>L</span>
-            </div>
-
-            <div>
-              <p className="eyebrow">Sirius Lyra AI</p>
-              <h1>Lyra Clean 2026</h1>
-            </div>
+    <main className="page">
+      <section className="phoneShell">
+        <header className="topArea">
+          <div>
+            <p className="miniTitle">Sirius AI Assistant</p>
+            <h1>Lyra</h1>
           </div>
 
-          <div className="statusPill">
-            <span className={loading || listening ? "dot active" : "dot"} />
+          <div className="statusBox">
+            <span
+              className={
+                listening || speaking || loading ? "statusDot active" : "statusDot"
+              }
+            />
             <div>
               <small>Durum</small>
-              <strong>{statusText}</strong>
+              <strong>{status}</strong>
             </div>
           </div>
         </header>
 
-        <section className="mainGrid">
-          <aside className="avatarPanel">
-            <div className={liveMode ? "avatarCard live" : "avatarCard"}>
-              <div className="avatarGlow" />
+        <section className="avatarStage">
+          <div
+            className={
+              liveMode
+                ? "avatarAura live"
+                : listening || speaking
+                ? "avatarAura active"
+                : "avatarAura"
+            }
+          >
+            <div className="halo one" />
+            <div className="halo two" />
+            <div className="halo three" />
 
-              <div className={listening ? "avatarCircle listening" : "avatarCircle"}>
-                <div className="face">
-                  <div className="eyes">
-                    <i />
-                    <i />
-                  </div>
-                  <div className={loading ? "mouth thinking" : "mouth"} />
+            <div
+              className={
+                listening
+                  ? "avatar listening"
+                  : speaking
+                  ? "avatar speaking"
+                  : loading
+                  ? "avatar thinking"
+                  : "avatar"
+              }
+            >
+              <div className="hair hairLeft" />
+              <div className="hair hairRight" />
+
+              <div className="head">
+                <div className="shine" />
+
+                <div className="eyes">
+                  <span />
+                  <span />
                 </div>
-              </div>
 
-              <div className="avatarInfo">
-                <h2>Lyra</h2>
-                <p>
-                  {liveMode
-                    ? "Canlı konuşma modu açık. Mikrofonla konuşabilirsin."
-                    : "Beyaz-gümüş ana ekran aktif. Yazılı ve sesli sohbet hazır."}
-                </p>
-              </div>
-
-              {lastHeard && (
-                <div className="heardBox">
-                  <small>Seni son duyduğum:</small>
-                  <p>{lastHeard}</p>
+                <div className="cheeks">
+                  <i />
+                  <i />
                 </div>
-              )}
 
-              <div className="voiceControls">
-                <button onClick={startListening} className={listening ? "control primary pulse" : "control primary"}>
-                  {listening ? "Dinliyorum..." : "Ses ile konuş"}
-                </button>
-
-                <button onClick={toggleLiveMode} className={liveMode ? "control liveOn" : "control"}>
-                  {liveMode ? "Live açık" : "Live mod"}
-                </button>
-
-                <button onClick={stopVoice} className="control">
-                  Sesi durdur
-                </button>
+                <div className={speaking || loading ? "mouth moving" : "mouth"} />
               </div>
-            </div>
 
-            <div className="miniPanel">
-              <h3>Modüller</h3>
-
-              <div className="moduleButtons">
-                <button
-                  className={activeModule === "chat" ? "module active" : "module"}
-                  onClick={() => setActiveModule("chat")}
-                >
-                  Sohbet
-                </button>
-                <button
-                  className={activeModule === "creator" ? "module active" : "module"}
-                  onClick={() => setActiveModule("creator")}
-                >
-                  İçerik
-                </button>
-                <button
-                  className={activeModule === "pdf" ? "module active" : "module"}
-                  onClick={() => setActiveModule("pdf")}
-                >
-                  PDF
-                </button>
-                <button
-                  className={activeModule === "study" ? "module active" : "module"}
-                  onClick={() => setActiveModule("study")}
-                >
-                  Ders
-                </button>
-                <button
-                  className={activeModule === "settings" ? "module active" : "module"}
-                  onClick={() => setActiveModule("settings")}
-                >
-                  Ayar
-                </button>
+              <div className="neck" />
+              <div className="body">
+                <div className="collar" />
               </div>
             </div>
-          </aside>
+          </div>
 
-          <section className="chatPanel">
-            <div className="moduleHeader">
-              <div>
-                <p className="eyebrow">Aktif alan</p>
-                <h2>{moduleTitle}</h2>
-                <p>{moduleDescription}</p>
-              </div>
+          <div className="waveArea">
+            <span className={listening || speaking ? "bar on" : "bar"} />
+            <span className={listening || speaking ? "bar on" : "bar"} />
+            <span className={listening || speaking ? "bar on" : "bar"} />
+            <span className={listening || speaking ? "bar on" : "bar"} />
+            <span className={listening || speaking ? "bar on" : "bar"} />
+          </div>
 
-              <div className="geminiBadge">
-                <small>API</small>
-                <strong>/api/gemini</strong>
-              </div>
+          <div className="avatarText">
+            <h2>{liveMode ? "Canlı konuşma açık" : "Sesli Lyra ekranı"}</h2>
+            <p>
+              {listening
+                ? "Seni dinliyorum kanka..."
+                : speaking
+                ? "Cevabımı sesli okuyorum..."
+                : "Mikrofona bas, konuşalım. Yazılı sohbet de aşağıda açık."}
+            </p>
+          </div>
+
+          {lastHeard && (
+            <div className="heard">
+              <small>Senden duyduğum son cümle</small>
+              <p>{lastHeard}</p>
             </div>
+          )}
 
-            {activeModule === "settings" ? (
-              <div className="settingsBox">
-                <h3>Lyra Ayarları</h3>
+          <div className="voiceButtons">
+            <button
+              className={listening ? "mainVoice pulse" : "mainVoice"}
+              onClick={startListening}
+            >
+              {listening ? "Dinliyorum..." : "Konuş"}
+            </button>
 
-                <div className="settingRow">
-                  <div>
-                    <strong>Sesli cevap</strong>
-                    <p>Lyra cevapları tarayıcı sesiyle okusun.</p>
-                  </div>
+            <button
+              className={liveMode ? "ghost liveOn" : "ghost"}
+              onClick={toggleLiveMode}
+            >
+              {liveMode ? "Live açık" : "Live mod"}
+            </button>
 
-                  <button
-                    className={voiceEnabled ? "toggle on" : "toggle"}
-                    onClick={() => setVoiceEnabled((prev) => !prev)}
-                  >
-                    {voiceEnabled ? "Açık" : "Kapalı"}
-                  </button>
-                </div>
+            <button className="ghost" onClick={stopAllVoice}>
+              Durdur
+            </button>
+          </div>
+        </section>
 
-                <div className="settingRow">
-                  <div>
-                    <strong>Canlı mod</strong>
-                    <p>Konuşma ekranı Replika tarzı canlı his verir.</p>
-                  </div>
+        <section className="chatArea">
+          <div className="quick">
+            {quickPrompts.map((prompt) => (
+              <button key={prompt} onClick={() => setInput(prompt)}>
+                {prompt}
+              </button>
+            ))}
+          </div>
 
-                  <button
-                    className={liveMode ? "toggle on" : "toggle"}
-                    onClick={toggleLiveMode}
-                  >
-                    {liveMode ? "Açık" : "Kapalı"}
-                  </button>
-                </div>
-
-                <div className="testBox">
-                  <p>Gemini test için tarayıcıda şunu aç:</p>
-                  <code>/api/gemini?test=merhaba</code>
-                </div>
+          <div className="messages">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={message.role === "user" ? "msg user" : "msg lyra"}
+              >
+                <span>{message.role === "user" ? "Sen" : "Lyra"}</span>
+                <p>{message.text}</p>
               </div>
-            ) : (
-              <>
-                <div className="quickRow">
-                  {quickPrompts.map((prompt) => (
-                    <button key={prompt} onClick={() => setInput(prompt)}>
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
+            ))}
 
-                <div className="messages">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={message.role === "user" ? "msg user" : "msg lyra"}
-                    >
-                      <div className="msgLabel">
-                        {message.role === "user" ? "Sen" : "Lyra"}
-                      </div>
-                      <p>{message.text}</p>
-                    </div>
-                  ))}
-
-                  {loading && (
-                    <div className="msg lyra">
-                      <div className="msgLabel">Lyra</div>
-                      <p className="typing">Cevabı hazırlıyorum...</p>
-                    </div>
-                  )}
-
-                  <div ref={chatEndRef} />
-                </div>
-
-                <div className="composer">
-                  <textarea
-                    value={input}
-                    onChange={(event) => setInput(event.target.value)}
-                    placeholder="Lyra’ya yaz... Mesela: Bana bugün için içerik planı yap."
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        sendMessage();
-                      }
-                    }}
-                  />
-
-                  <div className="composerActions">
-                    <button onClick={startListening} className="iconBtn">
-                      Mikrofon
-                    </button>
-
-                    <button onClick={() => sendMessage()} className="sendBtn" disabled={loading}>
-                      {loading ? "Bekle..." : "Gönder"}
-                    </button>
-                  </div>
-                </div>
-              </>
+            {loading && (
+              <div className="msg lyra">
+                <span>Lyra</span>
+                <p>Cevabı hazırlıyorum...</p>
+              </div>
             )}
-          </section>
+
+            <div ref={endRef} />
+          </div>
+
+          <div className="composer">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Lyra’ya yaz..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
+              }}
+            />
+
+            <button onClick={() => sendMessage()} disabled={loading}>
+              {loading ? "..." : "Gönder"}
+            </button>
+          </div>
+
+          <div className="bottomControls">
+            <button
+              className={voiceEnabled ? "smallToggle on" : "smallToggle"}
+              onClick={() => setVoiceEnabled((prev) => !prev)}
+            >
+              Sesli cevap: {voiceEnabled ? "Açık" : "Kapalı"}
+            </button>
+
+            <button className="smallToggle" onClick={startListening}>
+              Mikrofon
+            </button>
+
+            <button className="smallToggle" onClick={stopAllVoice}>
+              Sesi kes
+            </button>
+          </div>
         </section>
       </section>
 
       <style jsx>{`
-        .lyra-page {
+        .page {
           min-height: 100vh;
-          padding: 28px;
-          color: #111827;
+          display: flex;
+          justify-content: center;
+          align-items: stretch;
+          padding: 24px;
+          color: #2b2114;
           background:
-            radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 28%),
-            radial-gradient(circle at top right, rgba(186, 230, 253, 0.45), transparent 30%),
-            radial-gradient(circle at bottom left, rgba(232, 231, 255, 0.75), transparent 32%),
-            linear-gradient(135deg, #f8fafc 0%, #eef2f7 48%, #ffffff 100%);
+            radial-gradient(circle at top left, rgba(255, 236, 153, 0.9), transparent 28%),
+            radial-gradient(circle at top right, rgba(255, 255, 255, 0.9), transparent 24%),
+            radial-gradient(circle at bottom, rgba(255, 196, 87, 0.45), transparent 34%),
+            linear-gradient(135deg, #fff8df 0%, #fffdf7 45%, #f7d774 100%);
         }
 
-        .shell {
-          width: min(1320px, 100%);
-          margin: 0 auto;
-        }
-
-        .topbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 18px;
-          padding: 20px 22px;
-          border: 1px solid rgba(148, 163, 184, 0.22);
-          border-radius: 34px;
-          background: rgba(255, 255, 255, 0.78);
-          box-shadow: 0 24px 70px rgba(15, 23, 42, 0.08);
-          backdrop-filter: blur(18px);
-          margin-bottom: 22px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-        }
-
-        .logoOrb {
-          width: 58px;
-          height: 58px;
-          border-radius: 22px;
+        .phoneShell {
+          width: min(1180px, 100%);
+          min-height: calc(100vh - 48px);
           display: grid;
-          place-items: center;
-          background:
-            radial-gradient(circle at 30% 20%, #ffffff, transparent 30%),
-            linear-gradient(135deg, #dbeafe, #ffffff, #c4b5fd);
-          border: 1px solid rgba(255, 255, 255, 0.8);
-          box-shadow:
-            inset 0 0 24px rgba(255, 255, 255, 0.9),
-            0 16px 34px rgba(99, 102, 241, 0.18);
+          grid-template-columns: 430px minmax(0, 1fr);
+          gap: 20px;
         }
 
-        .logoOrb span {
-          font-size: 26px;
-          font-weight: 950;
-          color: #334155;
+        .topArea {
+          grid-column: 1 / -1;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 18px 22px;
+          border-radius: 34px;
+          background: rgba(255, 255, 255, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.75);
+          box-shadow: 0 24px 70px rgba(155, 113, 23, 0.16);
+          backdrop-filter: blur(20px);
         }
 
-        .eyebrow {
+        .miniTitle {
           margin: 0 0 4px;
+          color: #a37012;
           font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 0.08em;
+          font-weight: 900;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
-          color: #64748b;
         }
 
         h1,
         h2,
-        h3,
         p {
           margin: 0;
         }
 
         h1 {
-          font-size: 34px;
-          letter-spacing: -1.2px;
-          color: #0f172a;
+          color: #21170c;
+          font-size: 42px;
+          line-height: 1;
+          letter-spacing: -1.6px;
         }
 
         h2 {
-          font-size: 24px;
-          letter-spacing: -0.5px;
-          color: #0f172a;
-        }
-
-        h3 {
-          font-size: 17px;
-          color: #111827;
+          color: #2b2114;
+          font-size: 22px;
+          letter-spacing: -0.4px;
         }
 
         p {
-          color: #64748b;
+          color: #7c6131;
           line-height: 1.55;
         }
 
-        .statusPill {
-          min-width: 150px;
+        .statusBox {
           display: flex;
           align-items: center;
           gap: 10px;
+          min-width: 150px;
           padding: 12px 14px;
-          border-radius: 22px;
-          border: 1px solid rgba(148, 163, 184, 0.25);
-          background: rgba(255, 255, 255, 0.72);
-          box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+          border-radius: 24px;
+          background: rgba(255, 255, 255, 0.7);
+          border: 1px solid rgba(224, 169, 45, 0.22);
         }
 
-        .statusPill small {
+        .statusBox small {
           display: block;
-          color: #94a3b8;
-          font-weight: 800;
+          color: #b28422;
           font-size: 11px;
-          margin-bottom: 2px;
+          font-weight: 900;
         }
 
-        .statusPill strong {
+        .statusBox strong {
           display: block;
-          color: #334155;
+          color: #3a2a14;
           font-size: 14px;
         }
 
-        .dot {
+        .statusDot {
           width: 12px;
           height: 12px;
           border-radius: 999px;
-          background: #94a3b8;
-          box-shadow: 0 0 0 5px rgba(148, 163, 184, 0.14);
+          background: #c9b37d;
+          box-shadow: 0 0 0 5px rgba(201, 179, 125, 0.18);
         }
 
-        .dot.active {
+        .statusDot.active {
           background: #22c55e;
-          box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
+          box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.16);
         }
 
-        .mainGrid {
-          display: grid;
-          grid-template-columns: 360px minmax(0, 1fr);
-          gap: 22px;
+        .avatarStage,
+        .chatArea {
+          border-radius: 38px;
+          background: rgba(255, 255, 255, 0.68);
+          border: 1px solid rgba(255, 255, 255, 0.8);
+          box-shadow: 0 28px 80px rgba(155, 113, 23, 0.16);
+          backdrop-filter: blur(22px);
         }
 
-        .avatarPanel,
-        .chatPanel {
-          min-height: calc(100vh - 150px);
-        }
-
-        .avatarPanel {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-        }
-
-        .avatarCard,
-        .miniPanel,
-        .chatPanel {
-          border: 1px solid rgba(148, 163, 184, 0.22);
-          background: rgba(255, 255, 255, 0.76);
-          box-shadow: 0 24px 70px rgba(15, 23, 42, 0.08);
-          backdrop-filter: blur(18px);
-        }
-
-        .avatarCard {
+        .avatarStage {
           position: relative;
           overflow: hidden;
-          border-radius: 36px;
-          padding: 24px;
-          min-height: 520px;
+          padding: 28px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           text-align: center;
+          min-height: 720px;
         }
 
-        .avatarCard.live {
-          border-color: rgba(129, 140, 248, 0.45);
-          box-shadow:
-            0 24px 70px rgba(99, 102, 241, 0.14),
-            inset 0 0 0 1px rgba(255, 255, 255, 0.65);
-        }
-
-        .avatarGlow {
+        .avatarStage::before {
+          content: "";
           position: absolute;
-          inset: -120px;
+          inset: -80px;
           background:
-            radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 1), transparent 18%),
-            radial-gradient(circle at 40% 40%, rgba(191, 219, 254, 0.72), transparent 26%),
-            radial-gradient(circle at 60% 55%, rgba(221, 214, 254, 0.84), transparent 32%),
-            radial-gradient(circle at 35% 75%, rgba(244, 244, 245, 1), transparent 30%);
+            radial-gradient(circle at 50% 18%, rgba(255,255,255,0.95), transparent 18%),
+            radial-gradient(circle at 50% 45%, rgba(255, 210, 82, 0.62), transparent 28%),
+            radial-gradient(circle at 40% 72%, rgba(255, 244, 188, 0.75), transparent 28%);
           filter: blur(10px);
-          opacity: 0.95;
         }
 
-        .avatarCircle {
+        .avatarAura {
           position: relative;
-          z-index: 1;
-          width: 210px;
-          height: 210px;
-          border-radius: 999px;
+          width: 310px;
+          height: 310px;
           display: grid;
           place-items: center;
-          background:
-            radial-gradient(circle at 35% 28%, #ffffff, transparent 25%),
-            linear-gradient(145deg, #e0f2fe, #ffffff 42%, #ddd6fe 100%);
-          border: 1px solid rgba(255, 255, 255, 0.9);
+          z-index: 1;
+          margin-top: 10px;
+        }
+
+        .avatarAura.active,
+        .avatarAura.live {
+          animation: auraPulse 1.7s ease-in-out infinite;
+        }
+
+        .halo {
+          position: absolute;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 189, 46, 0.25);
+          background: rgba(255, 225, 125, 0.12);
+        }
+
+        .halo.one {
+          width: 300px;
+          height: 300px;
+          animation: spin 12s linear infinite;
+        }
+
+        .halo.two {
+          width: 245px;
+          height: 245px;
+          animation: spin 9s linear infinite reverse;
+        }
+
+        .halo.three {
+          width: 190px;
+          height: 190px;
+          background: rgba(255, 255, 255, 0.28);
+          box-shadow: inset 0 0 35px rgba(255, 255, 255, 0.9);
+        }
+
+        .avatar {
+          position: relative;
+          width: 190px;
+          height: 240px;
+          z-index: 2;
+          animation: float 4s ease-in-out infinite;
+        }
+
+        .avatar.listening,
+        .avatar.speaking,
+        .avatar.thinking {
+          animation: floatFast 1.2s ease-in-out infinite;
+        }
+
+        .hair {
+          position: absolute;
+          top: 36px;
+          width: 78px;
+          height: 130px;
+          background: linear-gradient(180deg, #f6c357, #b97917);
+          border-radius: 60px 60px 70px 70px;
+          z-index: 1;
+        }
+
+        .hairLeft {
+          left: 21px;
+          transform: rotate(9deg);
+        }
+
+        .hairRight {
+          right: 21px;
+          transform: rotate(-9deg);
+        }
+
+        .head {
+          position: absolute;
+          top: 34px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 128px;
+          height: 142px;
+          border-radius: 48% 48% 45% 45%;
+          background: linear-gradient(180deg, #ffe1b8, #f6b982);
           box-shadow:
-            inset 0 0 40px rgba(255, 255, 255, 0.95),
-            0 25px 60px rgba(99, 102, 241, 0.22);
-          animation: float 4.5s ease-in-out infinite;
+            inset 0 9px 20px rgba(255, 255, 255, 0.45),
+            0 20px 40px rgba(135, 83, 10, 0.24);
+          z-index: 3;
+          overflow: hidden;
         }
 
-        .avatarCircle.listening {
-          animation: pulseAvatar 1.2s ease-in-out infinite;
-        }
-
-        .face {
-          width: 92px;
-          height: 72px;
-          border-radius: 30px;
-          background: rgba(255, 255, 255, 0.55);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 16px;
-          box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.9);
+        .shine {
+          position: absolute;
+          top: 20px;
+          left: 23px;
+          width: 28px;
+          height: 18px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.34);
+          filter: blur(2px);
         }
 
         .eyes {
+          position: absolute;
+          top: 68px;
+          left: 0;
+          right: 0;
           display: flex;
-          gap: 24px;
+          justify-content: center;
+          gap: 28px;
         }
 
-        .eyes i {
+        .eyes span {
           width: 10px;
-          height: 10px;
+          height: 15px;
           border-radius: 999px;
-          background: #334155;
-          display: block;
+          background: #3b2615;
           animation: blink 5s infinite;
         }
 
-        .mouth {
-          width: 32px;
-          height: 8px;
+        .cheeks {
+          position: absolute;
+          top: 92px;
+          left: 0;
+          right: 0;
+          display: flex;
+          justify-content: center;
+          gap: 48px;
+        }
+
+        .cheeks i {
+          width: 18px;
+          height: 9px;
           border-radius: 999px;
-          background: #64748b;
+          background: rgba(255, 117, 117, 0.28);
         }
 
-        .mouth.thinking {
-          animation: mouthMove 0.7s ease-in-out infinite;
+        .mouth {
+          position: absolute;
+          top: 104px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 28px;
+          height: 8px;
+          border-radius: 0 0 999px 999px;
+          background: #8a3e2c;
         }
 
-        .avatarInfo {
+        .mouth.moving {
+          animation: mouthTalk 0.55s ease-in-out infinite;
+        }
+
+        .neck {
+          position: absolute;
+          top: 164px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 40px;
+          height: 34px;
+          border-radius: 0 0 18px 18px;
+          background: #eaa873;
+          z-index: 2;
+        }
+
+        .body {
+          position: absolute;
+          bottom: 0;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 150px;
+          height: 82px;
+          border-radius: 58px 58px 28px 28px;
+          background: linear-gradient(135deg, #fff7d6, #f7c948, #f59e0b);
+          box-shadow: 0 18px 34px rgba(135, 83, 10, 0.2);
+          z-index: 1;
+        }
+
+        .collar {
+          position: absolute;
+          top: 10px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 68px;
+          height: 26px;
+          border-radius: 0 0 32px 32px;
+          background: rgba(255, 255, 255, 0.56);
+        }
+
+        .waveArea {
           position: relative;
           z-index: 1;
-          margin-top: 28px;
+          height: 50px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          margin-top: 8px;
         }
 
-        .avatarInfo h2 {
-          font-size: 30px;
+        .bar {
+          width: 7px;
+          height: 12px;
+          border-radius: 999px;
+          background: rgba(184, 128, 22, 0.35);
+        }
+
+        .bar.on {
+          background: linear-gradient(180deg, #facc15, #f97316);
+          animation: soundBars 0.9s ease-in-out infinite;
+        }
+
+        .bar:nth-child(2) {
+          animation-delay: 0.12s;
+        }
+
+        .bar:nth-child(3) {
+          animation-delay: 0.24s;
+        }
+
+        .bar:nth-child(4) {
+          animation-delay: 0.36s;
+        }
+
+        .bar:nth-child(5) {
+          animation-delay: 0.48s;
+        }
+
+        .avatarText {
+          position: relative;
+          z-index: 1;
+          max-width: 330px;
+          margin-top: 6px;
+        }
+
+        .avatarText h2 {
           margin-bottom: 8px;
         }
 
-        .heardBox {
+        .heard {
           position: relative;
           z-index: 1;
           width: 100%;
           margin-top: 18px;
-          padding: 14px;
-          border-radius: 22px;
           text-align: left;
+          padding: 15px;
+          border-radius: 24px;
           background: rgba(255, 255, 255, 0.62);
-          border: 1px solid rgba(148, 163, 184, 0.2);
+          border: 1px solid rgba(255, 207, 89, 0.4);
         }
 
-        .heardBox small {
-          color: #94a3b8;
-          font-weight: 800;
+        .heard small {
+          color: #b28422;
+          font-weight: 900;
         }
 
-        .heardBox p {
-          color: #334155;
+        .heard p {
+          color: #3a2a14;
           margin-top: 5px;
           font-size: 14px;
         }
 
-        .voiceControls {
+        .voiceButtons {
           position: relative;
           z-index: 1;
-          width: 100%;
           display: grid;
-          grid-template-columns: 1fr;
+          grid-template-columns: 1.4fr 1fr 1fr;
           gap: 10px;
+          width: 100%;
           margin-top: 22px;
         }
 
@@ -824,257 +878,182 @@ export default function Home() {
           font-family: inherit;
         }
 
-        .control,
-        .module,
-        .quickRow button,
-        .iconBtn,
-        .sendBtn,
-        .toggle {
+        .mainVoice,
+        .ghost,
+        .quick button,
+        .composer button,
+        .smallToggle {
+          border: none;
           cursor: pointer;
-          border: 1px solid rgba(148, 163, 184, 0.26);
-          background: rgba(255, 255, 255, 0.72);
-          color: #334155;
-          border-radius: 18px;
-          padding: 12px 14px;
-          font-weight: 850;
+          border-radius: 20px;
+          padding: 14px 16px;
+          font-weight: 900;
           transition: 0.2s ease;
         }
 
-        .control:hover,
-        .module:hover,
-        .quickRow button:hover,
-        .iconBtn:hover,
-        .sendBtn:hover,
-        .toggle:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+        .mainVoice {
+          color: #281707;
+          background: linear-gradient(135deg, #fde047, #f59e0b);
+          box-shadow: 0 16px 34px rgba(245, 158, 11, 0.35);
         }
 
-        .control.primary,
-        .sendBtn {
-          color: #ffffff;
-          background: linear-gradient(135deg, #0f172a, #334155);
-          box-shadow: 0 16px 30px rgba(15, 23, 42, 0.22);
+        .ghost,
+        .quick button,
+        .smallToggle {
+          color: #6d4b16;
+          background: rgba(255, 255, 255, 0.72);
+          border: 1px solid rgba(224, 169, 45, 0.24);
         }
 
-        .control.liveOn,
-        .toggle.on {
-          color: #ffffff;
-          background: linear-gradient(135deg, #6366f1, #a855f7);
+        .ghost.liveOn,
+        .smallToggle.on {
+          color: white;
+          background: linear-gradient(135deg, #f59e0b, #b45309);
           border-color: transparent;
+        }
+
+        .mainVoice:hover,
+        .ghost:hover,
+        .quick button:hover,
+        .composer button:hover,
+        .smallToggle:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 26px rgba(155, 113, 23, 0.15);
         }
 
         .pulse {
-          animation: softPulse 1s infinite;
+          animation: buttonPulse 1s infinite;
         }
 
-        .miniPanel {
-          border-radius: 30px;
-          padding: 18px;
-        }
-
-        .miniPanel h3 {
-          margin-bottom: 12px;
-        }
-
-        .moduleButtons {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-        }
-
-        .module.active {
-          color: #ffffff;
-          background: linear-gradient(135deg, #64748b, #111827);
-          border-color: transparent;
-        }
-
-        .chatPanel {
-          border-radius: 36px;
+        .chatArea {
           padding: 22px;
           display: flex;
           flex-direction: column;
-          overflow: hidden;
+          min-height: 720px;
         }
 
-        .moduleHeader {
+        .quick {
           display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 16px;
-          padding-bottom: 18px;
-          border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-        }
-
-        .moduleHeader p {
-          margin-top: 6px;
-        }
-
-        .geminiBadge {
-          min-width: 120px;
-          border-radius: 20px;
-          padding: 12px 14px;
-          text-align: center;
-          background: rgba(248, 250, 252, 0.85);
-          border: 1px solid rgba(148, 163, 184, 0.2);
-        }
-
-        .geminiBadge small {
-          display: block;
-          color: #94a3b8;
-          font-weight: 850;
-          font-size: 11px;
-        }
-
-        .geminiBadge strong {
-          color: #334155;
-          font-size: 13px;
-        }
-
-        .quickRow {
-          display: flex;
-          gap: 10px;
           flex-wrap: wrap;
-          padding: 16px 0;
+          gap: 10px;
+          margin-bottom: 16px;
         }
 
-        .quickRow button {
+        .quick button {
+          padding: 10px 13px;
           border-radius: 999px;
           font-size: 13px;
-          padding: 10px 13px;
         }
 
         .messages {
           flex: 1;
           overflow-y: auto;
-          padding: 4px 6px 16px;
           display: flex;
           flex-direction: column;
-          gap: 13px;
-          min-height: 410px;
-          max-height: calc(100vh - 355px);
+          gap: 12px;
+          padding: 8px 4px 16px;
+          max-height: calc(100vh - 290px);
+          min-height: 420px;
         }
 
         .msg {
           width: fit-content;
-          max-width: 78%;
+          max-width: 80%;
           border-radius: 24px;
-          padding: 14px 16px;
-          border: 1px solid rgba(148, 163, 184, 0.18);
-          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
+          padding: 13px 15px;
+          box-shadow: 0 12px 26px rgba(155, 113, 23, 0.08);
         }
 
-        .msg.lyra {
-          align-self: flex-start;
-          background: rgba(255, 255, 255, 0.82);
-        }
-
-        .msg.user {
-          align-self: flex-end;
-          background: linear-gradient(135deg, #111827, #334155);
-          color: #ffffff;
-        }
-
-        .msg.user p,
-        .msg.user .msgLabel {
-          color: #ffffff;
-        }
-
-        .msgLabel {
+        .msg span {
+          display: block;
           font-size: 11px;
           font-weight: 950;
-          color: #94a3b8;
+          letter-spacing: 0.08em;
           text-transform: uppercase;
-          letter-spacing: 0.06em;
           margin-bottom: 5px;
         }
 
         .msg p {
-          color: #334155;
           white-space: pre-wrap;
         }
 
-        .typing {
-          animation: fadeTyping 1s ease-in-out infinite;
+        .msg.lyra {
+          align-self: flex-start;
+          background: rgba(255, 255, 255, 0.78);
+          border: 1px solid rgba(224, 169, 45, 0.18);
+        }
+
+        .msg.lyra span {
+          color: #b28422;
+        }
+
+        .msg.lyra p {
+          color: #4a3517;
+        }
+
+        .msg.user {
+          align-self: flex-end;
+          background: linear-gradient(135deg, #3a2a14, #7c4a03);
+          color: white;
+        }
+
+        .msg.user span,
+        .msg.user p {
+          color: white;
         }
 
         .composer {
-          border-top: 1px solid rgba(148, 163, 184, 0.16);
-          padding-top: 16px;
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
-          gap: 12px;
-          align-items: end;
+          gap: 10px;
+          padding-top: 14px;
+          border-top: 1px solid rgba(224, 169, 45, 0.18);
         }
 
         textarea {
           width: 100%;
-          min-height: 78px;
-          max-height: 160px;
+          min-height: 76px;
+          max-height: 150px;
           resize: vertical;
-          border: 1px solid rgba(148, 163, 184, 0.26);
-          outline: none;
+          box-sizing: border-box;
           border-radius: 24px;
-          padding: 16px 18px;
-          color: #111827;
+          border: 1px solid rgba(224, 169, 45, 0.24);
           background: rgba(255, 255, 255, 0.78);
-          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+          outline: none;
+          padding: 16px 17px;
+          color: #3a2a14;
           font-size: 15px;
           line-height: 1.5;
         }
 
         textarea:focus {
-          border-color: rgba(99, 102, 241, 0.45);
-          box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.12);
+          border-color: rgba(245, 158, 11, 0.55);
+          box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.13);
         }
 
-        .composerActions {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
+        .composer button {
+          color: #281707;
+          background: linear-gradient(135deg, #fde047, #f59e0b);
+          min-width: 105px;
+          box-shadow: 0 14px 28px rgba(245, 158, 11, 0.25);
         }
 
-        .sendBtn:disabled {
+        .composer button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
         }
 
-        .settingsBox {
-          margin-top: 18px;
+        .bottomControls {
           display: flex;
-          flex-direction: column;
-          gap: 14px;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 12px;
         }
 
-        .settingRow,
-        .testBox {
-          border: 1px solid rgba(148, 163, 184, 0.2);
-          background: rgba(255, 255, 255, 0.7);
-          border-radius: 24px;
-          padding: 18px;
-        }
-
-        .settingRow {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 16px;
-        }
-
-        .settingRow strong {
-          display: block;
-          color: #111827;
-          margin-bottom: 5px;
-        }
-
-        .testBox code {
-          display: block;
-          margin-top: 10px;
-          padding: 12px;
-          border-radius: 16px;
-          background: #0f172a;
-          color: #ffffff;
-          overflow-x: auto;
+        .smallToggle {
+          padding: 10px 13px;
+          border-radius: 999px;
+          font-size: 13px;
         }
 
         @keyframes float {
@@ -1082,26 +1061,39 @@ export default function Home() {
           100% {
             transform: translateY(0);
           }
-
           50% {
             transform: translateY(-10px);
           }
         }
 
-        @keyframes pulseAvatar {
+        @keyframes floatFast {
+          0%,
+          100% {
+            transform: translateY(0) scale(1);
+          }
+          50% {
+            transform: translateY(-7px) scale(1.025);
+          }
+        }
+
+        @keyframes auraPulse {
           0%,
           100% {
             transform: scale(1);
-            box-shadow:
-              inset 0 0 40px rgba(255, 255, 255, 0.95),
-              0 25px 60px rgba(99, 102, 241, 0.22);
+            filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
           }
-
           50% {
-            transform: scale(1.035);
-            box-shadow:
-              inset 0 0 40px rgba(255, 255, 255, 0.95),
-              0 25px 78px rgba(99, 102, 241, 0.35);
+            transform: scale(1.025);
+            filter: drop-shadow(0 0 28px rgba(245, 158, 11, 0.38));
+          }
+        }
+
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
           }
         }
 
@@ -1111,110 +1103,93 @@ export default function Home() {
           100% {
             transform: scaleY(1);
           }
-
           95% {
             transform: scaleY(0.1);
           }
         }
 
-        @keyframes mouthMove {
+        @keyframes mouthTalk {
           0%,
           100% {
-            width: 26px;
+            width: 24px;
             height: 7px;
           }
-
           50% {
-            width: 38px;
-            height: 12px;
+            width: 34px;
+            height: 16px;
+            border-radius: 999px;
           }
         }
 
-        @keyframes softPulse {
+        @keyframes soundBars {
+          0%,
+          100% {
+            height: 12px;
+          }
+          50% {
+            height: 38px;
+          }
+        }
+
+        @keyframes buttonPulse {
           0%,
           100% {
             transform: scale(1);
           }
-
           50% {
-            transform: scale(1.02);
-          }
-        }
-
-        @keyframes fadeTyping {
-          0%,
-          100% {
-            opacity: 0.45;
-          }
-
-          50% {
-            opacity: 1;
+            transform: scale(1.03);
           }
         }
 
         @media (max-width: 980px) {
-          .lyra-page {
-            padding: 16px;
+          .page {
+            padding: 14px;
           }
 
-          .topbar {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .mainGrid {
+          .phoneShell {
             grid-template-columns: 1fr;
-          }
-
-          .avatarPanel,
-          .chatPanel {
             min-height: auto;
           }
 
-          .avatarCard {
-            min-height: 440px;
+          .topArea {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .avatarStage,
+          .chatArea {
+            min-height: auto;
           }
 
           .messages {
             max-height: 520px;
+          }
+        }
+
+        @media (max-width: 560px) {
+          h1 {
+            font-size: 34px;
+          }
+
+          .avatarAura {
+            width: 270px;
+            height: 270px;
+          }
+
+          .voiceButtons {
+            grid-template-columns: 1fr;
           }
 
           .composer {
             grid-template-columns: 1fr;
           }
 
-          .composerActions {
-            flex-direction: row;
-          }
-
-          .iconBtn,
-          .sendBtn {
-            flex: 1;
+          .composer button {
+            width: 100%;
           }
 
           .msg {
             max-width: 92%;
-          }
-        }
-
-        @media (max-width: 560px) {
-          h1 {
-            font-size: 27px;
-          }
-
-          .moduleHeader,
-          .settingRow {
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .avatarCircle {
-            width: 180px;
-            height: 180px;
-          }
-
-          .moduleButtons {
-            grid-template-columns: 1fr;
           }
         }
       `}</style>
