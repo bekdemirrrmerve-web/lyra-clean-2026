@@ -1,1195 +1,1229 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-type Role = "user" | "lyra";
+import React, { useMemo, useState } from "react";
 
 type Message = {
   id: number;
-  role: Role;
+  role: "user" | "lyra";
   text: string;
+  time: string;
 };
 
-export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      role: "lyra",
-      text: "Merhaba kanka, ben Lyra ✨ Sesli konuşma ekranım geri geldi. Yazabilir ya da mikrofona basıp konuşabilirsin.",
-    },
-  ]);
+type Feature = {
+  icon: string;
+  title: string;
+  desc: string;
+};
 
+const LYRA_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg width="360" height="520" viewBox="0 0 360 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="360" height="520" rx="42" fill="url(#bg)"/>
+  <ellipse cx="180" cy="230" rx="118" ry="150" fill="#F1D0A8" opacity="0.15"/>
+  <path d="M94 196C91 116 132 58 184 58C239 58 278 118 268 197C260 260 245 323 247 401H107C111 320 96 262 94 196Z" fill="url(#hair)"/>
+  <path d="M116 192C109 123 140 75 183 75C226 75 256 124 248 192C243 238 231 270 212 288H154C135 270 121 238 116 192Z" fill="#F2C394"/>
+  <path d="M135 185C134 176 127 171 121 173C114 176 113 191 121 202C127 211 134 209 137 205L135 185Z" fill="#E8B184"/>
+  <path d="M225 185C226 176 233 171 239 173C246 176 247 191 239 202C233 211 226 209 223 205L225 185Z" fill="#E8B184"/>
+  <path d="M132 129C146 98 178 82 208 96C236 109 251 140 248 178C238 160 221 137 200 129C180 120 155 125 132 129Z" fill="#C9893E"/>
+  <path d="M118 190C123 154 133 117 162 101C147 137 145 176 137 218C130 252 121 294 115 356C96 308 91 242 118 190Z" fill="#B8752D"/>
+  <path d="M242 184C238 150 229 116 199 101C218 132 218 171 224 218C229 255 237 303 245 357C265 305 270 239 242 184Z" fill="#B8752D"/>
+  <path d="M135 161C142 155 151 155 158 161" stroke="#5B3A27" stroke-width="5" stroke-linecap="round"/>
+  <path d="M202 161C209 155 218 155 225 161" stroke="#5B3A27" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="150" cy="182" r="5" fill="#2E221C"/>
+  <circle cx="212" cy="182" r="5" fill="#2E221C"/>
+  <path d="M181 181C177 195 174 207 181 209C185 210 188 208 190 206" stroke="#B8755E" stroke-width="4" stroke-linecap="round"/>
+  <path d="M159 226C174 238 191 238 205 226" stroke="#A85A5A" stroke-width="5" stroke-linecap="round"/>
+  <path d="M148 206C139 204 133 201 127 196" stroke="#E7A6A6" stroke-width="4" stroke-linecap="round" opacity="0.35"/>
+  <path d="M214 206C223 204 229 201 235 196" stroke="#E7A6A6" stroke-width="4" stroke-linecap="round" opacity="0.35"/>
+  <path d="M145 282C145 282 157 307 181 307C205 307 216 282 216 282L236 294C236 294 220 354 181 354C142 354 125 294 125 294L145 282Z" fill="#EFC29D"/>
+  <path d="M103 520C107 426 129 326 160 306H202C232 326 254 426 258 520H103Z" fill="#111827"/>
+  <path d="M151 306C158 338 166 364 181 364C196 364 204 338 211 306C201 315 191 320 181 320C171 320 161 315 151 306Z" fill="#F2C394"/>
+  <path d="M101 520C106 430 130 345 155 315C159 354 166 390 181 390C196 390 203 354 207 315C232 345 255 430 260 520H101Z" fill="#0B0F18"/>
+  <path d="M128 382C142 414 158 434 181 434C204 434 219 414 233 382" stroke="#202838" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="360" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEF1F6"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="90" y1="60" x2="270" y2="410" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F1C06B"/>
+      <stop offset="0.45" stop-color="#C9893E"/>
+      <stop offset="1" stop-color="#81511F"/>
+    </linearGradient>
+  </defs>
+</svg>
+`)}`;
+
+const features: Feature[] = [
+  {
+    icon: "⌕",
+    title: "Araştırma Modu",
+    desc: "Bilgi bul, analiz et ve net cevaplar üret.",
+  },
+  {
+    icon: "✎",
+    title: "İçerik Üretme",
+    desc: "Hook, başlık, video metni ve teleprompter hazırla.",
+  },
+  {
+    icon: "▰",
+    title: "Ders Modu",
+    desc: "Konu anlat, test üret, yanlışları açıkla.",
+  },
+  {
+    icon: "▧",
+    title: "Görsel Üretme",
+    desc: "Görsel promptu ve konsept hazırla.",
+  },
+  {
+    icon: "◌",
+    title: "Görselle Okut",
+    desc: "Görsel, belge ve ekranları analiz et.",
+  },
+  {
+    icon: "▤",
+    title: "PDF Özeti",
+    desc: "PDF yükle, özetle ve not çıkar.",
+  },
+  {
+    icon: "≋",
+    title: "Canlı Mod",
+    desc: "Gerçek zamanlı konuşma alanı.",
+  },
+];
+
+const starterMessages: Message[] = [
+  {
+    id: 1,
+    role: "lyra",
+    time: "13:21",
+    text:
+      "Teleprompter Metni:\n“Bugün sana kanka bana cilt bakım toniği formülasyonunu atsana konusunu çok basit anlatacağım. Çünkü çoğu kişi burada yanlış noktaya odaklanıyor. Aslında işin özü çok daha net. Önce problemi anlayacağız, sonra doğru adımı seçeceğiz ve sonunda bunu nasıl uygulayacağımı konuşacağız.”\n\nCTA:\n“Kaydet, sonra birlikte tekrar bakalım.”",
+  },
+  {
+    id: 2,
+    role: "user",
+    time: "13:22",
+    text: "çalışıyo musun",
+  },
+  {
+    id: 3,
+    role: "lyra",
+    time: "13:22",
+    text:
+      "Harika! “Çalışıyor musun?” sorusuna öyle bir cevap verelim ki, sadece soruyu geçiştirmekle kalmasın, aynı zamanda değer kattığını hissettirsin.",
+  },
+];
+
+export default function Page() {
+  const [messages, setMessages] = useState<Message[]>(starterMessages);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [liveMode, setLiveMode] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [status, setStatus] = useState("Hazır");
-  const [lastHeard, setLastHeard] = useState("");
+  const [voiceMode, setVoiceMode] = useState("Gemini Live");
+  const [gender, setGender] = useState<"Kadın" | "Erkek">("Kadın");
+  const [isLive, setIsLive] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const endRef = useRef<HTMLDivElement | null>(null);
-  const recognitionRef = useRef<any>(null);
+  const now = useMemo(() => {
+    return new Date().toLocaleTimeString("tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [messages.length]);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  async function sendMessage() {
+    const clean = input.trim();
+    if (!clean || isLoading) return;
 
-  const addMessage = (role: Role, text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now() + Math.floor(Math.random() * 1000),
-        role,
-        text,
-      },
-    ]);
-  };
-
-  const fallbackAnswer = (text: string) => {
-    const q = text.toLowerCase();
-
-    if (q.includes("mer") || q.includes("merhaba")) {
-      return "Buradayım kanka ✨ Sarı avatarlı sesli ekran geri geldi. Şimdi beni test edebilirsin.";
-    }
-
-    if (q.includes("içerik") || q.includes("hook") || q.includes("reels")) {
-      return "Tamam kanka. İçerik için en güzel akış: ilk 3 saniye güçlü hook, sonra problem, sonra mini bilimsel açıklama, en sonda kaydet çağrısı. İstersen bana ürününü söyle, direkt teleprompter metni yazayım.";
-    }
-
-    if (q.includes("ses") || q.includes("konuş")) {
-      return "Ses tarafı açık. Mikrofon butonuna basınca seni dinliyorum, cevap verince de sesli okuyorum. Telefonda çalışmazsa tarayıcı mikrofon iznini kontrol etmen gerekir.";
-    }
-
-    if (q.includes("pdf")) {
-      return "PDF alanını da bağlayabiliriz kanka. Şimdilik PDF metnini buraya yapıştırırsan sana özet, önemli noktalar ve çalışma notu çıkarırım.";
-    }
-
-    return "Cevabı Gemini’den alamadım kanka ama Lyra ekranı çalışıyor. Büyük ihtimalle /api/gemini route’unu veya POST dönüş alanını kontrol etmemiz gerekiyor. Test için /api/gemini?test=merhaba adresini aç.";
-  };
-
-  const speak = (text: string) => {
-    if (!voiceEnabled) return;
-    if (typeof window === "undefined") return;
-    if (!("speechSynthesis" in window)) return;
-
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "tr-TR";
-    utterance.rate = 1;
-    utterance.pitch = 1.08;
-    utterance.volume = 1;
-
-    const voices = window.speechSynthesis.getVoices();
-    const turkishVoice =
-      voices.find((v) => v.lang.toLowerCase().includes("tr")) ||
-      voices.find((v) => v.name.toLowerCase().includes("female")) ||
-      voices[0];
-
-    if (turkishVoice) {
-      utterance.voice = turkishVoice;
-    }
-
-    utterance.onstart = () => {
-      setSpeaking(true);
-      setStatus("Konuşuyor");
+    const userMessage: Message = {
+      id: Date.now(),
+      role: "user",
+      text: clean,
+      time: now,
     };
 
-    utterance.onend = () => {
-      setSpeaking(false);
-      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
-    };
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
 
-    utterance.onerror = () => {
-      setSpeaking(false);
-      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
-    };
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const askGemini = async (text: string) => {
     try {
       const res = await fetch("/api/gemini", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          message: text,
-          prompt: text,
-          question: text,
-          system:
-            "Sen Lyra adında sıcak, doğal, Türkçe konuşan bir yapay zeka asistansın. Kullanıcıya yakın arkadaş gibi cevap ver. Sesli konuşma ekranındasın. Cevapların kısa, doğal, akıllı ve destekleyici olsun.",
-        }),
+        body: JSON.stringify({ message: clean }),
       });
 
-      if (!res.ok) return "";
-
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       const answer =
-        data.answer ||
-        data.reply ||
-        data.text ||
-        data.result ||
-        data.message ||
-        data.output ||
-        "";
+        data?.answer ||
+        data?.reply ||
+        data?.text ||
+        "Cevabı alamadım kanka. Gemini route çalışıyor ama cevap alanı answer, reply veya text olarak dönmüyor olabilir.";
 
-      return typeof answer === "string" ? answer : "";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          role: "lyra",
+          text: answer,
+          time: new Date().toLocaleTimeString("tr-TR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
     } catch {
-      return "";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          role: "lyra",
+          text:
+            "Gemini bağlantısı çalışmadı kanka. Şimdilik tasarım aktif; /api/gemini route’unu ve GEMINI_API_KEY ayarını kontrol edelim.",
+          time: new Date().toLocaleTimeString("tr-TR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }
 
-  const sendMessage = async (forcedText?: string, fromVoice = false) => {
-    const text = (forcedText || input).trim();
-    if (!text || loading) return;
-
-    setInput("");
-    setLoading(true);
-    setStatus("Düşünüyor");
-
-    if (fromVoice) {
-      setLastHeard(text);
-    }
-
-    addMessage("user", text);
-
-    const geminiAnswer = await askGemini(text);
-    const finalAnswer = geminiAnswer || fallbackAnswer(text);
-
-    addMessage("lyra", finalAnswer);
-    setLoading(false);
-
-    speak(finalAnswer);
-    if (!voiceEnabled) {
-      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
-    }
-  };
-
-  const startListening = () => {
-    if (typeof window === "undefined") return;
-
-    const SpeechRecognitionImpl =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognitionImpl) {
-      const msg =
-        "Bu tarayıcı mikrofonla konuşmayı desteklemiyor kanka. Chrome’da açıp mikrofon iznini vererek tekrar dene.";
-      addMessage("lyra", msg);
-      speak(msg);
-      return;
-    }
-
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-
-    const recognition = new SpeechRecognitionImpl();
-    recognition.lang = "tr-TR";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setListening(true);
-      setStatus("Dinliyorum");
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((result: any) => result[0]?.transcript || "")
-        .join(" ")
-        .trim();
-
-      setListening(false);
-
-      if (transcript) {
-        setStatus("Duydum");
-        sendMessage(transcript, true);
-      } else {
-        setStatus(liveMode ? "Canlı mod açık" : "Hazır");
-      }
-    };
-
-    recognition.onerror = () => {
-      setListening(false);
-      setStatus(liveMode ? "Canlı mod açık" : "Hazır");
-      addMessage(
-        "lyra",
-        "Mikrofonu alamadım kanka. Tarayıcıdan mikrofon iznini açıp tekrar dene."
-      );
-    };
-
-    recognition.onend = () => {
-      setListening(false);
-      if (!loading && !speaking) {
-        setStatus(liveMode ? "Canlı mod açık" : "Hazır");
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  };
-
-  const stopAllVoice = () => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-
-    setListening(false);
-    setSpeaking(false);
-    setStatus(liveMode ? "Canlı mod açık" : "Hazır");
-  };
-
-  const toggleLiveMode = () => {
-    setLiveMode((prev) => {
-      const next = !prev;
-
-      if (next) {
-        setStatus("Canlı mod açık");
-        const msg =
-          "Canlı mod açıldı kanka. Mikrofona basınca seni dinleyip sesli cevap vereceğim.";
-        addMessage("lyra", msg);
-        speak(msg);
-      } else {
-        stopAllVoice();
-        setStatus("Hazır");
-      }
-
-      return next;
-    });
-  };
-
-  const quickPrompts = [
-    "Lyra çalışıyor musun?",
-    "Bana bugün için içerik fikri ver.",
-    "Sesli konuşmayı test edelim.",
-    "30 saniyelik reels metni yaz.",
-  ];
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") sendMessage();
+  }
 
   return (
-    <main className="page">
-      <section className="phoneShell">
-        <header className="topArea">
-          <div>
-            <p className="miniTitle">Sirius AI Assistant</p>
-            <h1>Lyra</h1>
-          </div>
+    <main className="lyra-page">
+      <aside className="sidebar">
+        <div className="brand">LYRA</div>
 
-          <div className="statusBox">
-            <span
-              className={
-                listening || speaking || loading ? "statusDot active" : "statusDot"
-              }
-            />
+        <nav className="nav">
+          <button className="nav-item active">
+            <span>＋</span>
+            Yeni Sohbet
+          </button>
+          <button className="nav-item">
+            <span>▢</span>
+            Sohbetler
+          </button>
+          <button className="nav-item">
+            <span>⌘</span>
+            Modlar
+          </button>
+          <button className="nav-item">
+            <span>▤</span>
+            Araçlar
+          </button>
+          <button className="nav-item">
+            <span>♢</span>
+            Hatırlatıcılar
+          </button>
+          <button className="nav-item">
+            <span>⚙</span>
+            Ayarlar
+          </button>
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="pro-card">
+            <span className="spark">✦</span>
             <div>
-              <small>Durum</small>
-              <strong>{status}</strong>
+              <b>LYRA PRO</b>
+              <p>AI Asistan</p>
             </div>
           </div>
+
+          <div className="profile-card">
+            <div className="avatar-mini">M</div>
+            <div>
+              <b>Merve</b>
+              <p>Pro Üye</p>
+            </div>
+            <span className="chev">⌄</span>
+          </div>
+
+          <div className="usage-card">
+            <div className="usage-top">
+              <span>Aylık Kullanım</span>
+              <b>%68</b>
+            </div>
+            <div className="bar">
+              <div />
+            </div>
+            <p>Kalan: 32% / 10 gün</p>
+          </div>
+
+          <div className="weather-card">
+            <span>☀</span>
+            <div>
+              <b>19°C</b>
+              <p>Güneşli</p>
+            </div>
+            <span>›</span>
+          </div>
+        </div>
+      </aside>
+
+      <section className="desktop">
+        <header className="topbar">
+          <h1>LYRA AI ASİSTANINIZ</h1>
+          <button className="about">ⓘ Lyra Hakkında ⌄</button>
         </header>
 
-        <section className="avatarStage">
-          <div
-            className={
-              liveMode
-                ? "avatarAura live"
-                : listening || speaking
-                ? "avatarAura active"
-                : "avatarAura"
-            }
-          >
-            <div className="halo one" />
-            <div className="halo two" />
-            <div className="halo three" />
-
-            <div
-              className={
-                listening
-                  ? "avatar listening"
-                  : speaking
-                  ? "avatar speaking"
-                  : loading
-                  ? "avatar thinking"
-                  : "avatar"
-              }
-            >
-              <div className="hair hairLeft" />
-              <div className="hair hairRight" />
-
-              <div className="head">
-                <div className="shine" />
-
-                <div className="eyes">
-                  <span />
-                  <span />
-                </div>
-
-                <div className="cheeks">
-                  <i />
-                  <i />
-                </div>
-
-                <div className={speaking || loading ? "mouth moving" : "mouth"} />
-              </div>
-
-              <div className="neck" />
-              <div className="body">
-                <div className="collar" />
-              </div>
+        <section className="hero">
+          <div className="avatar-glow">
+            <div className="avatar-frame">
+              <img src={LYRA_AVATAR} alt="Lyra Avatar" />
             </div>
           </div>
 
-          <div className="waveArea">
-            <span className={listening || speaking ? "bar on" : "bar"} />
-            <span className={listening || speaking ? "bar on" : "bar"} />
-            <span className={listening || speaking ? "bar on" : "bar"} />
-            <span className={listening || speaking ? "bar on" : "bar"} />
-            <span className={listening || speaking ? "bar on" : "bar"} />
-          </div>
-
-          <div className="avatarText">
-            <h2>{liveMode ? "Canlı konuşma açık" : "Sesli Lyra ekranı"}</h2>
-            <p>
-              {listening
-                ? "Seni dinliyorum kanka..."
-                : speaking
-                ? "Cevabımı sesli okuyorum..."
-                : "Mikrofona bas, konuşalım. Yazılı sohbet de aşağıda açık."}
-            </p>
-          </div>
-
-          {lastHeard && (
-            <div className="heard">
-              <small>Senden duyduğum son cümle</small>
-              <p>{lastHeard}</p>
-            </div>
-          )}
-
-          <div className="voiceButtons">
-            <button
-              className={listening ? "mainVoice pulse" : "mainVoice"}
-              onClick={startListening}
-            >
-              {listening ? "Dinliyorum..." : "Konuş"}
+          <div className="control-row">
+            <button className="pill" onClick={() => setVoiceMode("Gemini Live")}>
+              ≋ Ses: {voiceMode} <span>⌄</span>
             </button>
-
             <button
-              className={liveMode ? "ghost liveOn" : "ghost"}
-              onClick={toggleLiveMode}
+              className={`pill ${isMuted ? "selected" : ""}`}
+              onClick={() => setIsMuted((v) => !v)}
             >
-              {liveMode ? "Live açık" : "Live mod"}
+              {isMuted ? "🔇 Sessiz" : "♬ Sessize Al"}
             </button>
-
-            <button className="ghost" onClick={stopAllVoice}>
-              Durdur
+            <button
+              className={`pill ${gender === "Kadın" ? "selected" : ""}`}
+              onClick={() => setGender("Kadın")}
+            >
+              ♀ Kadın
+            </button>
+            <button
+              className={`pill ${gender === "Erkek" ? "selected" : ""}`}
+              onClick={() => setGender("Erkek")}
+            >
+              ♂ Erkek
+            </button>
+            <button
+              className={`pill live ${isLive ? "selected-live" : ""}`}
+              onClick={() => setIsLive((v) => !v)}
+            >
+              ≋ {isLive ? "Canlı Aktif" : "Canlı Konuşma"}
             </button>
           </div>
         </section>
 
-        <section className="chatArea">
-          <div className="quick">
-            {quickPrompts.map((prompt) => (
-              <button key={prompt} onClick={() => setInput(prompt)}>
-                {prompt}
-              </button>
-            ))}
-          </div>
-
+        <section className="chat-card">
           <div className="messages">
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={message.role === "user" ? "msg user" : "msg lyra"}
+                className={`message-row ${
+                  message.role === "user" ? "right" : "left"
+                }`}
               >
-                <span>{message.role === "user" ? "Sen" : "Lyra"}</span>
-                <p>{message.text}</p>
+                {message.role === "lyra" && <div className="lyra-icon">✦</div>}
+
+                <div className={`bubble ${message.role}`}>
+                  <p>{message.text}</p>
+                  <span>{message.time}</span>
+                </div>
               </div>
             ))}
 
-            {loading && (
-              <div className="msg lyra">
-                <span>Lyra</span>
-                <p>Cevabı hazırlıyorum...</p>
+            {isLoading && (
+              <div className="message-row left">
+                <div className="lyra-icon">✦</div>
+                <div className="bubble lyra typing">
+                  <p>Lyra düşünüyor...</p>
+                </div>
               </div>
             )}
-
-            <div ref={endRef} />
           </div>
 
-          <div className="composer">
-            <textarea
+          <div className="prompt-line">
+            Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım.
+          </div>
+
+          <div className="input-area">
+            <div className="input-tools">
+              <button>📎</button>
+              <button>☷</button>
+              <button className="pdf">PDF</button>
+            </div>
+
+            <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Lyra’ya yaz..."
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Lyra'ya bir şey sor veya yaz..."
             />
 
-            <button onClick={() => sendMessage()} disabled={loading}>
-              {loading ? "..." : "Gönder"}
-            </button>
-          </div>
-
-          <div className="bottomControls">
-            <button
-              className={voiceEnabled ? "smallToggle on" : "smallToggle"}
-              onClick={() => setVoiceEnabled((prev) => !prev)}
-            >
-              Sesli cevap: {voiceEnabled ? "Açık" : "Kapalı"}
-            </button>
-
-            <button className="smallToggle" onClick={startListening}>
-              Mikrofon
-            </button>
-
-            <button className="smallToggle" onClick={stopAllVoice}>
-              Sesi kes
+            <button className="send" onClick={sendMessage}>
+              ▶
             </button>
           </div>
         </section>
+
+        <section className="feature-grid">
+          {features.map((feature) => (
+            <button className="feature-card" key={feature.title}>
+              <span className="feature-icon">{feature.icon}</span>
+              <b>{feature.title}</b>
+              <p>{feature.desc}</p>
+              <small>⌄</small>
+            </button>
+          ))}
+        </section>
       </section>
 
-      <style jsx>{`
-        .page {
-          min-height: 100vh;
-          display: flex;
-          justify-content: center;
-          align-items: stretch;
-          padding: 24px;
-          color: #2b2114;
-          background:
-            radial-gradient(circle at top left, rgba(255, 236, 153, 0.9), transparent 28%),
-            radial-gradient(circle at top right, rgba(255, 255, 255, 0.9), transparent 24%),
-            radial-gradient(circle at bottom, rgba(255, 196, 87, 0.45), transparent 34%),
-            linear-gradient(135deg, #fff8df 0%, #fffdf7 45%, #f7d774 100%);
+      <aside className="phone-wrap">
+        <div className="phone">
+          <div className="phone-screen">
+            <div className="phone-status">
+              <b>9:41</b>
+              <span>▮▮▮</span>
+            </div>
+
+            <div className="phone-head">
+              <button>☰</button>
+              <b>LYRA</b>
+              <button>⌄</button>
+            </div>
+
+            <div className="phone-logo-card">
+              <img src={LYRA_AVATAR} alt="Lyra mobile avatar" />
+            </div>
+
+            <div className="phone-controls">
+              <button>≋ Ses: Gemini Live</button>
+              <button>♬ Sessize AI</button>
+              <button>Kadın</button>
+              <button>Erkek</button>
+              <button className="wide">≋ Canlı Konuşma ›</button>
+            </div>
+
+            <div className="phone-input">
+              <span>Lyra’ya bir şey sor veya yaz...</span>
+              <button>▶</button>
+            </div>
+
+            <div className="phone-features">
+              {features.slice(0, 6).map((f) => (
+                <button key={f.title}>
+                  <span>{f.icon}</span>
+                  {f.title}
+                </button>
+              ))}
+              <button className="wide">≋ Canlı Mod</button>
+            </div>
+
+            <div className="phone-bottom">
+              <span>✦</span>
+              <span>□</span>
+              <span>◷</span>
+              <span>♙</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <style jsx global>{`
+        * {
+          box-sizing: border-box;
         }
 
-        .phoneShell {
-          width: min(1180px, 100%);
-          min-height: calc(100vh - 48px);
-          display: grid;
-          grid-template-columns: 430px minmax(0, 1fr);
-          gap: 20px;
-        }
-
-        .topArea {
-          grid-column: 1 / -1;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 18px 22px;
-          border-radius: 34px;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(255, 255, 255, 0.75);
-          box-shadow: 0 24px 70px rgba(155, 113, 23, 0.16);
-          backdrop-filter: blur(20px);
-        }
-
-        .miniTitle {
-          margin: 0 0 4px;
-          color: #a37012;
-          font-size: 12px;
-          font-weight: 900;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-        }
-
-        h1,
-        h2,
-        p {
+        body {
           margin: 0;
-        }
-
-        h1 {
-          color: #21170c;
-          font-size: 42px;
-          line-height: 1;
-          letter-spacing: -1.6px;
-        }
-
-        h2 {
-          color: #2b2114;
-          font-size: 22px;
-          letter-spacing: -0.4px;
-        }
-
-        p {
-          color: #7c6131;
-          line-height: 1.55;
-        }
-
-        .statusBox {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 150px;
-          padding: 12px 14px;
-          border-radius: 24px;
-          background: rgba(255, 255, 255, 0.7);
-          border: 1px solid rgba(224, 169, 45, 0.22);
-        }
-
-        .statusBox small {
-          display: block;
-          color: #b28422;
-          font-size: 11px;
-          font-weight: 900;
-        }
-
-        .statusBox strong {
-          display: block;
-          color: #3a2a14;
-          font-size: 14px;
-        }
-
-        .statusDot {
-          width: 12px;
-          height: 12px;
-          border-radius: 999px;
-          background: #c9b37d;
-          box-shadow: 0 0 0 5px rgba(201, 179, 125, 0.18);
-        }
-
-        .statusDot.active {
-          background: #22c55e;
-          box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.16);
-        }
-
-        .avatarStage,
-        .chatArea {
-          border-radius: 38px;
-          background: rgba(255, 255, 255, 0.68);
-          border: 1px solid rgba(255, 255, 255, 0.8);
-          box-shadow: 0 28px 80px rgba(155, 113, 23, 0.16);
-          backdrop-filter: blur(22px);
-        }
-
-        .avatarStage {
-          position: relative;
-          overflow: hidden;
-          padding: 28px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          min-height: 720px;
-        }
-
-        .avatarStage::before {
-          content: "";
-          position: absolute;
-          inset: -80px;
           background:
-            radial-gradient(circle at 50% 18%, rgba(255,255,255,0.95), transparent 18%),
-            radial-gradient(circle at 50% 45%, rgba(255, 210, 82, 0.62), transparent 28%),
-            radial-gradient(circle at 40% 72%, rgba(255, 244, 188, 0.75), transparent 28%);
-          filter: blur(10px);
+            radial-gradient(
+              circle at 50% 0%,
+              rgba(180, 190, 255, 0.24),
+              transparent 34%
+            ),
+            linear-gradient(135deg, #f7f8fb 0%, #edf0f5 100%);
+          color: #111827;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
         }
 
-        .avatarAura {
-          position: relative;
-          width: 310px;
-          height: 310px;
-          display: grid;
-          place-items: center;
-          z-index: 1;
-          margin-top: 10px;
-        }
-
-        .avatarAura.active,
-        .avatarAura.live {
-          animation: auraPulse 1.7s ease-in-out infinite;
-        }
-
-        .halo {
-          position: absolute;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 189, 46, 0.25);
-          background: rgba(255, 225, 125, 0.12);
-        }
-
-        .halo.one {
-          width: 300px;
-          height: 300px;
-          animation: spin 12s linear infinite;
-        }
-
-        .halo.two {
-          width: 245px;
-          height: 245px;
-          animation: spin 9s linear infinite reverse;
-        }
-
-        .halo.three {
-          width: 190px;
-          height: 190px;
-          background: rgba(255, 255, 255, 0.28);
-          box-shadow: inset 0 0 35px rgba(255, 255, 255, 0.9);
-        }
-
-        .avatar {
-          position: relative;
-          width: 190px;
-          height: 240px;
-          z-index: 2;
-          animation: float 4s ease-in-out infinite;
-        }
-
-        .avatar.listening,
-        .avatar.speaking,
-        .avatar.thinking {
-          animation: floatFast 1.2s ease-in-out infinite;
-        }
-
-        .hair {
-          position: absolute;
-          top: 36px;
-          width: 78px;
-          height: 130px;
-          background: linear-gradient(180deg, #f6c357, #b97917);
-          border-radius: 60px 60px 70px 70px;
-          z-index: 1;
-        }
-
-        .hairLeft {
-          left: 21px;
-          transform: rotate(9deg);
-        }
-
-        .hairRight {
-          right: 21px;
-          transform: rotate(-9deg);
-        }
-
-        .head {
-          position: absolute;
-          top: 34px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 128px;
-          height: 142px;
-          border-radius: 48% 48% 45% 45%;
-          background: linear-gradient(180deg, #ffe1b8, #f6b982);
-          box-shadow:
-            inset 0 9px 20px rgba(255, 255, 255, 0.45),
-            0 20px 40px rgba(135, 83, 10, 0.24);
-          z-index: 3;
-          overflow: hidden;
-        }
-
-        .shine {
-          position: absolute;
-          top: 20px;
-          left: 23px;
-          width: 28px;
-          height: 18px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.34);
-          filter: blur(2px);
-        }
-
-        .eyes {
-          position: absolute;
-          top: 68px;
-          left: 0;
-          right: 0;
-          display: flex;
-          justify-content: center;
-          gap: 28px;
-        }
-
-        .eyes span {
-          width: 10px;
-          height: 15px;
-          border-radius: 999px;
-          background: #3b2615;
-          animation: blink 5s infinite;
-        }
-
-        .cheeks {
-          position: absolute;
-          top: 92px;
-          left: 0;
-          right: 0;
-          display: flex;
-          justify-content: center;
-          gap: 48px;
-        }
-
-        .cheeks i {
-          width: 18px;
-          height: 9px;
-          border-radius: 999px;
-          background: rgba(255, 117, 117, 0.28);
-        }
-
-        .mouth {
-          position: absolute;
-          top: 104px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 28px;
-          height: 8px;
-          border-radius: 0 0 999px 999px;
-          background: #8a3e2c;
-        }
-
-        .mouth.moving {
-          animation: mouthTalk 0.55s ease-in-out infinite;
-        }
-
-        .neck {
-          position: absolute;
-          top: 164px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 40px;
-          height: 34px;
-          border-radius: 0 0 18px 18px;
-          background: #eaa873;
-          z-index: 2;
-        }
-
-        .body {
-          position: absolute;
-          bottom: 0;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 150px;
-          height: 82px;
-          border-radius: 58px 58px 28px 28px;
-          background: linear-gradient(135deg, #fff7d6, #f7c948, #f59e0b);
-          box-shadow: 0 18px 34px rgba(135, 83, 10, 0.2);
-          z-index: 1;
-        }
-
-        .collar {
-          position: absolute;
-          top: 10px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 68px;
-          height: 26px;
-          border-radius: 0 0 32px 32px;
-          background: rgba(255, 255, 255, 0.56);
-        }
-
-        .waveArea {
-          position: relative;
-          z-index: 1;
-          height: 50px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          margin-top: 8px;
-        }
-
-        .bar {
-          width: 7px;
-          height: 12px;
-          border-radius: 999px;
-          background: rgba(184, 128, 22, 0.35);
-        }
-
-        .bar.on {
-          background: linear-gradient(180deg, #facc15, #f97316);
-          animation: soundBars 0.9s ease-in-out infinite;
-        }
-
-        .bar:nth-child(2) {
-          animation-delay: 0.12s;
-        }
-
-        .bar:nth-child(3) {
-          animation-delay: 0.24s;
-        }
-
-        .bar:nth-child(4) {
-          animation-delay: 0.36s;
-        }
-
-        .bar:nth-child(5) {
-          animation-delay: 0.48s;
-        }
-
-        .avatarText {
-          position: relative;
-          z-index: 1;
-          max-width: 330px;
-          margin-top: 6px;
-        }
-
-        .avatarText h2 {
-          margin-bottom: 8px;
-        }
-
-        .heard {
-          position: relative;
-          z-index: 1;
-          width: 100%;
-          margin-top: 18px;
-          text-align: left;
-          padding: 15px;
-          border-radius: 24px;
-          background: rgba(255, 255, 255, 0.62);
-          border: 1px solid rgba(255, 207, 89, 0.4);
-        }
-
-        .heard small {
-          color: #b28422;
-          font-weight: 900;
-        }
-
-        .heard p {
-          color: #3a2a14;
-          margin-top: 5px;
-          font-size: 14px;
-        }
-
-        .voiceButtons {
-          position: relative;
-          z-index: 1;
-          display: grid;
-          grid-template-columns: 1.4fr 1fr 1fr;
-          gap: 10px;
-          width: 100%;
-          margin-top: 22px;
+        button,
+        input {
+          font: inherit;
         }
 
         button {
-          font-family: inherit;
+          cursor: pointer;
+          border: 0;
         }
 
-        .mainVoice,
-        .ghost,
-        .quick button,
-        .composer button,
-        .smallToggle {
-          border: none;
-          cursor: pointer;
-          border-radius: 20px;
-          padding: 14px 16px;
-          font-weight: 900;
+        .lyra-page {
+          min-height: 100vh;
+          display: grid;
+          grid-template-columns: 260px minmax(760px, 1fr) 330px;
+          gap: 18px;
+          padding: 16px;
+          overflow-x: hidden;
+        }
+
+        .sidebar,
+        .desktop,
+        .phone-wrap {
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          background: rgba(255, 255, 255, 0.68);
+          backdrop-filter: blur(22px);
+          box-shadow:
+            0 24px 70px rgba(15, 23, 42, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        }
+
+        .sidebar {
+          border-radius: 28px;
+          padding: 26px 18px;
+          display: flex;
+          flex-direction: column;
+          min-height: calc(100vh - 32px);
+        }
+
+        .brand {
+          font-size: 34px;
+          font-weight: 950;
+          letter-spacing: 6px;
+          margin: 0 0 22px 14px;
+          color: #101827;
+        }
+
+        .nav {
+          display: grid;
+          gap: 12px;
+        }
+
+        .nav-item {
+          height: 54px;
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.76);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 0 18px;
+          color: #151922;
+          font-weight: 850;
           transition: 0.2s ease;
         }
 
-        .mainVoice {
-          color: #281707;
-          background: linear-gradient(135deg, #fde047, #f59e0b);
-          box-shadow: 0 16px 34px rgba(245, 158, 11, 0.35);
-        }
-
-        .ghost,
-        .quick button,
-        .smallToggle {
-          color: #6d4b16;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(224, 169, 45, 0.24);
-        }
-
-        .ghost.liveOn,
-        .smallToggle.on {
-          color: white;
-          background: linear-gradient(135deg, #f59e0b, #b45309);
-          border-color: transparent;
-        }
-
-        .mainVoice:hover,
-        .ghost:hover,
-        .quick button:hover,
-        .composer button:hover,
-        .smallToggle:hover {
+        .nav-item:hover,
+        .nav-item.active {
           transform: translateY(-1px);
-          box-shadow: 0 12px 26px rgba(155, 113, 23, 0.15);
+          background: #ffffff;
+          box-shadow: 0 18px 34px rgba(98, 91, 255, 0.13);
         }
 
-        .pulse {
-          animation: buttonPulse 1s infinite;
-        }
-
-        .chatArea {
-          padding: 22px;
-          display: flex;
-          flex-direction: column;
-          min-height: 720px;
-        }
-
-        .quick {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin-bottom: 16px;
-        }
-
-        .quick button {
-          padding: 10px 13px;
+        .nav-item.active span {
+          width: 28px;
+          height: 28px;
           border-radius: 999px;
+          background: linear-gradient(135deg, #7068ff, #8e84ff);
+          color: #fff;
+          display: grid;
+          place-items: center;
+        }
+
+        .sidebar-bottom {
+          margin-top: auto;
+          display: grid;
+          gap: 12px;
+        }
+
+        .pro-card,
+        .profile-card,
+        .usage-card,
+        .weather-card {
+          border-radius: 20px;
+          background: rgba(255, 255, 255, 0.8);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
+          padding: 16px;
+        }
+
+        .pro-card {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: linear-gradient(135deg, #ffffff, #f1efff);
+        }
+
+        .spark {
+          color: #766cff;
+          font-size: 24px;
+        }
+
+        .pro-card b,
+        .profile-card b {
+          display: block;
+          font-size: 15px;
+        }
+
+        .pro-card p,
+        .profile-card p,
+        .weather-card p,
+        .usage-card p {
+          margin: 2px 0 0;
           font-size: 13px;
+          color: #667085;
+          font-weight: 700;
+        }
+
+        .profile-card,
+        .weather-card {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .avatar-mini {
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          background: linear-gradient(135deg, #4b5563, #111827);
+          color: white;
+          font-weight: 900;
+        }
+
+        .chev {
+          margin-left: auto;
+        }
+
+        .usage-top {
+          display: flex;
+          justify-content: space-between;
+          font-size: 13px;
+          font-weight: 850;
+        }
+
+        .usage-top b {
+          color: #6d63ff;
+        }
+
+        .bar {
+          height: 8px;
+          margin: 12px 0 8px;
+          border-radius: 999px;
+          background: #e6e9f1;
+          overflow: hidden;
+        }
+
+        .bar div {
+          width: 68%;
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #7068ff, #a39cff);
+        }
+
+        .weather-card span:first-child {
+          font-size: 26px;
+        }
+
+        .weather-card span:last-child {
+          margin-left: auto;
+          font-size: 22px;
+        }
+
+        .desktop {
+          min-height: calc(100vh - 32px);
+          border-radius: 28px;
+          padding: 22px 26px 18px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .desktop::before {
+          content: "";
+          position: absolute;
+          width: 520px;
+          height: 520px;
+          border-radius: 50%;
+          top: -180px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: radial-gradient(
+            circle,
+            rgba(120, 112, 255, 0.16),
+            transparent 67%
+          );
+          pointer-events: none;
+        }
+
+        .topbar {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          z-index: 2;
+        }
+
+        .topbar h1 {
+          margin: 2px 0 10px;
+          font-size: clamp(24px, 3vw, 36px);
+          letter-spacing: 9px;
+          text-align: center;
+          font-weight: 950;
+        }
+
+        .about {
+          position: absolute;
+          right: 0;
+          top: 0;
+          height: 44px;
+          padding: 0 18px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.8);
+          color: #111827;
+          font-weight: 900;
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        .hero {
+          display: grid;
+          place-items: center;
+          position: relative;
+          z-index: 2;
+          padding-top: 2px;
+        }
+
+        .avatar-glow {
+          width: 235px;
+          height: 235px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          background:
+            radial-gradient(
+              circle,
+              rgba(255, 255, 255, 1),
+              rgba(230, 233, 241, 0.6) 55%,
+              transparent 70%
+            ),
+            conic-gradient(
+              from 120deg,
+              rgba(120, 112, 255, 0.12),
+              rgba(255, 255, 255, 0.9),
+              rgba(120, 112, 255, 0.12)
+            );
+        }
+
+        .avatar-frame {
+          width: 150px;
+          height: 205px;
+          border-radius: 28px;
+          border: 1px solid rgba(17, 24, 39, 0.12);
+          background: linear-gradient(180deg, #ffffff, #eef1f6);
+          overflow: hidden;
+          position: relative;
+          box-shadow:
+            0 22px 60px rgba(15, 23, 42, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        }
+
+        .avatar-frame img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .control-row {
+          margin-top: 8px;
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        .pill {
+          min-height: 48px;
+          padding: 0 22px;
+          border-radius: 17px;
+          background: rgba(255, 255, 255, 0.84);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 14px 28px rgba(15, 23, 42, 0.05);
+          font-weight: 900;
+          color: #121826;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          transition: 0.2s ease;
+        }
+
+        .pill:hover {
+          transform: translateY(-1px);
+        }
+
+        .pill.selected,
+        .pill.selected-live {
+          color: #5d55ff;
+          background: #ffffff;
+          box-shadow: 0 18px 34px rgba(98, 91, 255, 0.16);
+        }
+
+        .chat-card {
+          margin-top: 18px;
+          border-radius: 26px;
+          background: rgba(255, 255, 255, 0.74);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow:
+            0 24px 70px rgba(15, 23, 42, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.78);
+          padding: 18px;
+          position: relative;
+          z-index: 2;
         }
 
         .messages {
-          flex: 1;
+          height: 260px;
           overflow-y: auto;
+          padding: 4px 6px;
           display: flex;
           flex-direction: column;
           gap: 12px;
-          padding: 8px 4px 16px;
-          max-height: calc(100vh - 290px);
-          min-height: 420px;
         }
 
-        .msg {
-          width: fit-content;
-          max-width: 80%;
-          border-radius: 24px;
-          padding: 13px 15px;
-          box-shadow: 0 12px 26px rgba(155, 113, 23, 0.08);
-        }
-
-        .msg span {
-          display: block;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          margin-bottom: 5px;
-        }
-
-        .msg p {
-          white-space: pre-wrap;
-        }
-
-        .msg.lyra {
-          align-self: flex-start;
-          background: rgba(255, 255, 255, 0.78);
-          border: 1px solid rgba(224, 169, 45, 0.18);
-        }
-
-        .msg.lyra span {
-          color: #b28422;
-        }
-
-        .msg.lyra p {
-          color: #4a3517;
-        }
-
-        .msg.user {
-          align-self: flex-end;
-          background: linear-gradient(135deg, #3a2a14, #7c4a03);
-          color: white;
-        }
-
-        .msg.user span,
-        .msg.user p {
-          color: white;
-        }
-
-        .composer {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 10px;
-          padding-top: 14px;
-          border-top: 1px solid rgba(224, 169, 45, 0.18);
-        }
-
-        textarea {
-          width: 100%;
-          min-height: 76px;
-          max-height: 150px;
-          resize: vertical;
-          box-sizing: border-box;
-          border-radius: 24px;
-          border: 1px solid rgba(224, 169, 45, 0.24);
-          background: rgba(255, 255, 255, 0.78);
-          outline: none;
-          padding: 16px 17px;
-          color: #3a2a14;
-          font-size: 15px;
-          line-height: 1.5;
-        }
-
-        textarea:focus {
-          border-color: rgba(245, 158, 11, 0.55);
-          box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.13);
-        }
-
-        .composer button {
-          color: #281707;
-          background: linear-gradient(135deg, #fde047, #f59e0b);
-          min-width: 105px;
-          box-shadow: 0 14px 28px rgba(245, 158, 11, 0.25);
-        }
-
-        .composer button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .bottomControls {
+        .message-row {
           display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin-top: 12px;
+          align-items: flex-start;
+          gap: 12px;
         }
 
-        .smallToggle {
-          padding: 10px 13px;
+        .message-row.right {
+          justify-content: flex-end;
+        }
+
+        .lyra-icon {
+          width: 34px;
+          height: 34px;
           border-radius: 999px;
+          display: grid;
+          place-items: center;
+          background: #f3f1ff;
+          color: #766cff;
+          flex: 0 0 auto;
+        }
+
+        .bubble {
+          max-width: 82%;
+          border-radius: 18px;
+          padding: 14px 16px;
+          white-space: pre-line;
+          font-weight: 760;
+          line-height: 1.46;
+          position: relative;
+        }
+
+        .bubble p {
+          margin: 0;
+        }
+
+        .bubble span {
+          display: block;
+          margin-top: 8px;
+          text-align: right;
+          color: #667085;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .bubble.lyra {
+          background: #ffffff;
+          border: 1px solid rgba(17, 24, 39, 0.08);
+        }
+
+        .bubble.user {
+          background: linear-gradient(135deg, #f4f1ff, #ffffff);
+          border: 1px solid rgba(118, 108, 255, 0.16);
+        }
+
+        .typing {
+          color: #667085;
+        }
+
+        .prompt-line {
+          margin: 10px 0 16px;
+          font-weight: 950;
+          color: #4b5563;
+        }
+
+        .input-area {
+          min-height: 76px;
+          border-radius: 22px;
+          background: rgba(255, 255, 255, 0.82);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+        }
+
+        .input-tools {
+          display: flex;
+          gap: 8px;
+        }
+
+        .input-tools button,
+        .send {
+          width: 42px;
+          height: 42px;
+          border-radius: 999px;
+          background: #ffffff;
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+          font-weight: 950;
+        }
+
+        .input-tools .pdf {
+          width: auto;
+          padding: 0 14px;
+        }
+
+        .input-area input {
+          flex: 1;
+          height: 48px;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          font-weight: 760;
+          color: #111827;
+        }
+
+        .send {
+          color: white;
+          background: linear-gradient(135deg, #7068ff, #8f86ff);
+          box-shadow: 0 18px 34px rgba(98, 91, 255, 0.28);
+        }
+
+        .feature-grid {
+          margin-top: 16px;
+          display: grid;
+          grid-template-columns: repeat(7, minmax(110px, 1fr));
+          gap: 12px;
+          position: relative;
+          z-index: 2;
+        }
+
+        .feature-card {
+          min-height: 150px;
+          padding: 18px 12px 14px;
+          border-radius: 22px;
+          background: rgba(255, 255, 255, 0.82);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          transition: 0.2s ease;
+        }
+
+        .feature-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 24px 52px rgba(98, 91, 255, 0.12);
+        }
+
+        .feature-icon {
+          font-size: 28px;
+          color: #6d63ff;
+          height: 35px;
+        }
+
+        .feature-card b {
+          font-size: 14px;
+          margin-top: 6px;
+        }
+
+        .feature-card p {
+          margin: 8px 0 10px;
+          color: #4b5563;
+          font-size: 12px;
+          line-height: 1.35;
+          font-weight: 720;
+        }
+
+        .feature-card small {
+          margin-top: auto;
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          display: grid;
+          place-items: center;
+          background: #ffffff;
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          color: #111827;
+          font-weight: 950;
+        }
+
+        .phone-wrap {
+          border-radius: 28px;
+          min-height: calc(100vh - 32px);
+          display: grid;
+          place-items: center;
+          padding: 18px;
+        }
+
+        .phone {
+          width: 292px;
+          height: 640px;
+          border-radius: 42px;
+          padding: 9px;
+          background: linear-gradient(145deg, #111827, #2f3541);
+          box-shadow:
+            0 34px 85px rgba(15, 23, 42, 0.22),
+            inset 0 0 0 2px rgba(255, 255, 255, 0.1);
+        }
+
+        .phone-screen {
+          height: 100%;
+          border-radius: 34px;
+          background:
+            radial-gradient(
+              circle at 50% 18%,
+              rgba(118, 108, 255, 0.16),
+              transparent 30%
+            ),
+            linear-gradient(180deg, #ffffff, #f1f3f7);
+          padding: 18px 14px;
+          overflow: hidden;
+        }
+
+        .phone-status,
+        .phone-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .phone-status {
           font-size: 13px;
+          margin-bottom: 18px;
         }
 
-        @keyframes float {
-          0%,
-          100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-10px);
-          }
+        .phone-head button {
+          width: 32px;
+          height: 32px;
+          border-radius: 999px;
+          background: #ffffff;
+          border: 1px solid rgba(17, 24, 39, 0.08);
         }
 
-        @keyframes floatFast {
-          0%,
-          100% {
-            transform: translateY(0) scale(1);
-          }
-          50% {
-            transform: translateY(-7px) scale(1.025);
-          }
+        .phone-head b {
+          font-size: 22px;
+          letter-spacing: 4px;
+          font-weight: 950;
         }
 
-        @keyframes auraPulse {
-          0%,
-          100% {
-            transform: scale(1);
-            filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
-          }
-          50% {
-            transform: scale(1.025);
-            filter: drop-shadow(0 0 28px rgba(245, 158, 11, 0.38));
-          }
+        .phone-logo-card {
+          width: 136px;
+          height: 166px;
+          margin: 20px auto 14px;
+          border-radius: 22px;
+          background: linear-gradient(145deg, #ffffff, #f0efff);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 24px 46px rgba(15, 23, 42, 0.08);
+          overflow: hidden;
         }
 
-        @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
+        .phone-logo-card img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
         }
 
-        @keyframes blink {
-          0%,
-          92%,
-          100% {
-            transform: scaleY(1);
-          }
-          95% {
-            transform: scaleY(0.1);
-          }
+        .phone-controls {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
         }
 
-        @keyframes mouthTalk {
-          0%,
-          100% {
-            width: 24px;
-            height: 7px;
-          }
-          50% {
-            width: 34px;
-            height: 16px;
-            border-radius: 999px;
-          }
+        .phone-controls button,
+        .phone-input,
+        .phone-features button {
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(17, 24, 39, 0.08);
+          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+          min-height: 40px;
+          font-size: 11px;
+          font-weight: 900;
         }
 
-        @keyframes soundBars {
-          0%,
-          100% {
-            height: 12px;
-          }
-          50% {
-            height: 38px;
-          }
+        .phone-controls .wide,
+        .phone-features .wide {
+          grid-column: 1 / -1;
         }
 
-        @keyframes buttonPulse {
-          0%,
-          100% {
-            transform: scale(1);
+        .phone-input {
+          margin: 12px 0;
+          height: 48px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 10px;
+          color: #98a2b3;
+          font-size: 11px;
+        }
+
+        .phone-input button {
+          width: 34px;
+          height: 34px;
+          border-radius: 999px;
+          color: #fff;
+          background: linear-gradient(135deg, #7068ff, #8f86ff);
+        }
+
+        .phone-features {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+        }
+
+        .phone-features button {
+          min-height: 62px;
+          padding: 6px 4px;
+          display: grid;
+          place-items: center;
+          line-height: 1.1;
+        }
+
+        .phone-features button span {
+          color: #6d63ff;
+          font-size: 17px;
+        }
+
+        .phone-bottom {
+          margin-top: 14px;
+          height: 46px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.78);
+          display: flex;
+          justify-content: space-around;
+          align-items: center;
+          color: #667085;
+        }
+
+        .phone-bottom span:first-child {
+          color: #6d63ff;
+        }
+
+        @media (max-width: 1380px) {
+          .lyra-page {
+            grid-template-columns: 230px minmax(680px, 1fr);
           }
-          50% {
-            transform: scale(1.03);
+
+          .phone-wrap {
+            display: none;
+          }
+
+          .feature-grid {
+            grid-template-columns: repeat(4, 1fr);
           }
         }
 
         @media (max-width: 980px) {
-          .page {
-            padding: 14px;
-          }
-
-          .phoneShell {
+          .lyra-page {
             grid-template-columns: 1fr;
-            min-height: auto;
+            padding: 10px;
           }
 
-          .topArea {
-            flex-direction: column;
-            align-items: flex-start;
+          .sidebar {
+            min-height: auto;
+            border-radius: 24px;
           }
 
-          .avatarStage,
-          .chatArea {
+          .sidebar-bottom {
+            display: none;
+          }
+
+          .nav {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .desktop {
             min-height: auto;
+            padding: 18px;
+          }
+
+          .topbar h1 {
+            letter-spacing: 4px;
+            font-size: 22px;
+          }
+
+          .about {
+            display: none;
+          }
+
+          .avatar-glow {
+            width: 190px;
+            height: 190px;
+          }
+
+          .avatar-frame {
+            width: 126px;
+            height: 168px;
+          }
+
+          .control-row {
+            gap: 8px;
+          }
+
+          .pill {
+            min-height: 42px;
+            padding: 0 14px;
+            font-size: 13px;
           }
 
           .messages {
-            max-height: 520px;
+            height: 310px;
+          }
+
+          .bubble {
+            max-width: 92%;
+          }
+
+          .input-area {
+            flex-wrap: wrap;
+          }
+
+          .input-area input {
+            order: -1;
+            flex-basis: 100%;
+          }
+
+          .feature-grid {
+            grid-template-columns: repeat(2, 1fr);
           }
         }
 
         @media (max-width: 560px) {
-          h1 {
-            font-size: 34px;
-          }
-
-          .avatarAura {
-            width: 270px;
-            height: 270px;
-          }
-
-          .voiceButtons {
+          .nav {
             grid-template-columns: 1fr;
           }
 
-          .composer {
+          .feature-grid {
             grid-template-columns: 1fr;
           }
 
-          .composer button {
-            width: 100%;
-          }
-
-          .msg {
-            max-width: 92%;
+          .brand {
+            font-size: 30px;
           }
         }
       `}</style>
