@@ -1,268 +1,106 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-type Mode = "analysis" | "formula";
+type Role = "user" | "lyra";
+
+type Message = {
+  id: number;
+  role: Role;
+  text: string;
+};
+
+type ModuleKey = "chat" | "creator" | "pdf" | "study" | "settings";
 
 export default function Home() {
-  const [mode, setMode] = useState<Mode>("analysis");
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 1,
+      role: "lyra",
+      text: "Merhaba Merve ✨ Ben Lyra. Yazabilir, sesle konuşabilir ya da canlı moda geçebilirsin.",
+    },
+  ]);
+
+  const [input, setInput] = useState("");
+  const [activeModule, setActiveModule] = useState<ModuleKey>("chat");
   const [loading, setLoading] = useState(false);
-  const [showAllTrends, setShowAllTrends] = useState(false);
-  const [showFormulaPanel, setShowFormulaPanel] = useState(true);
+  const [listening, setListening] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [liveMode, setLiveMode] = useState(false);
+  const [statusText, setStatusText] = useState("Hazır");
+  const [lastHeard, setLastHeard] = useState("");
 
-  const exampleQuestions = useMemo(
-    () => [
-      "Çıkış suyunda KOİ yüksek ama numune berrak değil. Kit ile ölçüm yaptım, neden olabilir?",
-      "Toplam azot ve nitrat sonucu uyumsuz çıkıyor. Nasıl yorumlanır?",
-      "Krem formülünde pH neden zamanla yükselir?",
-      "Amonyum yüksek, nitrit düşük, nitrat yüksekse proses ne anlatır?",
-    ],
-    []
-  );
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const recognitionRef = useRef<any>(null);
 
-  const exampleFormulas = useMemo(
-    () => [
-      "100 g nemlendirici krem bazı formülü hazırla.",
-      "SLES yerine daha nazik temizleyici alternatifleriyle jel formül yaz.",
-      "Yağlı cilt için niacinamide içeren serum formülü hazırla.",
-      "Panthenol ve allantoin içeren bariyer destekleyici krem formülü yaz.",
-    ],
-    []
-  );
-
-  const trends = [
-    {
-      name: "Niacinamide",
-      desc: "Sebum dengesi, ton eşitsizliği ve bariyer desteği için popüler aktif.",
-      detail:
-        "Genelde %2-5 aralığında kullanılır. Çok düşük pH sistemlerde stabilite ve tolerans kontrolü gerekir.",
-    },
-    {
-      name: "Panthenol",
-      desc: "Yatıştırıcı, nem destekleyici ve bariyer dostu yardımcı aktif.",
-      detail:
-        "Krem, serum, tonik ve saç bakım formüllerinde kullanılabilir. Hassas cilt ürünlerinde iyi konumlanır.",
-    },
-    {
-      name: "Allantoin",
-      desc: "Yatıştırıcı ve cilt konforunu artıran destekleyici hammadde.",
-      detail:
-        "Genelde düşük oranlarda kullanılır. Çözünürlük ve sıcaklık kontrolü önemlidir.",
-    },
-    {
-      name: "Betaine",
-      desc: "Nem desteği ve daha konforlu his için kullanılan yardımcı bileşen.",
-      detail:
-        "Temizleyici ve bakım ürünlerinde formül hissini yumuşatmak için değerlidir.",
-    },
-  ];
-
-  const localAnalysisAnswer = (text: string) => {
-    const q = text.toLowerCase();
-
-    if (q.includes("koi") || q.includes("koİ") || q.includes("cod")) {
-      return `### KOİ yüksek görünüyorsa olası nedenler
-
-KOİ yani Kimyasal Oksijen İhtiyacı, sudaki oksitlenebilir organik yükü gösterir. Çıkış suyu berrak değilse veya kit ile ölçüm yapılıyorsa sonuç birkaç sebeple yüksek çıkabilir.
-
-**Olası nedenler:**
-- Numunede askıda katı madde veya bulanıklık varsa kit sonucu olduğundan yüksek etkilenebilir.
-- Seyreltme doğru yapılmadıysa sonuç direkt sapar.
-- Reaktif, tüp veya pipet kontaminasyonu olabilir.
-- Numune iyi homojenize edilmemiş olabilir.
-- Arıtma prosesinde organik yük tam parçalanmamış olabilir.
-- Çıkış suyu berrak değilse filtrasyon/çöktürme performansı zayıflamış olabilir.
-
-**Ben olsam önce şunları kontrol ederdim:**
-1. Aynı numuneyi bir kez süzerek, bir kez süzmeden ölçerdim.
-2. Kör numune ve standart kontrol çalışırdım.
-3. Seyreltme katsayısını tekrar hesaplardım.
-4. Giriş-çıkış KOİ giderim yüzdesine bakardım.
-5. Havalandırma, çamur yaşı ve çökelme performansını birlikte değerlendirirdim.
-
-**Yorum:**  
-KOİ çıkışta tamamen sıfır olmak zorunda değildir. Ama çıkış standardına göre yüksekse ya ölçüm kaynaklı sapma vardır ya da proses organik yükü yeterince düşüremiyordur.`;
-    }
-
-    if (
-      q.includes("toplam azot") ||
-      q.includes("nitrat") ||
-      q.includes("tn") ||
-      q.includes("azot")
-    ) {
-      return `### Toplam azot - nitrat uyumsuzluğu nasıl yorumlanır?
-
-Normal mantıkta **Toplam Azot**, numunedeki farklı azot türlerinin toplamını temsil eder. Bu yüzden nitrat azotu, toplam azottan yüksek görünüyorsa burada teknik bir uyumsuzluk düşünülür.
-
-**Olası nedenler:**
-- Nitrat sonucu NO₃ olarak, toplam azot sonucu N olarak raporlanıyor olabilir.
-- Seyreltme katsayısı yanlış uygulanmış olabilir.
-- Kit aralığı aşılmış olabilir.
-- Cihazda yanlış metot seçilmiş olabilir.
-- Numune farklı saatlerden veya farklı karışım seviyelerinden alınmış olabilir.
-- Reaktif, küvet veya blank kaynaklı hata olabilir.
-
-**Önemli ayrım:**  
-Nitrat bazen **NO₃⁻ olarak**, bazen **NO₃-N olarak** verilir. Bu ikisi aynı şey değildir.
-
-Yaklaşık dönüşüm mantığı:
-- NO₃-N = NO₃ × 14 / 62
-- NO₃ = NO₃-N × 62 / 14
-
-**Benim net yorumum:**  
-Toplam azot 160 iken nitrat 548 gibi görünüyorsa önce birim ve raporlama formatı kontrol edilmeli. Büyük ihtimalle biri “azot cinsinden”, diğeri “nitrat iyonu cinsinden” okunuyor olabilir.`;
-    }
-
-    if (q.includes("ph") || q.includes("pH".toLowerCase())) {
-      return `### pH zamanla neden değişebilir?
-
-Bir formülde veya su numunesinde pH zamanla değişiyorsa bu genelde sistemin hâlâ kimyasal olarak oturmadığını gösterir.
-
-**Olası nedenler:**
-- Koruyucu sistem veya aktif madde pH'ı etkiliyor olabilir.
-- Emülgatör sistemi zamanla dengeye geliyor olabilir.
-- CO₂ kaybı veya hava teması pH'ı değiştirebilir.
-- Numunede mikrobiyal aktivite varsa pH değişebilir.
-- Tam çözünmeyen hammaddeler zamanla çözünüp pH'ı kaydırabilir.
-- pH probu kalibrasyonu hatalı olabilir.
-
-**Kontrol önerisi:**
-- pH’ı üretimden hemen sonra, 24 saat sonra ve 7 gün sonra ölç.
-- 25°C civarında ölçüm yap.
-- Prob kalibrasyonunu pH 4 ve pH 7 tamponlarıyla doğrula.
-- Formül kozmetikse hedef pH’ı cilt toleransına göre belirle.
-
-**Ben olsam:**  
-Tek ölçüme güvenmezdim. pH stabilitesi için küçük bir takip tablosu yapardım.`;
-    }
-
-    return `### Genel analiz yorumu
-
-Bu soruda net yorum yapabilmek için parametreleri birlikte okumak gerekir. Tek bir değere bakıp “kesin sorun bu” demek yanıltıcı olabilir.
-
-**Kontrol edilmesi gerekenler:**
-- Numune alma saati ve numunenin temsil gücü
-- Seyreltme katsayısı
-- Kitin ölçüm aralığı
-- Blank/kör numune sonucu
-- Cihazda seçilen metot
-- Giriş ve çıkış değerlerinin aynı gün/saat karşılaştırması
-- Numunenin bulanıklığı, rengi ve askıda katı madde durumu
-
-**Pratik yorum:**  
-Eğer sonuç beklenenden çok farklıysa önce ölçüm kaynaklı hataları elemek en doğru adım olur. Ölçüm doğruysa proses tarafında yük artışı, yetersiz havalandırma, çökelme problemi veya biyolojik aktivite zayıflığı düşünülür.`;
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 80);
   };
 
-  const localFormulaAnswer = (text: string) => {
-    const q = text.toLowerCase();
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
 
-    if (q.includes("temizleyici") || q.includes("sles") || q.includes("jel")) {
-      return `### Nazik temizleyici jel örnek formül - 100 g
-
-Bu formül SLES yerine daha yumuşak yüzey aktiflerle hazırlanmış temel bir jel temizleyici mantığıdır.
-
-| Faz | Hammadde | Oran |
-|---|---:|---:|
-| A | Distile su | %62.00 |
-| A | Glycerin | %4.00 |
-| A | Disodium EDTA | %0.10 |
-| B | Cocamidopropyl Betaine | %10.00 |
-| B | Decyl Glucoside | %8.00 |
-| B | Sodium Cocoyl Glutamate | %6.00 |
-| C | Panthenol | %1.00 |
-| C | Allantoin | %0.20 |
-| C | Koruyucu | %1.00 |
-| C | Kıvam ayarı / tuz veya uygun polimer | %0.50 - %1.20 |
-| C | pH ayarı | q.s. |
-|  | Toplam | %100 |
-
-**Hedef pH:** 5.2 - 5.8
-
-**Üretim mantığı:**
-1. Su fazında glycerin ve EDTA çözündürülür.
-2. Yüzey aktifler köpürtmeden yavaşça eklenir.
-3. Panthenol ve allantoin uygun sıcaklıkta eklenir.
-4. Koruyucu eklenir.
-5. pH sitrik asit veya laktik asit ile ayarlanır.
-6. Kıvam son aşamada kontrollü yükseltilir.
-
-**Not:**  
-Glucoside bazlı sistemlerde pH ayarı sonrası kıvam değişebilir. O yüzden pH’tan önce son kıvam kararını verme kanka.`;
-    }
-
-    if (
-      q.includes("serum") ||
-      q.includes("niacinamide") ||
-      q.includes("yağlı")
-    ) {
-      return `### Yağlı cilt için niacinamide serum örneği - 100 g
-
-| Faz | Hammadde | Oran |
-|---|---:|---:|
-| A | Distile su | %78.20 |
-| A | Glycerin | %3.00 |
-| A | Propanediol | %5.00 |
-| A | Niacinamide | %4.00 |
-| A | Zinc PCA | %0.50 |
-| B | Panthenol | %1.00 |
-| B | Hyaluronic Acid çözeltisi | %5.00 |
-| B | Koruyucu | %1.00 |
-| B | Kıvam verici | %0.30 |
-| B | pH ayarı | q.s. |
-|  | Toplam | %100 |
-
-**Hedef pH:** 5.5 - 6.2
-
-**Formül yorumu:**  
-Niacinamide çok asidik sistemleri sevmez. Bu yüzden pH’ı 5’in altına sert düşürmemek daha mantıklı olur.
-
-**Üretim mantığı:**
-1. Su, glycerin ve propanediol karıştırılır.
-2. Niacinamide tamamen çözündürülür.
-3. Zinc PCA eklenir.
-4. Kıvam verici ayrı disperse edilip sisteme alınır.
-5. Panthenol, HA çözeltisi ve koruyucu eklenir.
-6. pH son kontrolde ayarlanır.
-
-**Ben olsam:**  
-Bu formülü “parlama karşıtı ama bariyeri bozmayan serum” diye konumlandırırdım. İçerik anlatımı da çok güzel çıkar.`;
-    }
-
-    return `### Nemlendirici krem bazı örnek formül - 100 g
-
-| Faz | Hammadde | Oran |
-|---|---:|---:|
-| A | Distile su | %69.30 |
-| A | Glycerin | %4.00 |
-| A | Disodium EDTA | %0.10 |
-| B | Caprylic/Capric Triglyceride | %7.00 |
-| B | Cetearyl Alcohol | %3.00 |
-| B | Glyceryl Stearate Citrate | %3.00 |
-| B | Shea Butter | %4.00 |
-| C | Panthenol | %1.50 |
-| C | Allantoin | %0.20 |
-| C | Koruyucu | %1.00 |
-| C | Parfüm / esans | %0.20 |
-| C | pH ayarı | q.s. |
-|  | Toplam | %100 |
-
-**Hedef pH:** 5.2 - 5.8
-
-**Üretim adımları:**
-1. A fazı ve B fazı ayrı ayrı yaklaşık 70-75°C’ye ısıtılır.
-2. B fazı A fazına yavaşça eklenir ve homojenize edilir.
-3. Karışım soğurken düşük devirde karıştırmaya devam edilir.
-4. 40°C altına düşünce C fazı eklenir.
-5. pH ölçülür ve gerekirse ayarlanır.
-6. 24 saat sonra viskozite ve pH tekrar kontrol edilir.
-
-**Dikkat:**  
-Bu örnek eğitim ve AR-GE başlangıç formülüdür. Piyasaya ürün çıkarmadan önce stabilite, mikrobiyoloji, challenge test ve mevzuat uygunluğu gerekir.`;
+  const addMessage = (role: Role, text: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        role,
+        text,
+      },
+    ]);
   };
 
-  const askGemini = async (text: string, currentMode: Mode) => {
+  const getLocalFallback = (text: string) => {
+    const lower = text.toLowerCase();
+
+    if (lower.includes("hook") || lower.includes("kanca") || lower.includes("içerik")) {
+      return "Tabii kanka. İçerik için en iyi yapı şöyle: ilk 3 saniyede merak uyandıran bir cümle, sonra problemi göster, sonra küçük bir bilimsel açıklama ve en sonda kaydetme çağrısı. Mesela: “Bu içerik cildini mahveden ama herkesin masum sandığı şeyi anlatıyor…”";
+    }
+
+    if (lower.includes("pdf")) {
+      return "PDF alanını açarsan metni özetleme, önemli yerleri çıkarma ve çalışma notuna çevirme şeklinde ilerleyebiliriz. Şu an bana PDF içeriğini ya da metni atarsan hızlıca toparlarım.";
+    }
+
+    if (lower.includes("ders") || lower.includes("çalış")) {
+      return "Ders çalışma modunda sana konu özeti, soru-cevap, mini test ve tekrar planı hazırlayabilirim. Ben olsam 25 dakika odak + 5 dakika mola şeklinde başlatırdım.";
+    }
+
+    if (lower.includes("mer") || lower.includes("merhaba")) {
+      return "Buradayım kanka ✨ Lyra ekranı geri geldi. Şimdi sakin sakin neyi güncelleyeceğimize bakalım.";
+    }
+
+    return "Cevabı alamadım kanka ama ekran çalışıyor. Gemini route bağlantısını kontrol etmek için /api/gemini?test=merhaba adresini aç. Orası ok ise sadece POST cevap alanı answer, reply veya text olarak dönmeli.";
+  };
+
+  const speakText = (text: string) => {
+    if (!voiceEnabled) return;
+    if (typeof window === "undefined") return;
+    if (!("speechSynthesis" in window)) return;
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "tr-TR";
+    utterance.rate = 1;
+    utterance.pitch = 1.05;
+    utterance.volume = 1;
+
+    const voices = window.speechSynthesis.getVoices();
+    const trVoice =
+      voices.find((voice) => voice.lang.toLowerCase().includes("tr")) ||
+      voices.find((voice) => voice.name.toLowerCase().includes("female")) ||
+      voices[0];
+
+    if (trVoice) utterance.voice = trVoice;
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const askGemini = async (text: string) => {
     try {
       const res = await fetch("/api/gemini", {
         method: "POST",
@@ -273,11 +111,8 @@ Bu örnek eğitim ve AR-GE başlangıç formülüdür. Piyasaya ürün çıkarma
           message: text,
           prompt: text,
           question: text,
-          mode: currentMode,
           system:
-            currentMode === "formula"
-              ? "Sen InciLab kozmetik formülasyon asistanısın. Türkçe, anlaşılır, bilimsel ve uygulanabilir formülasyon cevabı ver."
-              : "Sen InciLab kimya, kozmetik ve analiz asistanısın. Türkçe, anlaşılır, bilimsel ve uygulanabilir analiz yorumu ver.",
+            "Sen Lyra adında sıcak, doğal, Türkçe konuşan bir kişisel asistansın. Kullanıcıya yakın arkadaş gibi ama akıllı, net ve destekleyici cevap ver. Gerektiğinde içerik üretimi, kozmetik, kimya, günlük plan, PDF özet ve ders çalışma konularında yardım et.",
         }),
       });
 
@@ -285,637 +120,1101 @@ Bu örnek eğitim ve AR-GE başlangıç formülüdür. Piyasaya ürün çıkarma
 
       const data = await res.json();
 
-      return (
+      const possibleAnswer =
         data.answer ||
         data.reply ||
         data.text ||
         data.result ||
         data.message ||
-        ""
-      );
+        data.output ||
+        "";
+
+      if (typeof possibleAnswer === "string") {
+        return possibleAnswer;
+      }
+
+      return "";
     } catch {
       return "";
     }
   };
 
-  const handleAnalyze = async () => {
-    const text = question.trim();
-    if (!text) {
-      setAnswer("Önce bir soru yaz kanka. Analiz veya formül sorusunu buraya bırak, ben toparlayayım.");
+  const sendMessage = async (forcedText?: string, fromVoice = false) => {
+    const text = (forcedText || input).trim();
+    if (!text || loading) return;
+
+    setInput("");
+    setLastHeard(fromVoice ? text : "");
+    addMessage("user", text);
+    setLoading(true);
+    setStatusText("Düşünüyor");
+
+    const aiAnswer = await askGemini(text);
+    const finalAnswer = aiAnswer || getLocalFallback(text);
+
+    addMessage("lyra", finalAnswer);
+    speakText(finalAnswer);
+
+    setLoading(false);
+    setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
+  };
+
+  const startListening = () => {
+    if (typeof window === "undefined") return;
+
+    const SpeechRecognitionImpl =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionImpl) {
+      const warning =
+        "Bu tarayıcı ses tanımayı desteklemiyor kanka. Chrome kullanıyorsan mikrofon iznini kontrol et.";
+      addMessage("lyra", warning);
+      speakText(warning);
       return;
     }
 
-    setLoading(true);
-    setAnswer("");
-
-    const aiAnswer = await askGemini(text, mode);
-
-    if (aiAnswer && typeof aiAnswer === "string" && aiAnswer.length > 10) {
-      setAnswer(aiAnswer);
-    } else {
-      setAnswer(mode === "formula" ? localFormulaAnswer(text) : localAnalysisAnswer(text));
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
     }
 
-    setLoading(false);
+    const recognition = new SpeechRecognitionImpl();
+    recognition.lang = "tr-TR";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setListening(true);
+      setStatusText("Dinliyorum");
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0]?.transcript || "")
+        .join(" ")
+        .trim();
+
+      setListening(false);
+      setStatusText("Duydum, cevaplıyorum");
+
+      if (transcript) {
+        sendMessage(transcript, true);
+      }
+    };
+
+    recognition.onerror = () => {
+      setListening(false);
+      setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
+      addMessage(
+        "lyra",
+        "Mikrofonu alamadım kanka. Tarayıcıdan mikrofon iznini açıp tekrar dene."
+      );
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+      if (!loading) {
+        setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
-  const handleClear = () => {
-    setQuestion("");
-    setAnswer("");
+  const stopVoice = () => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
+    setListening(false);
+    setStatusText(liveMode ? "Canlı mod açık" : "Hazır");
   };
 
-  const handlePrint = () => {
-    const content = `
-      <html>
-        <head>
-          <title>InciLab Çıktı</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 32px;
-              color: #17142b;
-              line-height: 1.6;
-            }
-            h1 {
-              color: #6d28d9;
-              margin-bottom: 4px;
-            }
-            .badge {
-              display: inline-block;
-              padding: 6px 12px;
-              border-radius: 999px;
-              background: #f3e8ff;
-              color: #6d28d9;
-              font-size: 12px;
-              margin-bottom: 20px;
-            }
-            pre {
-              white-space: pre-wrap;
-              font-family: Arial, sans-serif;
-              background: #faf7ff;
-              padding: 20px;
-              border-radius: 18px;
-              border: 1px solid #eadcff;
-            }
-          </style>
-        </head>
-        <body>
-          <span class="badge">InciLab • ${mode === "formula" ? "Formül" : "Analiz"} Çıktısı</span>
-          <h1>InciLab Raporu</h1>
-          <h3>Soru</h3>
-          <pre>${question.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-          <h3>Cevap</h3>
-          <pre>${answer.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-        </body>
-      </html>
-    `;
+  const toggleLiveMode = () => {
+    setLiveMode((prev) => {
+      const next = !prev;
+      setStatusText(next ? "Canlı mod açık" : "Hazır");
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-    printWindow.document.write(content);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+      if (!next) {
+        stopVoice();
+      } else {
+        const msg =
+          "Canlı mod açıldı kanka. Konuş butonuna basınca seni dinleyip cevap vereceğim.";
+        addMessage("lyra", msg);
+        speakText(msg);
+      }
+
+      return next;
+    });
   };
 
-  const activeExamples = mode === "formula" ? exampleFormulas : exampleQuestions;
+  const moduleTitle =
+    activeModule === "chat"
+      ? "Ana Sohbet"
+      : activeModule === "creator"
+      ? "İçerik Üretici Alanı"
+      : activeModule === "pdf"
+      ? "PDF Özet Alanı"
+      : activeModule === "study"
+      ? "Ders Çalışma Alanı"
+      : "Ayarlar";
+
+  const moduleDescription =
+    activeModule === "chat"
+      ? "Yazış, sesle konuş veya canlı moda geç."
+      : activeModule === "creator"
+      ? "Hook, video metni, teleprompter ve keşfet stratejisi üret."
+      : activeModule === "pdf"
+      ? "PDF veya uzun metinleri özetle, notlara çevir."
+      : activeModule === "study"
+      ? "Konu anlatımı, soru üretimi ve tekrar planı hazırla."
+      : "Ses, canlı mod ve görünüm ayarlarını yönet.";
+
+  const quickPrompts =
+    activeModule === "creator"
+      ? [
+          "Bana 30 saniyelik kozmetik reels metni yaz.",
+          "Bu video için ilk 3 saniye hook öner.",
+          "Keşfete düşecek içerik fikri üret.",
+        ]
+      : activeModule === "pdf"
+      ? [
+          "Bu metni kısa özetle.",
+          "Bunu madde madde çalışma notu yap.",
+          "Bu içerikten sınav sorusu üret.",
+        ]
+      : activeModule === "study"
+      ? [
+          "Bugün için 45 dakikalık çalışma planı yap.",
+          "Bu konudan mini test hazırla.",
+          "Bana motive edici ama gerçekçi bir plan yap.",
+        ]
+      : [
+          "Bugün ne yapmalıyım?",
+          "Bana içerik fikri ver.",
+          "Lyra çalışıyor mu test edelim.",
+        ];
 
   return (
-    <main className="incilab-page">
-      <section className="hero">
-        <div>
-          <div className="pill">Kimya • Kozmetik • Analiz Asistanı</div>
-          <h1>InciLab</h1>
-          <p>
-            Analiz sonucunu, formülasyon mantığını veya hammadde yorumunu yaz;
-            ben sana anlaşılır, bilimsel ve uygulanabilir şekilde toparlayayım.
-          </p>
-        </div>
-
-        <div className="status-card">
-          <span>Durum</span>
-          <strong>Hazır</strong>
-        </div>
-      </section>
-
-      <section className="layout">
-        <div className="left">
-          <div className="card main-card">
-            <div className="tabs">
-              <button
-                className={mode === "analysis" ? "tab active" : "tab"}
-                onClick={() => setMode("analysis")}
-              >
-                Analiz Sor
-              </button>
-              <button
-                className={mode === "formula" ? "tab active" : "tab"}
-                onClick={() => setMode("formula")}
-              >
-                Formül Sor
-              </button>
+    <main className="lyra-page">
+      <section className="shell">
+        <header className="topbar">
+          <div className="brand">
+            <div className="logoOrb">
+              <span>L</span>
             </div>
 
-            <div className="section-title">
-              <h2>{mode === "formula" ? "Formül Sorusu" : "Analiz Sorusu"}</h2>
-              <p>
-                {mode === "formula"
-                  ? "Ürün tipini, hedef cildi, hacmi/gramajı ve istediğin aktifleri yazabilirsin."
-                  : "Laboratuvar sonucu, formül problemi veya içerik sorusu yazabilirsin."}
-              </p>
-            </div>
-
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder={
-                mode === "formula"
-                  ? "Örn: 100 g yağlı cilt için niacinamide serum formülü hazırla. pH, fazlar ve üretim adımlarını da yaz."
-                  : "Örn: Çıkış suyunda KOİ yüksek ama numune berrak değil. Kit ile ölçüm yaptım, neden olabilir?"
-              }
-            />
-
-            <div className="chips">
-              {activeExamples.map((item) => (
-                <button key={item} onClick={() => setQuestion(item)}>
-                  {item}
-                </button>
-              ))}
-            </div>
-
-            <div className="actions">
-              <button className="primary" onClick={handleAnalyze} disabled={loading}>
-                {loading ? "Hazırlanıyor..." : mode === "formula" ? "Formül oluştur" : "Analiz et"}
-              </button>
-              <button className="secondary" onClick={handleClear}>
-                Temizle
-              </button>
+            <div>
+              <p className="eyebrow">Sirius Lyra AI</p>
+              <h1>Lyra Clean 2026</h1>
             </div>
           </div>
 
-          <div className="card answer-card">
-            <div className="answer-head">
-              <div>
-                <h2>InciLab Cevabı</h2>
-                <p>Cevap geldikten sonra detay, tümünü gör ve çıktı alma alanı aktif olur.</p>
-              </div>
-
-              <div className="answer-buttons">
-                <button onClick={() => setAnswer(answer || "Henüz detaylandırılacak cevap yok kanka.")}>
-                  Detaylandır
-                </button>
-                <button onClick={handlePrint} disabled={!answer}>
-                  PDF / Yazdır
-                </button>
-              </div>
+          <div className="statusPill">
+            <span className={loading || listening ? "dot active" : "dot"} />
+            <div>
+              <small>Durum</small>
+              <strong>{statusText}</strong>
             </div>
+          </div>
+        </header>
 
-            <div className={answer ? "answer-box filled" : "answer-box"}>
-              {answer ? (
-                <pre>{answer}</pre>
-              ) : (
-                <span>
-                  Henüz cevap yok. Sorunu yazıp butona basınca cevap burada görünecek.
-                </span>
+        <section className="mainGrid">
+          <aside className="avatarPanel">
+            <div className={liveMode ? "avatarCard live" : "avatarCard"}>
+              <div className="avatarGlow" />
+
+              <div className={listening ? "avatarCircle listening" : "avatarCircle"}>
+                <div className="face">
+                  <div className="eyes">
+                    <i />
+                    <i />
+                  </div>
+                  <div className={loading ? "mouth thinking" : "mouth"} />
+                </div>
+              </div>
+
+              <div className="avatarInfo">
+                <h2>Lyra</h2>
+                <p>
+                  {liveMode
+                    ? "Canlı konuşma modu açık. Mikrofonla konuşabilirsin."
+                    : "Beyaz-gümüş ana ekran aktif. Yazılı ve sesli sohbet hazır."}
+                </p>
+              </div>
+
+              {lastHeard && (
+                <div className="heardBox">
+                  <small>Seni son duyduğum:</small>
+                  <p>{lastHeard}</p>
+                </div>
               )}
-            </div>
-          </div>
-        </div>
 
-        <aside className="right">
-          <div className="card side-card">
-            <div className="side-head">
-              <h2>Trend Hammaddeler</h2>
-              <button onClick={() => setShowAllTrends((v) => !v)}>
-                {showAllTrends ? "Kısalt" : "Tümünü gör"}
-              </button>
-            </div>
+              <div className="voiceControls">
+                <button onClick={startListening} className={listening ? "control primary pulse" : "control primary"}>
+                  {listening ? "Dinliyorum..." : "Ses ile konuş"}
+                </button>
 
-            {(showAllTrends ? trends : trends.slice(0, 2)).map((item) => (
-              <div className="ingredient" key={item.name}>
-                <div>
-                  <h3>{item.name}</h3>
-                  <p>{item.desc}</p>
-                  {showAllTrends && <small>{item.detail}</small>}
-                </div>
-                <button onClick={() => setQuestion(`${item.name} kozmetikte ne işe yarar, kullanım oranı ve formül mantığı nedir?`)}>
-                  Detay
+                <button onClick={toggleLiveMode} className={liveMode ? "control liveOn" : "control"}>
+                  {liveMode ? "Live açık" : "Live mod"}
+                </button>
+
+                <button onClick={stopVoice} className="control">
+                  Sesi durdur
                 </button>
               </div>
-            ))}
-          </div>
-
-          <div className="card side-card">
-            <div className="side-head">
-              <h2>Formül Alanı</h2>
-              <button onClick={() => setShowFormulaPanel((v) => !v)}>
-                {showFormulaPanel ? "Kapat" : "Aç"}
-              </button>
             </div>
 
-            {showFormulaPanel && (
-              <>
-                <div className="formula-mini">
-                  <h3>Nemlendirici krem bazı</h3>
-                  <p>Su fazı + yağ fazı + emülgatör + koruyucu + pH ayarı mantığı.</p>
+            <div className="miniPanel">
+              <h3>Modüller</h3>
+
+              <div className="moduleButtons">
+                <button
+                  className={activeModule === "chat" ? "module active" : "module"}
+                  onClick={() => setActiveModule("chat")}
+                >
+                  Sohbet
+                </button>
+                <button
+                  className={activeModule === "creator" ? "module active" : "module"}
+                  onClick={() => setActiveModule("creator")}
+                >
+                  İçerik
+                </button>
+                <button
+                  className={activeModule === "pdf" ? "module active" : "module"}
+                  onClick={() => setActiveModule("pdf")}
+                >
+                  PDF
+                </button>
+                <button
+                  className={activeModule === "study" ? "module active" : "module"}
+                  onClick={() => setActiveModule("study")}
+                >
+                  Ders
+                </button>
+                <button
+                  className={activeModule === "settings" ? "module active" : "module"}
+                  onClick={() => setActiveModule("settings")}
+                >
+                  Ayar
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          <section className="chatPanel">
+            <div className="moduleHeader">
+              <div>
+                <p className="eyebrow">Aktif alan</p>
+                <h2>{moduleTitle}</h2>
+                <p>{moduleDescription}</p>
+              </div>
+
+              <div className="geminiBadge">
+                <small>API</small>
+                <strong>/api/gemini</strong>
+              </div>
+            </div>
+
+            {activeModule === "settings" ? (
+              <div className="settingsBox">
+                <h3>Lyra Ayarları</h3>
+
+                <div className="settingRow">
                   <div>
-                    Basit bir kremde su fazı, humektanlar, yağ fazı, emülgatör sistemi,
-                    kıvam verici, koruyucu ve pH ayarı ayrı ayrı kontrol edilmelidir.
+                    <strong>Sesli cevap</strong>
+                    <p>Lyra cevapları tarayıcı sesiyle okusun.</p>
                   </div>
+
                   <button
-                    onClick={() => {
-                      setMode("formula");
-                      setQuestion("100 g nemlendirici krem bazı formülü hazırla. Fazları, oranları, pH ve üretim adımlarını yaz.");
-                    }}
+                    className={voiceEnabled ? "toggle on" : "toggle"}
+                    onClick={() => setVoiceEnabled((prev) => !prev)}
                   >
-                    Bu formülü aç
+                    {voiceEnabled ? "Açık" : "Kapalı"}
                   </button>
                 </div>
 
-                <div className="formula-mini">
-                  <h3>Nazik temizleyici jel</h3>
-                  <p>Anyonik + amfoterik + noniyonik yüzey aktif kombinasyonu.</p>
+                <div className="settingRow">
                   <div>
-                    Hassas cilt için sülfatsız sistemlerde köpük, kıvam ve pH dengesi birlikte düşünülür.
+                    <strong>Canlı mod</strong>
+                    <p>Konuşma ekranı Replika tarzı canlı his verir.</p>
                   </div>
+
                   <button
-                    onClick={() => {
-                      setMode("formula");
-                      setQuestion("SLES içermeyen nazik temizleyici jel formülü hazırla. Yüzey aktif sistemi, pH ve üretim adımlarını yaz.");
-                    }}
+                    className={liveMode ? "toggle on" : "toggle"}
+                    onClick={toggleLiveMode}
                   >
-                    Bu formülü aç
+                    {liveMode ? "Açık" : "Kapalı"}
                   </button>
+                </div>
+
+                <div className="testBox">
+                  <p>Gemini test için tarayıcıda şunu aç:</p>
+                  <code>/api/gemini?test=merhaba</code>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="quickRow">
+                  {quickPrompts.map((prompt) => (
+                    <button key={prompt} onClick={() => setInput(prompt)}>
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="messages">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={message.role === "user" ? "msg user" : "msg lyra"}
+                    >
+                      <div className="msgLabel">
+                        {message.role === "user" ? "Sen" : "Lyra"}
+                      </div>
+                      <p>{message.text}</p>
+                    </div>
+                  ))}
+
+                  {loading && (
+                    <div className="msg lyra">
+                      <div className="msgLabel">Lyra</div>
+                      <p className="typing">Cevabı hazırlıyorum...</p>
+                    </div>
+                  )}
+
+                  <div ref={chatEndRef} />
+                </div>
+
+                <div className="composer">
+                  <textarea
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    placeholder="Lyra’ya yaz... Mesela: Bana bugün için içerik planı yap."
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                  />
+
+                  <div className="composerActions">
+                    <button onClick={startListening} className="iconBtn">
+                      Mikrofon
+                    </button>
+
+                    <button onClick={() => sendMessage()} className="sendBtn" disabled={loading}>
+                      {loading ? "Bekle..." : "Gönder"}
+                    </button>
+                  </div>
                 </div>
               </>
             )}
-          </div>
-        </aside>
+          </section>
+        </section>
       </section>
 
       <style jsx>{`
-        .incilab-page {
+        .lyra-page {
           min-height: 100vh;
-          padding: 32px;
-          color: #17142b;
+          padding: 28px;
+          color: #111827;
           background:
-            radial-gradient(circle at top left, rgba(168, 85, 247, 0.18), transparent 34%),
-            radial-gradient(circle at top right, rgba(236, 72, 153, 0.12), transparent 32%),
-            linear-gradient(135deg, #fbf7ff 0%, #ffffff 42%, #f4edff 100%);
+            radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 28%),
+            radial-gradient(circle at top right, rgba(186, 230, 253, 0.45), transparent 30%),
+            radial-gradient(circle at bottom left, rgba(232, 231, 255, 0.75), transparent 32%),
+            linear-gradient(135deg, #f8fafc 0%, #eef2f7 48%, #ffffff 100%);
         }
 
-        .hero {
-          max-width: 1220px;
-          margin: 0 auto 24px;
-          padding: 28px 32px;
-          border-radius: 34px;
+        .shell {
+          width: min(1320px, 100%);
+          margin: 0 auto;
+        }
+
+        .topbar {
           display: flex;
-          justify-content: space-between;
           align-items: center;
-          gap: 20px;
+          justify-content: space-between;
+          gap: 18px;
+          padding: 20px 22px;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          border-radius: 34px;
           background: rgba(255, 255, 255, 0.78);
-          border: 1px solid rgba(139, 92, 246, 0.16);
-          box-shadow: 0 24px 60px rgba(109, 40, 217, 0.08);
+          box-shadow: 0 24px 70px rgba(15, 23, 42, 0.08);
           backdrop-filter: blur(18px);
+          margin-bottom: 22px;
         }
 
-        .pill {
-          display: inline-flex;
-          padding: 7px 14px;
-          border-radius: 999px;
-          color: #6d28d9;
-          font-size: 13px;
-          font-weight: 700;
-          border: 1px solid #e7d7ff;
-          background: #fbf7ff;
-          margin-bottom: 10px;
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+        }
+
+        .logoOrb {
+          width: 58px;
+          height: 58px;
+          border-radius: 22px;
+          display: grid;
+          place-items: center;
+          background:
+            radial-gradient(circle at 30% 20%, #ffffff, transparent 30%),
+            linear-gradient(135deg, #dbeafe, #ffffff, #c4b5fd);
+          border: 1px solid rgba(255, 255, 255, 0.8);
+          box-shadow:
+            inset 0 0 24px rgba(255, 255, 255, 0.9),
+            0 16px 34px rgba(99, 102, 241, 0.18);
+        }
+
+        .logoOrb span {
+          font-size: 26px;
+          font-weight: 950;
+          color: #334155;
+        }
+
+        .eyebrow {
+          margin: 0 0 4px;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #64748b;
+        }
+
+        h1,
+        h2,
+        h3,
+        p {
+          margin: 0;
         }
 
         h1 {
-          font-size: 42px;
-          margin: 0;
-          letter-spacing: -1.4px;
-          color: #141124;
+          font-size: 34px;
+          letter-spacing: -1.2px;
+          color: #0f172a;
         }
 
         h2 {
-          margin: 0;
-          font-size: 20px;
-          color: #1f1836;
+          font-size: 24px;
+          letter-spacing: -0.5px;
+          color: #0f172a;
         }
 
         h3 {
-          margin: 0 0 6px;
-          font-size: 16px;
-          color: #24183f;
+          font-size: 17px;
+          color: #111827;
         }
 
         p {
-          margin: 0;
-          color: #695f82;
+          color: #64748b;
           line-height: 1.55;
         }
 
-        .hero p {
-          max-width: 760px;
-          margin-top: 8px;
+        .statusPill {
+          min-width: 150px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          border-radius: 22px;
+          border: 1px solid rgba(148, 163, 184, 0.25);
+          background: rgba(255, 255, 255, 0.72);
+          box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
         }
 
-        .status-card {
-          min-width: 90px;
-          height: 90px;
-          border-radius: 28px;
-          display: grid;
-          place-items: center;
-          text-align: center;
-          border: 1px solid #eadcff;
-          background: linear-gradient(180deg, #ffffff, #fbf7ff);
-          box-shadow: 0 12px 32px rgba(109, 40, 217, 0.1);
+        .statusPill small {
+          display: block;
+          color: #94a3b8;
+          font-weight: 800;
+          font-size: 11px;
+          margin-bottom: 2px;
         }
 
-        .status-card span {
-          color: #6b6281;
+        .statusPill strong {
+          display: block;
+          color: #334155;
           font-size: 14px;
         }
 
-        .status-card strong {
-          display: block;
-          color: #6d28d9;
-          font-size: 15px;
-          margin-top: -14px;
+        .dot {
+          width: 12px;
+          height: 12px;
+          border-radius: 999px;
+          background: #94a3b8;
+          box-shadow: 0 0 0 5px rgba(148, 163, 184, 0.14);
         }
 
-        .layout {
-          max-width: 1220px;
-          margin: 0 auto;
+        .dot.active {
+          background: #22c55e;
+          box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
+        }
+
+        .mainGrid {
           display: grid;
-          grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.9fr);
-          gap: 24px;
-        }
-
-        .left,
-        .right {
-          display: flex;
-          flex-direction: column;
+          grid-template-columns: 360px minmax(0, 1fr);
           gap: 22px;
         }
 
-        .card {
-          background: rgba(255, 255, 255, 0.84);
-          border: 1px solid rgba(139, 92, 246, 0.16);
-          box-shadow: 0 18px 45px rgba(109, 40, 217, 0.08);
-          backdrop-filter: blur(16px);
-          border-radius: 30px;
+        .avatarPanel,
+        .chatPanel {
+          min-height: calc(100vh - 150px);
         }
 
-        .main-card,
-        .answer-card,
-        .side-card {
+        .avatarPanel {
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+
+        .avatarCard,
+        .miniPanel,
+        .chatPanel {
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          background: rgba(255, 255, 255, 0.76);
+          box-shadow: 0 24px 70px rgba(15, 23, 42, 0.08);
+          backdrop-filter: blur(18px);
+        }
+
+        .avatarCard {
+          position: relative;
+          overflow: hidden;
+          border-radius: 36px;
           padding: 24px;
+          min-height: 520px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
         }
 
-        .tabs {
-          display: inline-flex;
-          padding: 5px;
-          border-radius: 999px;
-          background: #f3e8ff;
-          border: 1px solid #eadcff;
-          margin-bottom: 20px;
+        .avatarCard.live {
+          border-color: rgba(129, 140, 248, 0.45);
+          box-shadow:
+            0 24px 70px rgba(99, 102, 241, 0.14),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.65);
         }
 
-        .tab {
-          border: none;
-          cursor: pointer;
+        .avatarGlow {
+          position: absolute;
+          inset: -120px;
+          background:
+            radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 1), transparent 18%),
+            radial-gradient(circle at 40% 40%, rgba(191, 219, 254, 0.72), transparent 26%),
+            radial-gradient(circle at 60% 55%, rgba(221, 214, 254, 0.84), transparent 32%),
+            radial-gradient(circle at 35% 75%, rgba(244, 244, 245, 1), transparent 30%);
+          filter: blur(10px);
+          opacity: 0.95;
+        }
+
+        .avatarCircle {
+          position: relative;
+          z-index: 1;
+          width: 210px;
+          height: 210px;
           border-radius: 999px;
-          padding: 11px 18px;
-          background: transparent;
-          color: #6d5f84;
+          display: grid;
+          place-items: center;
+          background:
+            radial-gradient(circle at 35% 28%, #ffffff, transparent 25%),
+            linear-gradient(145deg, #e0f2fe, #ffffff 42%, #ddd6fe 100%);
+          border: 1px solid rgba(255, 255, 255, 0.9);
+          box-shadow:
+            inset 0 0 40px rgba(255, 255, 255, 0.95),
+            0 25px 60px rgba(99, 102, 241, 0.22);
+          animation: float 4.5s ease-in-out infinite;
+        }
+
+        .avatarCircle.listening {
+          animation: pulseAvatar 1.2s ease-in-out infinite;
+        }
+
+        .face {
+          width: 92px;
+          height: 72px;
+          border-radius: 30px;
+          background: rgba(255, 255, 255, 0.55);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.9);
+        }
+
+        .eyes {
+          display: flex;
+          gap: 24px;
+        }
+
+        .eyes i {
+          width: 10px;
+          height: 10px;
+          border-radius: 999px;
+          background: #334155;
+          display: block;
+          animation: blink 5s infinite;
+        }
+
+        .mouth {
+          width: 32px;
+          height: 8px;
+          border-radius: 999px;
+          background: #64748b;
+        }
+
+        .mouth.thinking {
+          animation: mouthMove 0.7s ease-in-out infinite;
+        }
+
+        .avatarInfo {
+          position: relative;
+          z-index: 1;
+          margin-top: 28px;
+        }
+
+        .avatarInfo h2 {
+          font-size: 30px;
+          margin-bottom: 8px;
+        }
+
+        .heardBox {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          margin-top: 18px;
+          padding: 14px;
+          border-radius: 22px;
+          text-align: left;
+          background: rgba(255, 255, 255, 0.62);
+          border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .heardBox small {
+          color: #94a3b8;
           font-weight: 800;
         }
 
-        .tab.active {
-          color: white;
-          background: linear-gradient(135deg, #7c3aed, #c026d3);
-          box-shadow: 0 10px 22px rgba(124, 58, 237, 0.25);
+        .heardBox p {
+          color: #334155;
+          margin-top: 5px;
+          font-size: 14px;
         }
 
-        .section-title {
-          margin-bottom: 18px;
+        .voiceControls {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+          margin-top: 22px;
+        }
+
+        button {
+          font-family: inherit;
+        }
+
+        .control,
+        .module,
+        .quickRow button,
+        .iconBtn,
+        .sendBtn,
+        .toggle {
+          cursor: pointer;
+          border: 1px solid rgba(148, 163, 184, 0.26);
+          background: rgba(255, 255, 255, 0.72);
+          color: #334155;
+          border-radius: 18px;
+          padding: 12px 14px;
+          font-weight: 850;
+          transition: 0.2s ease;
+        }
+
+        .control:hover,
+        .module:hover,
+        .quickRow button:hover,
+        .iconBtn:hover,
+        .sendBtn:hover,
+        .toggle:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+        }
+
+        .control.primary,
+        .sendBtn {
+          color: #ffffff;
+          background: linear-gradient(135deg, #0f172a, #334155);
+          box-shadow: 0 16px 30px rgba(15, 23, 42, 0.22);
+        }
+
+        .control.liveOn,
+        .toggle.on {
+          color: #ffffff;
+          background: linear-gradient(135deg, #6366f1, #a855f7);
+          border-color: transparent;
+        }
+
+        .pulse {
+          animation: softPulse 1s infinite;
+        }
+
+        .miniPanel {
+          border-radius: 30px;
+          padding: 18px;
+        }
+
+        .miniPanel h3 {
+          margin-bottom: 12px;
+        }
+
+        .moduleButtons {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+        }
+
+        .module.active {
+          color: #ffffff;
+          background: linear-gradient(135deg, #64748b, #111827);
+          border-color: transparent;
+        }
+
+        .chatPanel {
+          border-radius: 36px;
+          padding: 22px;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .moduleHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          padding-bottom: 18px;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+        }
+
+        .moduleHeader p {
+          margin-top: 6px;
+        }
+
+        .geminiBadge {
+          min-width: 120px;
+          border-radius: 20px;
+          padding: 12px 14px;
+          text-align: center;
+          background: rgba(248, 250, 252, 0.85);
+          border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .geminiBadge small {
+          display: block;
+          color: #94a3b8;
+          font-weight: 850;
+          font-size: 11px;
+        }
+
+        .geminiBadge strong {
+          color: #334155;
+          font-size: 13px;
+        }
+
+        .quickRow {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          padding: 16px 0;
+        }
+
+        .quickRow button {
+          border-radius: 999px;
+          font-size: 13px;
+          padding: 10px 13px;
+        }
+
+        .messages {
+          flex: 1;
+          overflow-y: auto;
+          padding: 4px 6px 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 13px;
+          min-height: 410px;
+          max-height: calc(100vh - 355px);
+        }
+
+        .msg {
+          width: fit-content;
+          max-width: 78%;
+          border-radius: 24px;
+          padding: 14px 16px;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
+        }
+
+        .msg.lyra {
+          align-self: flex-start;
+          background: rgba(255, 255, 255, 0.82);
+        }
+
+        .msg.user {
+          align-self: flex-end;
+          background: linear-gradient(135deg, #111827, #334155);
+          color: #ffffff;
+        }
+
+        .msg.user p,
+        .msg.user .msgLabel {
+          color: #ffffff;
+        }
+
+        .msgLabel {
+          font-size: 11px;
+          font-weight: 950;
+          color: #94a3b8;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          margin-bottom: 5px;
+        }
+
+        .msg p {
+          color: #334155;
+          white-space: pre-wrap;
+        }
+
+        .typing {
+          animation: fadeTyping 1s ease-in-out infinite;
+        }
+
+        .composer {
+          border-top: 1px solid rgba(148, 163, 184, 0.16);
+          padding-top: 16px;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 12px;
+          align-items: end;
         }
 
         textarea {
           width: 100%;
-          min-height: 178px;
+          min-height: 78px;
+          max-height: 160px;
           resize: vertical;
-          padding: 22px;
-          border-radius: 24px;
-          border: 1px solid #e6d8ff;
-          background: rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(148, 163, 184, 0.26);
           outline: none;
-          color: #201936;
-          font-size: 15px;
-          line-height: 1.6;
-          box-sizing: border-box;
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.7);
-        }
-
-        textarea:focus {
-          border-color: #a855f7;
-          box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.12);
-        }
-
-        textarea::placeholder {
-          color: #9b91ad;
-        }
-
-        .chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin: 18px 0;
-        }
-
-        .chips button,
-        .side-head button,
-        .ingredient button,
-        .answer-buttons button,
-        .formula-mini button {
-          cursor: pointer;
-          border: 1px solid #eadcff;
-          background: #ffffff;
-          color: #6a5688;
-          border-radius: 999px;
-          padding: 9px 13px;
-          font-weight: 700;
-          font-size: 13px;
-          transition: 0.2s ease;
-        }
-
-        .chips button:hover,
-        .side-head button:hover,
-        .ingredient button:hover,
-        .answer-buttons button:hover,
-        .formula-mini button:hover {
-          transform: translateY(-1px);
-          border-color: #c4a2ff;
-          color: #6d28d9;
-          background: #fbf7ff;
-        }
-
-        .actions {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-        }
-
-        .primary,
-        .secondary {
-          border: none;
-          cursor: pointer;
-          border-radius: 17px;
-          padding: 15px 22px;
-          font-weight: 900;
-          font-size: 14px;
-        }
-
-        .primary {
-          color: white;
-          background: linear-gradient(135deg, #6d28d9, #a21caf);
-          box-shadow: 0 12px 24px rgba(109, 40, 217, 0.28);
-        }
-
-        .primary:disabled {
-          opacity: 0.65;
-          cursor: not-allowed;
-        }
-
-        .secondary {
-          color: #5f5375;
-          background: #ffffff;
-          border: 1px solid #eadcff;
-        }
-
-        .answer-head,
-        .side-head {
-          display: flex;
-          justify-content: space-between;
-          gap: 14px;
-          align-items: flex-start;
-          margin-bottom: 18px;
-        }
-
-        .answer-head p {
-          font-size: 13px;
-          margin-top: 5px;
-        }
-
-        .answer-buttons {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          justify-content: flex-end;
-        }
-
-        .answer-buttons button:disabled {
-          opacity: 0.45;
-          cursor: not-allowed;
-        }
-
-        .answer-box {
-          border: 1px dashed #d8c4ff;
-          background: linear-gradient(180deg, #ffffff, #fbf7ff);
-          min-height: 96px;
           border-radius: 24px;
-          padding: 22px;
-          color: #74688c;
-        }
-
-        .answer-box.filled {
-          border-style: solid;
-          background: #fff;
-        }
-
-        pre {
-          white-space: pre-wrap;
-          word-wrap: break-word;
-          margin: 0;
-          font-family: inherit;
-          color: #24183f;
-          line-height: 1.65;
-          font-size: 14px;
-        }
-
-        .ingredient {
-          display: flex;
-          justify-content: space-between;
-          gap: 14px;
-          padding: 18px;
-          border-radius: 22px;
-          border: 1px solid #eadcff;
-          background: linear-gradient(180deg, #ffffff, #fbf7ff);
-          margin-top: 12px;
-        }
-
-        .ingredient p {
-          font-size: 14px;
-        }
-
-        .ingredient small {
-          display: block;
-          color: #806f9d;
-          margin-top: 8px;
+          padding: 16px 18px;
+          color: #111827;
+          background: rgba(255, 255, 255, 0.78);
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+          font-size: 15px;
           line-height: 1.5;
         }
 
-        .formula-mini {
+        textarea:focus {
+          border-color: rgba(99, 102, 241, 0.45);
+          box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.12);
+        }
+
+        .composerActions {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .sendBtn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .settingsBox {
+          margin-top: 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .settingRow,
+        .testBox {
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          background: rgba(255, 255, 255, 0.7);
+          border-radius: 24px;
           padding: 18px;
-          border-radius: 22px;
-          border: 1px solid #eadcff;
-          background: linear-gradient(180deg, #ffffff, #fbf7ff);
-          margin-top: 12px;
         }
 
-        .formula-mini p {
-          font-size: 14px;
-          margin-bottom: 12px;
+        .settingRow {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
         }
 
-        .formula-mini div {
-          background: rgba(243, 232, 255, 0.58);
-          border-radius: 18px;
-          padding: 14px;
-          color: #67587f;
-          line-height: 1.55;
-          font-size: 14px;
-          margin-bottom: 12px;
+        .settingRow strong {
+          display: block;
+          color: #111827;
+          margin-bottom: 5px;
+        }
+
+        .testBox code {
+          display: block;
+          margin-top: 10px;
+          padding: 12px;
+          border-radius: 16px;
+          background: #0f172a;
+          color: #ffffff;
+          overflow-x: auto;
+        }
+
+        @keyframes float {
+          0%,
+          100% {
+            transform: translateY(0);
+          }
+
+          50% {
+            transform: translateY(-10px);
+          }
+        }
+
+        @keyframes pulseAvatar {
+          0%,
+          100% {
+            transform: scale(1);
+            box-shadow:
+              inset 0 0 40px rgba(255, 255, 255, 0.95),
+              0 25px 60px rgba(99, 102, 241, 0.22);
+          }
+
+          50% {
+            transform: scale(1.035);
+            box-shadow:
+              inset 0 0 40px rgba(255, 255, 255, 0.95),
+              0 25px 78px rgba(99, 102, 241, 0.35);
+          }
+        }
+
+        @keyframes blink {
+          0%,
+          92%,
+          100% {
+            transform: scaleY(1);
+          }
+
+          95% {
+            transform: scaleY(0.1);
+          }
+        }
+
+        @keyframes mouthMove {
+          0%,
+          100% {
+            width: 26px;
+            height: 7px;
+          }
+
+          50% {
+            width: 38px;
+            height: 12px;
+          }
+        }
+
+        @keyframes softPulse {
+          0%,
+          100% {
+            transform: scale(1);
+          }
+
+          50% {
+            transform: scale(1.02);
+          }
+        }
+
+        @keyframes fadeTyping {
+          0%,
+          100% {
+            opacity: 0.45;
+          }
+
+          50% {
+            opacity: 1;
+          }
         }
 
         @media (max-width: 980px) {
-          .incilab-page {
-            padding: 18px;
+          .lyra-page {
+            padding: 16px;
           }
 
-          .hero {
-            flex-direction: column;
+          .topbar {
             align-items: flex-start;
-            border-radius: 26px;
+            flex-direction: column;
           }
 
-          .layout {
+          .mainGrid {
             grid-template-columns: 1fr;
           }
 
+          .avatarPanel,
+          .chatPanel {
+            min-height: auto;
+          }
+
+          .avatarCard {
+            min-height: 440px;
+          }
+
+          .messages {
+            max-height: 520px;
+          }
+
+          .composer {
+            grid-template-columns: 1fr;
+          }
+
+          .composerActions {
+            flex-direction: row;
+          }
+
+          .iconBtn,
+          .sendBtn {
+            flex: 1;
+          }
+
+          .msg {
+            max-width: 92%;
+          }
+        }
+
+        @media (max-width: 560px) {
           h1 {
-            font-size: 34px;
+            font-size: 27px;
           }
 
-          .answer-head,
-          .side-head {
+          .moduleHeader,
+          .settingRow {
             flex-direction: column;
+            align-items: stretch;
           }
 
-          .answer-buttons {
-            justify-content: flex-start;
+          .avatarCircle {
+            width: 180px;
+            height: 180px;
+          }
+
+          .moduleButtons {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
