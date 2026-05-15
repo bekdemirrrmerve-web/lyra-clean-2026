@@ -18,9 +18,8 @@ type Message = {
   time: string;
 };
 
-const LYRA_AVATAR = "/lyra-avatar.jpg";
-const LYRA_VIDEO_DEFAULT = "/lyra-avatar.mp4";
-const LYRA_VIDEO_FALLBACK = "/lyra-avatar-mp4";
+const LYRA_AVATAR = "/lyra-avatar.jpg.jpeg";
+const LYRA_VIDEO = "/lyra-avatar-mp4.mp4";
 
 const navItems = [
   { icon: "+", label: "Yeni Sohbet" },
@@ -108,7 +107,6 @@ export default function Page() {
   const [micOn, setMicOn] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [liveText, setLiveText] = useState("Canlı konuşma beklemede.");
-  const [lyraVideoSrc, setLyraVideoSrc] = useState(LYRA_VIDEO_DEFAULT);
 
   function now() {
     return new Date().toLocaleTimeString("tr-TR", {
@@ -173,9 +171,7 @@ export default function Page() {
         window.speechSynthesis.speak(utter);
       }
 
-      if (lyraVideoRef.current) {
-        lyraVideoRef.current.play().catch(() => {});
-      }
+      lyraVideoRef.current?.play().catch(() => {});
     } catch {
       const fallback =
         "Gemini bağlantısı gelmedi kanka. Tasarım aktif; /api/gemini route’unu ve GEMINI_API_KEY ayarını kontrol etmemiz gerekiyor.";
@@ -292,9 +288,7 @@ export default function Page() {
     setLiveOpen(true);
 
     setTimeout(() => {
-      if (lyraVideoRef.current) {
-        lyraVideoRef.current.play().catch(() => {});
-      }
+      lyraVideoRef.current?.play().catch(() => {});
     }, 100);
   }
 
@@ -308,7 +302,7 @@ export default function Page() {
     setCameraOn(false);
 
     if (cameraRef.current) cameraRef.current.srcObject = null;
-    if (lyraVideoRef.current) lyraVideoRef.current.pause();
+    lyraVideoRef.current?.pause();
 
     if (typeof window !== "undefined") {
       window.speechSynthesis?.cancel?.();
@@ -556,17 +550,12 @@ export default function Page() {
               <div className="live-avatar">
                 <video
                   ref={lyraVideoRef}
-                  src={lyraVideoSrc}
+                  src={LYRA_VIDEO}
                   autoPlay
                   loop
                   muted
                   playsInline
                   poster={LYRA_AVATAR}
-                  onError={() => {
-                    if (lyraVideoSrc !== LYRA_VIDEO_FALLBACK) {
-                      setLyraVideoSrc(LYRA_VIDEO_FALLBACK);
-                    }
-                  }}
                 />
 
                 <div className="live-ring one" />
