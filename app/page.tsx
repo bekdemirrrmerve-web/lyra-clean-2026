@@ -10,6 +10,7 @@ declare global {
 }
 
 type Role = "user" | "lyra";
+type AiMode = "offline" | "local" | "online";
 
 type Message = {
   id: number;
@@ -34,7 +35,7 @@ const features = [
   {
     icon: "⌕",
     title: "Araştırma Modu",
-    desc: "Bilgi bul, analiz et ve net cevaplar üret.",
+    desc: "API varsa güncel araştırır, yoksa bilgi bankasıyla cevaplar.",
   },
   {
     icon: "✎",
@@ -74,22 +75,207 @@ const starterMessages: Message[] = [
     role: "lyra",
     time: "13:21",
     text:
-      "Teleprompter Metni:\n“Bugün sana kanka bana cilt bakım toniği formülasyonunu atsana konusunu çok basit anlatacağım. Çünkü çoğu kişi burada yanlış noktaya odaklanıyor. Aslında işin özü çok daha net. Önce problemi anlayacağız, sonra doğru adımı seçeceğiz ve sonunda bunu nasıl uygulayacağımı konuşacağız.”\n\nCTA:\n“Kaydet, sonra birlikte tekrar bakalım.”",
-  },
-  {
-    id: 2,
-    role: "user",
-    time: "13:22",
-    text: "çalışıyo musun",
-  },
-  {
-    id: 3,
-    role: "lyra",
-    time: "13:22",
-    text:
-      "Harika! “Çalışıyor musun?” sorusuna öyle bir cevap verelim ki, sadece soruyu geçiştirmekle kalmasın, aynı zamanda değer kattığını hissettirsin.",
+      "Merhaba kanka. Ben Lyra. Artık API olmasa bile konuşabilen moddayım.\n\nBana yazabilir, mikrofonla konuşabilir ya da içerik/araştırma/ders modu seçebilirsin.\n\nNot: Güncel internet araştırması için Online Araştırma modu gerekir; API yoksa sana kendi bilgi bankam ve şablonlarımla cevap veririm.",
   },
 ];
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createOfflineAnswer(question: string) {
+  const q = question.toLocaleLowerCase("tr-TR");
+
+  if (
+    q.includes("merhaba") ||
+    q.includes("selam") ||
+    q.includes("naber") ||
+    q.includes("nasılsın")
+  ) {
+    return "Buradayım kanka 🤍 API olmadan da çalışıyorum. Yazdığını anlayıp temel cevap verebilirim, sesli konuşabilirim, canlı modda avatar videosunu oynatabilirim. Güncel internete bakmam gerekirse Online Araştırma moduna geçmemiz yeterli.";
+  }
+
+  if (
+    q.includes("çalışıyor musun") ||
+    q.includes("çalışıyo musun") ||
+    q.includes("çalışıyor mu")
+  ) {
+    return "Evet kanka, çalışıyorum. Şu an API’siz Lyra modundayım: yazdığını okuyorum, hazır bilgi/şablon mantığıyla cevap veriyorum ve sesli de konuşabiliyorum. Gemini ya da local model bağlanırsa çok daha akıllı cevap verebilirim.";
+  }
+
+  if (
+    q.includes("hook") ||
+    q.includes("içerik") ||
+    q.includes("reels") ||
+    q.includes("tiktok") ||
+    q.includes("video metni") ||
+    q.includes("teleprompter")
+  ) {
+    return `Tabii kanka, bunu içerik formatına çevirelim:
+
+HOOK:
+“Bunu çoğu kişi yanlış biliyor ama işin kimyası bambaşka…”
+
+GİRİŞ:
+Bugün sana bu konuyu çok sade anlatacağım. Çünkü dışarıdan basit görünüyor ama aslında doğru mantığı kurunca hem daha güvenli hem daha etkili sonuç alıyorsun.
+
+GELİŞME:
+Önce problemi anlayacağız, sonra hangi içerik/ürün/aktif işe yarar ona bakacağız. Burada önemli olan şey ezbere değil, mekanizmaya göre düşünmek.
+
+SONUÇ:
+Yani mesele sadece “ne kullanmalıyım?” değil; “neden, ne zaman ve hangi cilt/amaç için kullanmalıyım?” sorusu.
+
+CTA:
+Kaydet kanka, sonra bu konuyu birlikte formüle dökeriz.`;
+  }
+
+  if (
+    q.includes("formül") ||
+    q.includes("krem") ||
+    q.includes("serum") ||
+    q.includes("tonik") ||
+    q.includes("şampuan") ||
+    q.includes("kozmetik")
+  ) {
+    return `Kozmetik formül mantığıyla bakarsam kanka, önce ürün tipini netleştiririz:
+
+1. Ürün tipi: tonik / serum / krem / jel / şampuan
+2. Hedef: nem, bariyer, leke, akne, parlaklık, saç dökülmesi vb.
+3. Baz: su fazı, yağ fazı, emülgatör, kıvam verici
+4. Aktifler: niacinamide, panthenol, hyaluronic acid, allantoin gibi
+5. pH aralığı: aktif maddeye ve ürün tipine göre ayarlanır
+6. Koruyucu: su içeren her formülde şart
+7. Stabilite: görünüm, koku, pH, faz ayrımı kontrol edilir
+
+API’siz modda sana temel mantığı ve örnek şablon çıkarabilirim. Kesin AR-GE formülü için ürün tipi, hedef ve yüzde aralığını söylemen lazım.`;
+  }
+
+  if (
+    q.includes("araştır") ||
+    q.includes("güncel") ||
+    q.includes("trend") ||
+    q.includes("2026") ||
+    q.includes("internetten")
+  ) {
+    return `Kanka burada dürüst olayım: Şu an API’siz moddayım, yani canlı internet taraması yapmıyorum.
+
+Ama sana iki şekilde yardımcı olurum:
+1. Genel bilgi bankamla konuyu açıklarım.
+2. Online Araştırma moduna geçersen /api/gemini varsa güncel araştırma cevabı almayı denerim.
+
+Ben olsam şöyle yapardım: önce API’siz modda taslağı çıkarır, sonra sadece güncel veri gereken yerlerde Online Araştırma modunu açardım. Böyle kota da boşuna yanmaz.`;
+  }
+
+  if (
+    q.includes("ders") ||
+    q.includes("öğren") ||
+    q.includes("anlat") ||
+    q.includes("test")
+  ) {
+    return `Tamam kanka, bunu ders modunda şöyle çalışırız:
+
+Konu anlatımı:
+Önce konunun ana mantığını sadeleştiririm. Sonra örnek veririz. En son küçük testle pekiştiririz.
+
+Mini çalışma sistemi:
+1. Konuyu 5 cümlede açıkla
+2. 3 tane örnek çöz
+3. 5 soruluk test üret
+4. Yanlışları neden yanlış yaptığını açıkla
+5. Kısa tekrar notu çıkar
+
+Bana konuyu yaz, ben sana direkt mini ders paketi çıkarayım.`;
+  }
+
+  if (
+    q.includes("pdf") ||
+    q.includes("özet") ||
+    q.includes("belge")
+  ) {
+    return `PDF özeti için dosya okuma sistemi ayrıca bağlanmalı kanka. Bu sayfa tek başına dosya içeriğini okuyamaz ama mantık hazır:
+
+PDF geldiğinde Lyra şunları çıkaracak:
+- kısa özet
+- önemli başlıklar
+- teknik terimler
+- aksiyon listesi
+- içerik fikrine dönüşebilecek noktalar
+
+Şu an API’siz modda, bana metni yapıştırırsan direkt özetlerim.`;
+  }
+
+  if (
+    q.includes("görsel") ||
+    q.includes("prompt") ||
+    q.includes("fotoğraf") ||
+    q.includes("tasarım")
+  ) {
+    return `Görsel promptu için şöyle ilerleyelim kanka:
+
+PROMPT ŞABLONU:
+“Modern, temiz, beyaz-gümüş tonlarda, premium yapay zeka asistan arayüzü, soft ışık, cam efektli kartlar, yuvarlak butonlar, gerçekçi ürün tasarımı, yüksek kaliteli UI mockup, minimal ve estetik görünüm.”
+
+Bunu istediğin konuya göre özelleştiririm. Mesela Lyra, InciLab, kozmetik laboratuvarı, içerik üretici odası gibi ayrı ayrı prompt çıkarabiliriz.`;
+  }
+
+  return `Bunu anladım kanka. Şu an API’siz Lyra modundayım; yani canlı internete bakmadan, kendi hazır mantığım ve şablonlarımla cevap veriyorum.
+
+Senin yazdığın konu için ben olsam önce şöyle ilerlerdim:
+1. Konuyu netleştir
+2. Amacı seç: bilgi mi, içerik mi, formül mü, analiz mi?
+3. Kısa bir taslak çıkar
+4. Gerekirse Online Araştırma moduna geçip güncel bilgiyle güçlendir
+
+İstersen bana konuyu biraz daha net yaz, ben direkt uygulanabilir hale çevireyim.`;
+}
+
+async function askGemini(message: string) {
+  const res = await fetch("/api/gemini", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      mode: "online-research",
+    }),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.error || "Gemini bağlantısı başarısız.");
+  }
+
+  return (
+    data?.answer ||
+    data?.reply ||
+    data?.text ||
+    "Gemini cevap döndürdü ama answer/reply/text alanı bulunamadı."
+  );
+}
+
+async function askLocalOllama(message: string) {
+  const res = await fetch("http://localhost:11434/api/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "llama3.2:3b",
+      prompt: `Sen Lyra adında sıcak, doğal, Türkçe konuşan bir yapay zeka asistansın. Kullanıcıya kısa, anlaşılır ve yardımcı cevap ver.\n\nKullanıcı: ${message}\nLyra:`,
+      stream: false,
+    }),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok || !data?.response) {
+    throw new Error("Local model cevap vermedi.");
+  }
+
+  return data.response;
+}
 
 export default function Page() {
   const cameraRef = useRef<HTMLVideoElement | null>(null);
@@ -98,6 +284,7 @@ export default function Page() {
 
   const [messages, setMessages] = useState<Message[]>(starterMessages);
   const [input, setInput] = useState("");
+  const [aiMode, setAiMode] = useState<AiMode>("offline");
   const [gender, setGender] = useState<"Kadın" | "Erkek">("Kadın");
   const [muted, setMuted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -113,6 +300,24 @@ export default function Page() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function modeLabel() {
+    if (aiMode === "offline") return "API’siz Lyra";
+    if (aiMode === "local") return "Local AI";
+    return "Online Araştırma";
+  }
+
+  function speak(text: string) {
+    if (muted || typeof window === "undefined") return;
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "tr-TR";
+    utter.rate = 1;
+    utter.pitch = gender === "Kadın" ? 1.08 : 0.92;
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
   }
 
   async function sendMessage(customText?: string) {
@@ -132,25 +337,33 @@ export default function Page() {
     setInput("");
     setLoading(true);
 
+    let answer = "";
+
     try {
-      const res = await fetch("/api/gemini", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: clean,
-          mode: liveOpen ? "live" : "chat",
-        }),
-      });
+      if (aiMode === "offline") {
+        await wait(350);
+        answer = createOfflineAnswer(clean);
+      }
 
-      const data = await res.json().catch(() => null);
+      if (aiMode === "local") {
+        try {
+          answer = await askLocalOllama(clean);
+        } catch {
+          answer =
+            "Local AI şu an cevap vermedi kanka. Ollama açık değilse bu normal. API’siz Lyra moduna düşüp yine cevaplıyorum:\n\n" +
+            createOfflineAnswer(clean);
+        }
+      }
 
-      const answer =
-        data?.answer ||
-        data?.reply ||
-        data?.text ||
-        "Cevabı alamadım kanka. Gemini route çalışıyor ama answer, reply veya text alanı dönmüyor olabilir.";
+      if (aiMode === "online") {
+        try {
+          answer = await askGemini(clean);
+        } catch {
+          answer =
+            "Online araştırma bağlantısı gelmedi kanka. Gemini/API tarafı çalışmıyor olabilir. Seni boş bırakmıyorum, API’siz modla cevaplıyorum:\n\n" +
+            createOfflineAnswer(clean);
+        }
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -162,36 +375,8 @@ export default function Page() {
         },
       ]);
 
-      if (!muted && typeof window !== "undefined") {
-        const utter = new SpeechSynthesisUtterance(answer);
-        utter.lang = "tr-TR";
-        utter.rate = 1;
-        utter.pitch = gender === "Kadın" ? 1.08 : 0.92;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utter);
-      }
-
+      speak(answer);
       lyraVideoRef.current?.play().catch(() => {});
-    } catch {
-      const fallback =
-        "Gemini bağlantısı gelmedi kanka. Tasarım aktif; /api/gemini route’unu ve GEMINI_API_KEY ayarını kontrol etmemiz gerekiyor.";
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          role: "lyra",
-          text: fallback,
-          time: now(),
-        },
-      ]);
-
-      if (!muted && typeof window !== "undefined") {
-        const utter = new SpeechSynthesisUtterance(fallback);
-        utter.lang = "tr-TR";
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utter);
-      }
     } finally {
       setLoading(false);
     }
@@ -222,7 +407,7 @@ export default function Page() {
       }, 50);
     } catch {
       setLiveText(
-        "Kamera izni alınamadı. Tarayıcı ayarlarından kamera iznini açmalısın."
+        "Kamera izni alınamadı. Tarayıcı ayarlarından kamera iznini açman gerekebilir."
       );
     }
   }
@@ -266,8 +451,9 @@ export default function Page() {
       if (interimText.trim()) setLiveText(interimText.trim());
 
       if (finalText.trim()) {
-        setLiveText(finalText.trim());
-        sendMessage(finalText.trim());
+        const spoken = finalText.trim();
+        setLiveText(spoken);
+        sendMessage(spoken);
       }
     };
 
@@ -309,6 +495,45 @@ export default function Page() {
     }
   }
 
+  function handleFeature(title: string) {
+    if (title === "Canlı Mod") {
+      openLive();
+      return;
+    }
+
+    if (title === "Araştırma Modu") {
+      setAiMode("online");
+      setInput("Bu konuyu araştır: ");
+      return;
+    }
+
+    if (title === "İçerik Üretme") {
+      setAiMode("offline");
+      setInput("Bana şu konu için hook, başlık ve teleprompter metni hazırla: ");
+      return;
+    }
+
+    if (title === "Ders Modu") {
+      setAiMode("offline");
+      setInput("Bana şu konuyu ders gibi anlat ve mini test hazırla: ");
+      return;
+    }
+
+    if (title === "Görsel Üretme") {
+      setAiMode("offline");
+      setInput("Şu konu için görsel üretim promptu hazırla: ");
+      return;
+    }
+
+    if (title === "PDF Özeti") {
+      setAiMode("offline");
+      setInput("Şu metni/PDF içeriğini özetle: ");
+      return;
+    }
+
+    setInput(`${title} için bana yardımcı ol: `);
+  }
+
   useEffect(() => {
     return () => {
       stream?.getTracks().forEach((track) => track.stop());
@@ -348,13 +573,13 @@ export default function Page() {
 
           <div className="usage-card">
             <div className="usage-head">
-              <b>Aylık</b>
-              <strong>%68</strong>
+              <b>Aktif Mod</b>
+              <strong>{modeLabel()}</strong>
             </div>
             <div className="usage-bar">
               <i />
             </div>
-            <p>Kalan: 32% / 10 gün</p>
+            <p>API yoksa Offline Lyra çalışır.</p>
           </div>
 
           <div className="weather">
@@ -374,6 +599,29 @@ export default function Page() {
           <button className="round-btn">∨</button>
         </header>
 
+        <section className="mode-row">
+          <button
+            className={aiMode === "offline" ? "mode-btn active" : "mode-btn"}
+            onClick={() => setAiMode("offline")}
+          >
+            API’siz Lyra
+          </button>
+
+          <button
+            className={aiMode === "local" ? "mode-btn active" : "mode-btn"}
+            onClick={() => setAiMode("local")}
+          >
+            Local AI
+          </button>
+
+          <button
+            className={aiMode === "online" ? "mode-btn active" : "mode-btn"}
+            onClick={() => setAiMode("online")}
+          >
+            Online Araştırma
+          </button>
+        </section>
+
         <section className="avatar-area">
           <div className="halo">
             <div className="avatar-card">
@@ -383,7 +631,7 @@ export default function Page() {
 
           <div className="control-row">
             <button className="control-btn">
-              ≋ Ses: Gemini Live <span>∨</span>
+              ≋ Ses: {modeLabel()} <span>∨</span>
             </button>
 
             <button
@@ -439,19 +687,29 @@ export default function Page() {
             {loading && (
               <div className="msg-row lyra-row">
                 <div className="bubble lyra">
-                  <p>Lyra düşünüyor...</p>
+                  <p>
+                    {aiMode === "offline"
+                      ? "Lyra API’siz modda cevap hazırlıyor..."
+                      : aiMode === "local"
+                        ? "Local AI cevap hazırlıyor..."
+                        : "Online araştırma deneniyor..."}
+                  </p>
                 </div>
               </div>
             )}
           </div>
 
           <p className="prompt-hint">
-            Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım.
+            {aiMode === "offline"
+              ? "API’siz mod açık. Lyra yine konuşur, cevap verir, içerik üretir."
+              : aiMode === "local"
+                ? "Local AI modu açık. Ollama açıksa bilgisayarındaki modelle cevap verir."
+                : "Online Araştırma modu açık. API yoksa otomatik API’siz moda düşer."}
           </p>
 
           <div className="input-box">
-            <button>◖</button>
-            <button>▧</button>
+            <button onClick={openLive}>◖</button>
+            <button onClick={toggleMic}>♫</button>
             <button className="pdf-btn">PDF</button>
 
             <input
@@ -474,7 +732,7 @@ export default function Page() {
             <button
               key={feature.title}
               className="feature-card"
-              onClick={feature.title === "Canlı Mod" ? openLive : undefined}
+              onClick={() => handleFeature(feature.title)}
             >
               <span>{feature.icon}</span>
               <b>{feature.title}</b>
@@ -501,27 +759,27 @@ export default function Page() {
             </div>
 
             <div className="phone-logo">
-              <b>LYRA</b>
+              <img src={LYRA_AVATAR} alt="Lyra mobile" />
             </div>
 
             <div className="phone-controls">
-              <button>≋ Ses: Gemini Live</button>
-              <button>Sessize AI</button>
-              <button>Kadın</button>
-              <button>Erkek</button>
+              <button onClick={() => setAiMode("offline")}>API’siz</button>
+              <button onClick={() => setAiMode("local")}>Local AI</button>
+              <button onClick={() => setAiMode("online")}>Online</button>
+              <button onClick={() => setMuted((v) => !v)}>Sessiz</button>
               <button className="wide" onClick={openLive}>
                 ≋ Canlı Konuşma ›
               </button>
             </div>
 
             <div className="phone-input">
-              <span>Lyra’ya bir şey sor veya yaz...</span>
-              <button>▶</button>
+              <span>{modeLabel()}</span>
+              <button onClick={() => sendMessage("Merhaba Lyra")}>▶</button>
             </div>
 
             <div className="phone-grid">
               {features.slice(0, 6).map((feature) => (
-                <button key={feature.title}>
+                <button key={feature.title} onClick={() => handleFeature(feature.title)}>
                   <span>{feature.icon}</span>
                   <b>{feature.title}</b>
                   <em>∨</em>
@@ -561,7 +819,9 @@ export default function Page() {
                 <div className="live-ring one" />
                 <div className="live-ring two" />
 
-                <span>{loading ? "Cevap hazırlıyor..." : "Konuşmaya hazır"}</span>
+                <span>
+                  {loading ? "Cevap hazırlıyor..." : `${modeLabel()} hazır`}
+                </span>
               </div>
 
               <div className="live-actions">
@@ -707,7 +967,8 @@ export default function Page() {
         .profile-card,
         .usage-card,
         .weather,
-        .live-actions button {
+        .live-actions button,
+        .mode-btn {
           border: 1px solid #c9ced4;
           background: linear-gradient(145deg, #ffffff 0%, #eef1f4 100%);
           color: #111;
@@ -795,10 +1056,12 @@ export default function Page() {
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 8px;
         }
 
         .usage-head strong {
-          font-size: 15px;
+          font-size: 11px;
+          text-align: right;
         }
 
         .usage-bar {
@@ -880,6 +1143,29 @@ export default function Page() {
           width: 42px;
           height: 42px;
           border-radius: 50%;
+        }
+
+        .mode-row {
+          position: relative;
+          z-index: 2;
+          margin: 18px auto 0;
+          display: flex;
+          justify-content: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .mode-btn {
+          min-height: 42px;
+          padding: 0 18px;
+          border-radius: 999px;
+          font-size: 13px;
+        }
+
+        .mode-btn.active {
+          background: #111;
+          color: #fff;
+          border-color: #111;
         }
 
         .avatar-area {
@@ -1021,7 +1307,7 @@ export default function Page() {
 
         .first-message .bubble {
           width: min(1000px, 91%);
-          min-height: 138px;
+          min-height: 120px;
         }
 
         .bubble p {
@@ -1039,7 +1325,7 @@ export default function Page() {
           background: #111;
           color: #fff;
           border-radius: 15px;
-          max-width: 260px;
+          max-width: 340px;
         }
 
         .bubble span {
@@ -1053,7 +1339,7 @@ export default function Page() {
         .prompt-hint {
           margin: 15px 0 16px;
           color: #4b5563;
-          font-size: 18px;
+          font-size: 16px;
           font-weight: 950;
         }
 
@@ -1086,7 +1372,7 @@ export default function Page() {
         }
 
         .input-box input::placeholder {
-          color: transparent;
+          color: #8b929b;
         }
 
         .send-btn {
@@ -1215,16 +1501,17 @@ export default function Page() {
           margin: 14px auto 10px;
           border-radius: 21px;
           border: 1px solid #d4d8dd;
+          overflow: hidden;
           background: linear-gradient(145deg, #ffffff, #edf1f4);
           display: grid;
           place-items: center;
           box-shadow: 0 16px 32px rgba(0, 0, 0, 0.07);
         }
 
-        .phone-logo b {
-          font-size: 24px;
-          letter-spacing: 6px;
-          font-weight: 950;
+        .phone-logo img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
         }
 
         .phone-controls {
@@ -1585,6 +1872,10 @@ export default function Page() {
           .about-btn,
           .round-btn {
             display: none;
+          }
+
+          .mode-row {
+            margin-top: 14px;
           }
 
           .control-row {
