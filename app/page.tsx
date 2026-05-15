@@ -1,59 +1,65 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+
+declare global {
+  interface Window {
+    SpeechRecognition?: any;
+    webkitSpeechRecognition?: any;
+  }
+}
+
+type Role = "user" | "lyra";
 
 type Message = {
   id: number;
-  role: "user" | "lyra";
+  role: Role;
   text: string;
   time: string;
 };
 
-type Feature = {
-  icon: string;
-  title: string;
-  desc: string;
-};
-
 const LYRA_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
 <svg width="360" height="520" viewBox="0 0 360 520" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="360" height="520" rx="42" fill="url(#bg)"/>
-  <ellipse cx="180" cy="230" rx="118" ry="150" fill="#F1D0A8" opacity="0.15"/>
-  <path d="M94 196C91 116 132 58 184 58C239 58 278 118 268 197C260 260 245 323 247 401H107C111 320 96 262 94 196Z" fill="url(#hair)"/>
-  <path d="M116 192C109 123 140 75 183 75C226 75 256 124 248 192C243 238 231 270 212 288H154C135 270 121 238 116 192Z" fill="#F2C394"/>
-  <path d="M135 185C134 176 127 171 121 173C114 176 113 191 121 202C127 211 134 209 137 205L135 185Z" fill="#E8B184"/>
-  <path d="M225 185C226 176 233 171 239 173C246 176 247 191 239 202C233 211 226 209 223 205L225 185Z" fill="#E8B184"/>
-  <path d="M132 129C146 98 178 82 208 96C236 109 251 140 248 178C238 160 221 137 200 129C180 120 155 125 132 129Z" fill="#C9893E"/>
-  <path d="M118 190C123 154 133 117 162 101C147 137 145 176 137 218C130 252 121 294 115 356C96 308 91 242 118 190Z" fill="#B8752D"/>
-  <path d="M242 184C238 150 229 116 199 101C218 132 218 171 224 218C229 255 237 303 245 357C265 305 270 239 242 184Z" fill="#B8752D"/>
-  <path d="M135 161C142 155 151 155 158 161" stroke="#5B3A27" stroke-width="5" stroke-linecap="round"/>
-  <path d="M202 161C209 155 218 155 225 161" stroke="#5B3A27" stroke-width="5" stroke-linecap="round"/>
-  <circle cx="150" cy="182" r="5" fill="#2E221C"/>
-  <circle cx="212" cy="182" r="5" fill="#2E221C"/>
-  <path d="M181 181C177 195 174 207 181 209C185 210 188 208 190 206" stroke="#B8755E" stroke-width="4" stroke-linecap="round"/>
+  <rect width="360" height="520" rx="34" fill="url(#bg)"/>
+  <ellipse cx="180" cy="178" rx="97" ry="124" fill="#efe3d5"/>
+  <path d="M91 185C87 105 130 50 183 50C241 50 280 112 269 196C262 254 247 316 251 404H107C111 320 95 257 91 185Z" fill="url(#hair)"/>
+  <path d="M116 180C109 118 140 76 182 76C225 76 256 119 248 180C244 235 229 270 209 288H155C136 270 122 235 116 180Z" fill="#F1C29A"/>
+  <path d="M132 129C146 98 178 83 207 96C235 108 252 140 248 177C237 158 220 136 199 128C178 120 154 124 132 129Z" fill="#D79A4B"/>
+  <path d="M119 190C124 154 134 118 162 101C147 138 145 177 137 220C130 254 121 300 115 360C96 308 91 242 119 190Z" fill="#B8752D"/>
+  <path d="M242 184C238 150 229 116 199 101C218 132 218 171 224 218C229 255 237 303 245 360C265 306 270 239 242 184Z" fill="#B8752D"/>
+  <path d="M135 159C142 153 151 153 158 159" stroke="#533622" stroke-width="5" stroke-linecap="round"/>
+  <path d="M202 159C209 153 218 153 225 159" stroke="#533622" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="150" cy="180" r="5.5" fill="#2C211B"/>
+  <circle cx="212" cy="180" r="5.5" fill="#2C211B"/>
+  <path d="M181 181C177 195 174 206 181 209C185 210 188 208 190 206" stroke="#B8755E" stroke-width="4" stroke-linecap="round"/>
   <path d="M159 226C174 238 191 238 205 226" stroke="#A85A5A" stroke-width="5" stroke-linecap="round"/>
-  <path d="M148 206C139 204 133 201 127 196" stroke="#E7A6A6" stroke-width="4" stroke-linecap="round" opacity="0.35"/>
-  <path d="M214 206C223 204 229 201 235 196" stroke="#E7A6A6" stroke-width="4" stroke-linecap="round" opacity="0.35"/>
-  <path d="M145 282C145 282 157 307 181 307C205 307 216 282 216 282L236 294C236 294 220 354 181 354C142 354 125 294 125 294L145 282Z" fill="#EFC29D"/>
-  <path d="M103 520C107 426 129 326 160 306H202C232 326 254 426 258 520H103Z" fill="#111827"/>
+  <path d="M147 282C147 282 158 307 181 307C204 307 215 282 215 282L236 294C236 294 220 354 181 354C142 354 125 294 125 294L147 282Z" fill="#EFC29D"/>
+  <path d="M103 520C107 426 129 326 160 306H202C232 326 254 426 258 520H103Z" fill="#111111"/>
   <path d="M151 306C158 338 166 364 181 364C196 364 204 338 211 306C201 315 191 320 181 320C171 320 161 315 151 306Z" fill="#F2C394"/>
-  <path d="M101 520C106 430 130 345 155 315C159 354 166 390 181 390C196 390 203 354 207 315C232 345 255 430 260 520H101Z" fill="#0B0F18"/>
-  <path d="M128 382C142 414 158 434 181 434C204 434 219 414 233 382" stroke="#202838" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="360" y2="520" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#EEF1F6"/>
+      <stop offset="1" stop-color="#EEF1F4"/>
     </linearGradient>
     <linearGradient id="hair" x1="90" y1="60" x2="270" y2="410" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F1C06B"/>
+      <stop stop-color="#F4C56D"/>
       <stop offset="0.45" stop-color="#C9893E"/>
-      <stop offset="1" stop-color="#81511F"/>
+      <stop offset="1" stop-color="#7B4A1B"/>
     </linearGradient>
   </defs>
 </svg>
 `)}`;
 
-const features: Feature[] = [
+const navItems = [
+  { icon: "+", label: "Yeni Sohbet" },
+  { icon: "▢", label: "Sohbetler" },
+  { icon: "⌘", label: "Modlar" },
+  { icon: "▤", label: "Araçlar" },
+  { icon: "♢", label: "Hatırlatıcılar" },
+  { icon: "⚙", label: "Ayarlar" },
+];
+
+const features = [
   {
     icon: "⌕",
     title: "Araştırma Modu",
@@ -67,7 +73,7 @@ const features: Feature[] = [
   {
     icon: "▰",
     title: "Ders Modu",
-    desc: "Konu anlat, test üret, yanlışları açıkla.",
+    desc: "Konu anlat, test üret, yanlış açıkla.",
   },
   {
     icon: "▧",
@@ -110,40 +116,47 @@ const starterMessages: Message[] = [
     role: "lyra",
     time: "13:22",
     text:
-      "Harika! “Çalışıyor musun?” sorusuna öyle bir cevap verelim ki, sadece soruyu geçiştirmekle kalmasın, aynı zamanda değer kattığını hissettirsin.",
+      "Harika! “Çalışıyor musun?” sorusuna öyle bir cevap verelim ki, sadece soruyu geçiştirmekle kalmasın, aynı zamanda",
   },
 ];
 
 export default function Page() {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+
   const [messages, setMessages] = useState<Message[]>(starterMessages);
   const [input, setInput] = useState("");
-  const [voiceMode, setVoiceMode] = useState("Gemini Live");
   const [gender, setGender] = useState<"Kadın" | "Erkek">("Kadın");
-  const [isLive, setIsLive] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const now = useMemo(() => {
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [micOn, setMicOn] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [liveText, setLiveText] = useState("Canlı konuşma beklemede.");
+
+  function now() {
     return new Date().toLocaleTimeString("tr-TR", {
       hour: "2-digit",
       minute: "2-digit",
     });
-  }, [messages.length]);
+  }
 
-  async function sendMessage() {
-    const clean = input.trim();
-    if (!clean || isLoading) return;
+  async function sendMessage(customText?: string) {
+    const clean = (customText ?? input).trim();
+    if (!clean || loading) return;
 
     const userMessage: Message = {
       id: Date.now(),
       role: "user",
       text: clean,
-      time: now,
+      time: now(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
-    setIsLoading(true);
+    setLoading(true);
 
     try {
       const res = await fetch("/api/gemini", {
@@ -151,7 +164,10 @@ export default function Page() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: clean }),
+        body: JSON.stringify({
+          message: clean,
+          mode: liveOpen ? "live" : "chat",
+        }),
       });
 
       const data = await res.json().catch(() => null);
@@ -160,7 +176,7 @@ export default function Page() {
         data?.answer ||
         data?.reply ||
         data?.text ||
-        "Cevabı alamadım kanka. Gemini route çalışıyor ama cevap alanı answer, reply veya text olarak dönmüyor olabilir.";
+        "Cevabı alamadım kanka. Gemini route çalışıyor ama answer, reply veya text alanı dönmüyor olabilir.";
 
       setMessages((prev) => [
         ...prev,
@@ -168,34 +184,149 @@ export default function Page() {
           id: Date.now() + 1,
           role: "lyra",
           text: answer,
-          time: new Date().toLocaleTimeString("tr-TR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          time: now(),
         },
       ]);
+
+      if (!muted && typeof window !== "undefined") {
+        const utter = new SpeechSynthesisUtterance(answer);
+        utter.lang = "tr-TR";
+        utter.rate = 1;
+        utter.pitch = gender === "Kadın" ? 1.08 : 0.92;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      }
     } catch {
+      const fallback =
+        "Gemini bağlantısı gelmedi kanka. Tasarım aktif; /api/gemini route’unu ve GEMINI_API_KEY ayarını kontrol etmemiz gerekiyor.";
+
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           role: "lyra",
-          text:
-            "Gemini bağlantısı çalışmadı kanka. Şimdilik tasarım aktif; /api/gemini route’unu ve GEMINI_API_KEY ayarını kontrol edelim.",
-          time: new Date().toLocaleTimeString("tr-TR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          text: fallback,
+          time: now(),
         },
       ]);
+
+      if (!muted && typeof window !== "undefined") {
+        const utter = new SpeechSynthesisUtterance(fallback);
+        utter.lang = "tr-TR";
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      }
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") sendMessage();
+  async function toggleCamera() {
+    if (cameraOn) {
+      stream?.getTracks().forEach((track) => track.stop());
+      setStream(null);
+      setCameraOn(false);
+      if (videoRef.current) videoRef.current.srcObject = null;
+      return;
+    }
+
+    try {
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+
+      setStream(cameraStream);
+      setCameraOn(true);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = cameraStream;
+        }
+      }, 50);
+    } catch {
+      setLiveText("Kamera izni alınamadı. Tarayıcı ayarlarından kamera iznini açmalısın.");
+    }
   }
+
+  function toggleMic() {
+    if (micOn) {
+      recognitionRef.current?.stop?.();
+      setMicOn(false);
+      setLiveText("Mikrofon kapalı.");
+      return;
+    }
+
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setLiveText("Bu tarayıcı ses algılamayı desteklemiyor. Chrome ile dene kanka.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "tr-TR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      setMicOn(true);
+      setLiveText("Dinliyorum...");
+    };
+
+    recognition.onresult = (event: any) => {
+      let finalText = "";
+      let interimText = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const text = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalText += text;
+        else interimText += text;
+      }
+
+      if (interimText.trim()) setLiveText(interimText.trim());
+
+      if (finalText.trim()) {
+        setLiveText(finalText.trim());
+        sendMessage(finalText.trim());
+      }
+    };
+
+    recognition.onerror = () => {
+      setMicOn(false);
+      setLiveText("Mikrofon bağlantısı kesildi.");
+    };
+
+    recognition.onend = () => {
+      setMicOn(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  function openLive() {
+    setLiveOpen(true);
+  }
+
+  function closeLive() {
+    setLiveOpen(false);
+    recognitionRef.current?.stop?.();
+    setMicOn(false);
+    stream?.getTracks().forEach((track) => track.stop());
+    setStream(null);
+    setCameraOn(false);
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }
+
+  useEffect(() => {
+    return () => {
+      stream?.getTracks().forEach((track) => track.stop());
+      recognitionRef.current?.stop?.();
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel?.();
+    };
+  }, [stream]);
 
   return (
     <main className="lyra-page">
@@ -203,163 +334,123 @@ export default function Page() {
         <div className="brand">LYRA</div>
 
         <nav className="nav">
-          <button className="nav-item active">
-            <span>＋</span>
-            Yeni Sohbet
-          </button>
-          <button className="nav-item">
-            <span>▢</span>
-            Sohbetler
-          </button>
-          <button className="nav-item">
-            <span>⌘</span>
-            Modlar
-          </button>
-          <button className="nav-item">
-            <span>▤</span>
-            Araçlar
-          </button>
-          <button className="nav-item">
-            <span>♢</span>
-            Hatırlatıcılar
-          </button>
-          <button className="nav-item">
-            <span>⚙</span>
-            Ayarlar
-          </button>
+          {navItems.map((item, index) => (
+            <button className="nav-btn" key={item.label}>
+              <span>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
         </nav>
 
         <div className="sidebar-bottom">
           <div className="pro-card">
-            <span className="spark">✦</span>
-            <div>
-              <b>LYRA PRO</b>
-              <p>AI Asistan</p>
-            </div>
+            <b>LYRA PRO</b>
+            <p>AI Asistan</p>
           </div>
 
           <div className="profile-card">
-            <div className="avatar-mini">M</div>
+            <div className="profile-avatar">M</div>
             <div>
               <b>Merve</b>
               <p>Pro Üye</p>
             </div>
-            <span className="chev">⌄</span>
+            <span>∨</span>
           </div>
 
           <div className="usage-card">
-            <div className="usage-top">
-              <span>Aylık Kullanım</span>
-              <b>%68</b>
+            <div className="usage-head">
+              <b>Aylık</b>
+              <strong>%68</strong>
             </div>
-            <div className="bar">
-              <div />
+            <div className="usage-bar">
+              <i />
             </div>
             <p>Kalan: 32% / 10 gün</p>
           </div>
 
-          <div className="weather-card">
+          <div className="weather">
             <span>☀</span>
             <div>
               <b>19°C</b>
               <p>Güneşli</p>
             </div>
-            <span>›</span>
           </div>
         </div>
       </aside>
 
-      <section className="desktop">
+      <section className="main-shell">
         <header className="topbar">
           <h1>LYRA AI ASİSTANINIZ</h1>
-          <button className="about">ⓘ Lyra Hakkında ⌄</button>
+          <button className="about-btn">Lyra Hakkında</button>
+          <button className="round-btn">∨</button>
         </header>
 
-        <section className="hero">
-          <div className="avatar-glow">
-            <div className="avatar-frame">
+        <section className="avatar-area">
+          <div className="halo">
+            <div className="avatar-card">
               <img src={LYRA_AVATAR} alt="Lyra Avatar" />
             </div>
           </div>
 
           <div className="control-row">
-            <button className="pill" onClick={() => setVoiceMode("Gemini Live")}>
-              ≋ Ses: {voiceMode} <span>⌄</span>
+            <button className="control-btn">≋ Ses: Gemini Live <span>∨</span></button>
+            <button className={`control-btn ${muted ? "active" : ""}`} onClick={() => setMuted((v) => !v)}>
+              ♫ {muted ? "Ses Kapalı" : "Sessize Al"}
             </button>
-            <button
-              className={`pill ${isMuted ? "selected" : ""}`}
-              onClick={() => setIsMuted((v) => !v)}
-            >
-              {isMuted ? "🔇 Sessiz" : "♬ Sessize Al"}
-            </button>
-            <button
-              className={`pill ${gender === "Kadın" ? "selected" : ""}`}
-              onClick={() => setGender("Kadın")}
-            >
+            <button className={`control-btn small ${gender === "Kadın" ? "active-soft" : ""}`} onClick={() => setGender("Kadın")}>
               ♀ Kadın
             </button>
-            <button
-              className={`pill ${gender === "Erkek" ? "selected" : ""}`}
-              onClick={() => setGender("Erkek")}
-            >
+            <button className={`control-btn small ${gender === "Erkek" ? "active-soft" : ""}`} onClick={() => setGender("Erkek")}>
               ♂ Erkek
             </button>
-            <button
-              className={`pill live ${isLive ? "selected-live" : ""}`}
-              onClick={() => setIsLive((v) => !v)}
-            >
-              ≋ {isLive ? "Canlı Aktif" : "Canlı Konuşma"}
-            </button>
+            <button className="control-btn" onClick={openLive}>≋ Canlı Konuşma</button>
           </div>
         </section>
 
-        <section className="chat-card">
-          <div className="messages">
-            {messages.map((message) => (
+        <section className="chat-panel">
+          <div className="message-scroll">
+            {messages.map((message, index) => (
               <div
                 key={message.id}
-                className={`message-row ${
-                  message.role === "user" ? "right" : "left"
+                className={`msg-row ${message.role === "user" ? "user-row" : "lyra-row"} ${
+                  index === 0 ? "first-message" : ""
                 }`}
               >
-                {message.role === "lyra" && <div className="lyra-icon">✦</div>}
-
                 <div className={`bubble ${message.role}`}>
                   <p>{message.text}</p>
-                  <span>{message.time}</span>
+                  {message.role === "user" && <span>{message.time}</span>}
                 </div>
               </div>
             ))}
 
-            {isLoading && (
-              <div className="message-row left">
-                <div className="lyra-icon">✦</div>
-                <div className="bubble lyra typing">
+            {loading && (
+              <div className="msg-row lyra-row">
+                <div className="bubble lyra">
                   <p>Lyra düşünüyor...</p>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="prompt-line">
+          <p className="prompt-hint">
             Video konunu yaz. Sana başlık, hook ve teleprompter metni çıkarayım.
-          </div>
+          </p>
 
-          <div className="input-area">
-            <div className="input-tools">
-              <button>📎</button>
-              <button>☷</button>
-              <button className="pdf">PDF</button>
-            </div>
+          <div className="input-box">
+            <button>◖</button>
+            <button>▧</button>
+            <button className="pdf-btn">PDF</button>
 
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") sendMessage();
+              }}
               placeholder="Lyra'ya bir şey sor veya yaz..."
             />
 
-            <button className="send" onClick={sendMessage}>
+            <button className="send-btn" onClick={() => sendMessage()}>
               ▶
             </button>
           </div>
@@ -367,37 +458,42 @@ export default function Page() {
 
         <section className="feature-grid">
           {features.map((feature) => (
-            <button className="feature-card" key={feature.title}>
-              <span className="feature-icon">{feature.icon}</span>
+            <button
+              key={feature.title}
+              className="feature-card"
+              onClick={feature.title === "Canlı Mod" ? openLive : undefined}
+            >
+              <span>{feature.icon}</span>
               <b>{feature.title}</b>
               <p>{feature.desc}</p>
-              <small>⌄</small>
+              <em>∨</em>
             </button>
           ))}
         </section>
       </section>
 
-      <aside className="phone-wrap">
+      <aside className="phone-panel">
         <div className="phone">
           <div className="phone-screen">
             <div className="phone-status">
               <b>9:41</b>
+              <div className="notch" />
               <span>▮▮▮</span>
             </div>
 
             <div className="phone-head">
               <button>☰</button>
               <b>LYRA</b>
-              <button>⌄</button>
+              <button>∨</button>
             </div>
 
-            <div className="phone-logo-card">
-              <img src={LYRA_AVATAR} alt="Lyra mobile avatar" />
+            <div className="phone-logo">
+              <b>LYRA</b>
             </div>
 
             <div className="phone-controls">
               <button>≋ Ses: Gemini Live</button>
-              <button>♬ Sessize AI</button>
+              <button>Sessize AI</button>
               <button>Kadın</button>
               <button>Erkek</button>
               <button className="wide">≋ Canlı Konuşma ›</button>
@@ -408,41 +504,94 @@ export default function Page() {
               <button>▶</button>
             </div>
 
-            <div className="phone-features">
-              {features.slice(0, 6).map((f) => (
-                <button key={f.title}>
-                  <span>{f.icon}</span>
-                  {f.title}
+            <div className="phone-grid">
+              {features.slice(0, 6).map((feature) => (
+                <button key={feature.title}>
+                  <span>{feature.icon}</span>
+                  <b>{feature.title}</b>
+                  <em>∨</em>
                 </button>
               ))}
-              <button className="wide">≋ Canlı Mod</button>
-            </div>
 
-            <div className="phone-bottom">
-              <span>✦</span>
-              <span>□</span>
-              <span>◷</span>
-              <span>♙</span>
+              <button className="single">
+                <span>≋</span>
+                <b>Canlı Mod</b>
+                <em>∨</em>
+              </button>
             </div>
           </div>
         </div>
       </aside>
+
+      {liveOpen && (
+        <div className="live-overlay">
+          <section className="live-modal">
+            <div className="live-left">
+              <div className="live-top">
+                <b>LYRA CANLI KONUŞMA</b>
+                <button onClick={closeLive}>×</button>
+              </div>
+
+              <div className="live-avatar">
+                <img src={LYRA_AVATAR} alt="Lyra Live" />
+                <div className="live-ring one" />
+                <div className="live-ring two" />
+                <span>{loading ? "Cevap hazırlıyor..." : "Konuşmaya hazır"}</span>
+              </div>
+
+              <div className="live-actions">
+                <button className={cameraOn ? "on" : ""} onClick={toggleCamera}>
+                  ◉ {cameraOn ? "Kamera Açık" : "Kamera Aç"}
+                </button>
+                <button className={micOn ? "on" : ""} onClick={toggleMic}>
+                  ♫ {micOn ? "Dinliyorum" : "Mikrofon"}
+                </button>
+                <button
+                  className={muted ? "on" : ""}
+                  onClick={() => {
+                    setMuted((v) => !v);
+                    window.speechSynthesis?.cancel?.();
+                  }}
+                >
+                  {muted ? "Ses Kapalı" : "Ses Açık"}
+                </button>
+              </div>
+            </div>
+
+            <aside className="live-side">
+              <div className="camera-box">
+                {cameraOn ? (
+                  <video ref={videoRef} autoPlay playsInline muted />
+                ) : (
+                  <div>
+                    <span>◉</span>
+                    <p>Kamera kapalı</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="transcript-box">
+                <b>Canlı Algılama</b>
+                <p>{liveText}</p>
+              </div>
+            </aside>
+          </section>
+        </div>
+      )}
 
       <style jsx global>{`
         * {
           box-sizing: border-box;
         }
 
+        html,
         body {
           margin: 0;
+          min-height: 100%;
           background:
-            radial-gradient(
-              circle at 50% 0%,
-              rgba(180, 190, 255, 0.24),
-              transparent 34%
-            ),
-            linear-gradient(135deg, #f7f8fb 0%, #edf0f5 100%);
-          color: #111827;
+            radial-gradient(circle at 50% -15%, rgba(255,255,255,1), rgba(255,255,255,0) 30%),
+            linear-gradient(135deg, #f8fafc 0%, #e8edf1 100%);
+          color: #111;
           font-family:
             Inter,
             ui-sans-serif,
@@ -459,44 +608,43 @@ export default function Page() {
         }
 
         button {
-          cursor: pointer;
           border: 0;
+          cursor: pointer;
         }
 
         .lyra-page {
           min-height: 100vh;
+          padding: 14px;
           display: grid;
-          grid-template-columns: 260px minmax(760px, 1fr) 330px;
-          gap: 18px;
-          padding: 16px;
+          grid-template-columns: 235px minmax(780px, 1fr) 330px;
+          gap: 14px;
           overflow-x: hidden;
         }
 
         .sidebar,
-        .desktop,
-        .phone-wrap {
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          background: rgba(255, 255, 255, 0.68);
-          backdrop-filter: blur(22px);
+        .main-shell,
+        .phone-panel {
+          border: 1px solid #cfd3d8;
+          background: linear-gradient(145deg, #ffffff 0%, #edf1f4 100%);
           box-shadow:
-            0 24px 70px rgba(15, 23, 42, 0.08),
-            inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            inset 0 1px 0 rgba(255,255,255,0.95),
+            0 18px 44px rgba(0,0,0,0.055);
         }
 
         .sidebar {
-          border-radius: 28px;
-          padding: 26px 18px;
+          border-radius: 26px;
+          padding: 26px 16px 18px;
           display: flex;
           flex-direction: column;
-          min-height: calc(100vh - 32px);
+          min-height: calc(100vh - 28px);
         }
 
         .brand {
+          margin: 0 0 22px 12px;
           font-size: 34px;
           font-weight: 950;
-          letter-spacing: 6px;
-          margin: 0 0 22px 14px;
-          color: #101827;
+          letter-spacing: 5px;
+          line-height: 1;
         }
 
         .nav {
@@ -504,36 +652,46 @@ export default function Page() {
           gap: 12px;
         }
 
-        .nav-item {
-          height: 54px;
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.76);
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+        .nav-btn,
+        .control-btn,
+        .about-btn,
+        .round-btn,
+        .feature-card,
+        .input-box button,
+        .phone-controls button,
+        .phone-grid button,
+        .phone-input,
+        .pro-card,
+        .profile-card,
+        .usage-card,
+        .weather,
+        .live-actions button {
+          border: 1px solid #c9ced4;
+          background: linear-gradient(145deg, #ffffff 0%, #eef1f4 100%);
+          color: #111;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.96),
+            inset 0 -8px 18px rgba(0,0,0,0.035),
+            0 9px 22px rgba(0,0,0,0.045);
+          font-weight: 950;
+        }
+
+        .nav-btn {
+          height: 52px;
+          border-radius: 17px;
+          padding: 0 18px;
           display: flex;
           align-items: center;
           gap: 14px;
-          padding: 0 18px;
-          color: #151922;
-          font-weight: 850;
-          transition: 0.2s ease;
+          text-align: left;
+          font-size: 15px;
         }
 
-        .nav-item:hover,
-        .nav-item.active {
-          transform: translateY(-1px);
-          background: #ffffff;
-          box-shadow: 0 18px 34px rgba(98, 91, 255, 0.13);
-        }
-
-        .nav-item.active span {
-          width: 28px;
-          height: 28px;
-          border-radius: 999px;
-          background: linear-gradient(135deg, #7068ff, #8e84ff);
-          color: #fff;
-          display: grid;
+        .nav-btn span {
+          width: 18px;
+          display: inline-grid;
           place-items: center;
+          font-size: 17px;
         }
 
         .sidebar-bottom {
@@ -545,197 +703,168 @@ export default function Page() {
         .pro-card,
         .profile-card,
         .usage-card,
-        .weather-card {
-          border-radius: 20px;
-          background: rgba(255, 255, 255, 0.8);
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
-          padding: 16px;
-        }
-
-        .pro-card {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          background: linear-gradient(135deg, #ffffff, #f1efff);
-        }
-
-        .spark {
-          color: #766cff;
-          font-size: 24px;
+        .weather {
+          border-radius: 18px;
+          padding: 15px;
         }
 
         .pro-card b,
-        .profile-card b {
+        .profile-card b,
+        .usage-card b,
+        .weather b {
           display: block;
-          font-size: 15px;
+          font-size: 14px;
         }
 
         .pro-card p,
         .profile-card p,
-        .weather-card p,
-        .usage-card p {
-          margin: 2px 0 0;
-          font-size: 13px;
-          color: #667085;
-          font-weight: 700;
-        }
-
-        .profile-card,
-        .weather-card {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .avatar-mini {
-          width: 42px;
-          height: 42px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          background: linear-gradient(135deg, #4b5563, #111827);
-          color: white;
-          font-weight: 900;
-        }
-
-        .chev {
-          margin-left: auto;
-        }
-
-        .usage-top {
-          display: flex;
-          justify-content: space-between;
-          font-size: 13px;
+        .usage-card p,
+        .weather p {
+          margin: 3px 0 0;
+          color: #4b5563;
+          font-size: 12px;
           font-weight: 850;
         }
 
-        .usage-top b {
-          color: #6d63ff;
+        .profile-card,
+        .weather {
+          display: flex;
+          align-items: center;
+          gap: 11px;
         }
 
-        .bar {
+        .profile-card > span {
+          margin-left: auto;
+          font-weight: 950;
+        }
+
+        .profile-avatar {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          background: radial-gradient(circle at 30% 20%, #a7adb5, #111);
+          color: white;
+          font-weight: 950;
+        }
+
+        .usage-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .usage-head strong {
+          font-size: 15px;
+        }
+
+        .usage-bar {
           height: 8px;
-          margin: 12px 0 8px;
           border-radius: 999px;
-          background: #e6e9f1;
+          background: #d8dde3;
           overflow: hidden;
+          margin: 12px 0 6px;
         }
 
-        .bar div {
+        .usage-bar i {
+          display: block;
           width: 68%;
           height: 100%;
+          background: #111;
           border-radius: inherit;
-          background: linear-gradient(90deg, #7068ff, #a39cff);
         }
 
-        .weather-card span:first-child {
-          font-size: 26px;
+        .weather span {
+          font-size: 24px;
         }
 
-        .weather-card span:last-child {
-          margin-left: auto;
-          font-size: 22px;
-        }
-
-        .desktop {
-          min-height: calc(100vh - 32px);
-          border-radius: 28px;
-          padding: 22px 26px 18px;
+        .main-shell {
+          min-height: calc(100vh - 28px);
+          border-radius: 26px;
+          padding: 20px;
           position: relative;
           overflow: hidden;
         }
 
-        .desktop::before {
+        .main-shell::before {
           content: "";
+          width: 620px;
+          height: 620px;
+          border-radius: 999px;
           position: absolute;
-          width: 520px;
-          height: 520px;
-          border-radius: 50%;
-          top: -180px;
           left: 50%;
+          top: -300px;
           transform: translateX(-50%);
-          background: radial-gradient(
-            circle,
-            rgba(120, 112, 255, 0.16),
-            transparent 67%
-          );
+          background: radial-gradient(circle, rgba(255,255,255,1), rgba(217,222,228,0.58), transparent 68%);
           pointer-events: none;
         }
 
         .topbar {
+          position: relative;
+          z-index: 2;
           display: flex;
           align-items: center;
           justify-content: center;
-          position: relative;
-          z-index: 2;
         }
 
         .topbar h1 {
-          margin: 2px 0 10px;
-          font-size: clamp(24px, 3vw, 36px);
-          letter-spacing: 9px;
-          text-align: center;
+          margin: 0;
+          font-size: clamp(25px, 3vw, 34px);
+          letter-spacing: 8px;
           font-weight: 950;
+          text-align: center;
         }
 
-        .about {
+        .about-btn {
+          position: absolute;
+          right: 52px;
+          top: 0;
+          height: 42px;
+          border-radius: 18px;
+          padding: 0 18px;
+          font-size: 14px;
+        }
+
+        .round-btn {
           position: absolute;
           right: 0;
           top: 0;
-          height: 44px;
-          padding: 0 18px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.8);
-          color: #111827;
-          font-weight: 900;
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
         }
 
-        .hero {
-          display: grid;
-          place-items: center;
+        .avatar-area {
           position: relative;
           z-index: 2;
-          padding-top: 2px;
+          display: grid;
+          place-items: center;
+          margin-top: 4px;
         }
 
-        .avatar-glow {
-          width: 235px;
-          height: 235px;
+        .halo {
+          width: 226px;
+          height: 226px;
           border-radius: 50%;
           display: grid;
           place-items: center;
           background:
-            radial-gradient(
-              circle,
-              rgba(255, 255, 255, 1),
-              rgba(230, 233, 241, 0.6) 55%,
-              transparent 70%
-            ),
-            conic-gradient(
-              from 120deg,
-              rgba(120, 112, 255, 0.12),
-              rgba(255, 255, 255, 0.9),
-              rgba(120, 112, 255, 0.12)
-            );
+            radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(233,237,241,0.95) 52%, transparent 69%),
+            conic-gradient(from 160deg, rgba(200,205,211,0.8), rgba(255,255,255,1), rgba(200,205,211,0.8));
         }
 
-        .avatar-frame {
+        .avatar-card {
           width: 150px;
           height: 205px;
-          border-radius: 28px;
-          border: 1px solid rgba(17, 24, 39, 0.12);
-          background: linear-gradient(180deg, #ffffff, #eef1f6);
+          border-radius: 24px;
           overflow: hidden;
-          position: relative;
-          box-shadow:
-            0 22px 60px rgba(15, 23, 42, 0.08),
-            inset 0 1px 0 rgba(255, 255, 255, 0.9);
+          border: 1px solid #c9ced4;
+          background: #fff;
+          box-shadow: 0 16px 35px rgba(0,0,0,0.07);
         }
 
-        .avatar-frame img {
+        .avatar-card img {
           width: 100%;
           height: 100%;
           object-fit: cover;
@@ -743,237 +872,221 @@ export default function Page() {
         }
 
         .control-row {
-          margin-top: 8px;
+          margin-top: -2px;
           display: flex;
           gap: 12px;
           flex-wrap: wrap;
           justify-content: center;
         }
 
-        .pill {
-          min-height: 48px;
+        .control-btn {
+          min-height: 52px;
+          min-width: 138px;
           padding: 0 22px;
-          border-radius: 17px;
-          background: rgba(255, 255, 255, 0.84);
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 14px 28px rgba(15, 23, 42, 0.05);
-          font-weight: 900;
-          color: #121826;
+          border-radius: 18px;
+          font-size: 15px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 8px;
-          transition: 0.2s ease;
+          white-space: nowrap;
         }
 
-        .pill:hover {
-          transform: translateY(-1px);
+        .control-btn.small {
+          min-width: 110px;
         }
 
-        .pill.selected,
-        .pill.selected-live {
-          color: #5d55ff;
-          background: #ffffff;
-          box-shadow: 0 18px 34px rgba(98, 91, 255, 0.16);
+        .control-btn.active,
+        .control-btn.active-soft {
+          background: linear-gradient(145deg, #f8fafc 0%, #dfe4e8 100%);
+          border-color: #b9c0c8;
         }
 
-        .chat-card {
-          margin-top: 18px;
-          border-radius: 26px;
-          background: rgba(255, 255, 255, 0.74);
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow:
-            0 24px 70px rgba(15, 23, 42, 0.08),
-            inset 0 1px 0 rgba(255, 255, 255, 0.78);
-          padding: 18px;
+        .chat-panel {
           position: relative;
           z-index: 2;
+          margin-top: 12px;
+          min-height: 355px;
+          border-radius: 25px;
+          border: 1px solid #cfd3d8;
+          background: linear-gradient(145deg, #ffffff 0%, #edf1f4 100%);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.95),
+            0 16px 36px rgba(0,0,0,0.055);
+          padding: 18px;
         }
 
-        .messages {
-          height: 260px;
+        .message-scroll {
+          height: 225px;
           overflow-y: auto;
-          padding: 4px 6px;
+          padding-right: 8px;
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 14px;
         }
 
-        .message-row {
+        .message-scroll::-webkit-scrollbar {
+          width: 11px;
+        }
+
+        .message-scroll::-webkit-scrollbar-track {
+          background: #eef1f4;
+          border-radius: 999px;
+        }
+
+        .message-scroll::-webkit-scrollbar-thumb {
+          background: #8e949b;
+          border-radius: 999px;
+          border: 3px solid #eef1f4;
+        }
+
+        .msg-row {
           display: flex;
-          align-items: flex-start;
-          gap: 12px;
+          width: 100%;
         }
 
-        .message-row.right {
+        .lyra-row {
+          justify-content: flex-start;
+        }
+
+        .user-row {
           justify-content: flex-end;
         }
 
-        .lyra-icon {
-          width: 34px;
-          height: 34px;
-          border-radius: 999px;
-          display: grid;
-          place-items: center;
-          background: #f3f1ff;
-          color: #766cff;
-          flex: 0 0 auto;
+        .bubble {
+          border-radius: 17px;
+          padding: 12px 14px;
+          font-weight: 950;
+          line-height: 1.45;
+          white-space: pre-line;
+          font-size: 13.5px;
         }
 
-        .bubble {
-          max-width: 82%;
-          border-radius: 18px;
-          padding: 14px 16px;
-          white-space: pre-line;
-          font-weight: 760;
-          line-height: 1.46;
-          position: relative;
+        .first-message .bubble {
+          width: min(1000px, 91%);
+          min-height: 138px;
         }
 
         .bubble p {
           margin: 0;
         }
 
-        .bubble span {
-          display: block;
-          margin-top: 8px;
-          text-align: right;
-          color: #667085;
-          font-size: 12px;
-          font-weight: 800;
-        }
-
         .bubble.lyra {
           background: #ffffff;
-          border: 1px solid rgba(17, 24, 39, 0.08);
+          border: 1px solid #d7dbe0;
+          color: #111;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
         }
 
         .bubble.user {
-          background: linear-gradient(135deg, #f4f1ff, #ffffff);
-          border: 1px solid rgba(118, 108, 255, 0.16);
+          background: #111;
+          color: #fff;
+          border-radius: 15px;
+          max-width: 260px;
         }
 
-        .typing {
-          color: #667085;
+        .bubble span {
+          display: block;
+          margin-top: 6px;
+          text-align: right;
+          font-size: 11px;
+          opacity: 0.7;
         }
 
-        .prompt-line {
-          margin: 10px 0 16px;
-          font-weight: 950;
+        .prompt-hint {
+          margin: 15px 0 16px;
           color: #4b5563;
+          font-size: 18px;
+          font-weight: 950;
         }
 
-        .input-area {
-          min-height: 76px;
-          border-radius: 22px;
-          background: rgba(255, 255, 255, 0.82);
-          border: 1px solid rgba(17, 24, 39, 0.08);
+        .input-box {
+          height: 55px;
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 12px;
-        }
-
-        .input-tools {
-          display: flex;
           gap: 8px;
         }
 
-        .input-tools button,
-        .send {
-          width: 42px;
+        .input-box button {
           height: 42px;
+          min-width: 42px;
+          padding: 0 12px;
           border-radius: 999px;
-          background: #ffffff;
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-          font-weight: 950;
         }
 
-        .input-tools .pdf {
-          width: auto;
-          padding: 0 14px;
+        .input-box .pdf-btn {
+          min-width: 58px;
         }
 
-        .input-area input {
+        .input-box input {
           flex: 1;
-          height: 48px;
+          height: 42px;
           border: 0;
-          outline: 0;
+          outline: none;
           background: transparent;
-          font-weight: 760;
-          color: #111827;
+          font-weight: 850;
+          color: #111;
         }
 
-        .send {
-          color: white;
-          background: linear-gradient(135deg, #7068ff, #8f86ff);
-          box-shadow: 0 18px 34px rgba(98, 91, 255, 0.28);
+        .input-box input::placeholder {
+          color: transparent;
+        }
+
+        .send-btn {
+          margin-left: auto;
+          width: 46px;
         }
 
         .feature-grid {
-          margin-top: 16px;
-          display: grid;
-          grid-template-columns: repeat(7, minmax(110px, 1fr));
-          gap: 12px;
           position: relative;
           z-index: 2;
+          margin-top: 14px;
+          display: grid;
+          grid-template-columns: repeat(7, minmax(112px, 1fr));
+          gap: 10px;
         }
 
         .feature-card {
-          min-height: 150px;
-          padding: 18px 12px 14px;
-          border-radius: 22px;
-          background: rgba(255, 255, 255, 0.82);
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+          min-height: 140px;
+          border-radius: 19px;
+          padding: 17px 11px 10px;
+          text-align: center;
           display: flex;
           flex-direction: column;
           align-items: center;
-          text-align: center;
-          transition: 0.2s ease;
+          justify-content: flex-start;
         }
 
-        .feature-card:hover {
-          transform: translateY(-3px);
-          box-shadow: 0 24px 52px rgba(98, 91, 255, 0.12);
-        }
-
-        .feature-icon {
-          font-size: 28px;
-          color: #6d63ff;
-          height: 35px;
+        .feature-card span {
+          height: 30px;
+          font-size: 24px;
+          display: grid;
+          place-items: center;
         }
 
         .feature-card b {
-          font-size: 14px;
           margin-top: 6px;
+          font-size: 13.5px;
+          line-height: 1.15;
         }
 
         .feature-card p {
-          margin: 8px 0 10px;
-          color: #4b5563;
-          font-size: 12px;
-          line-height: 1.35;
-          font-weight: 720;
+          margin: 7px 0 6px;
+          font-size: 11px;
+          line-height: 1.25;
+          font-weight: 850;
         }
 
-        .feature-card small {
+        .feature-card em {
           margin-top: auto;
-          width: 28px;
-          height: 28px;
-          border-radius: 999px;
-          display: grid;
-          place-items: center;
-          background: #ffffff;
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          color: #111827;
+          font-style: normal;
+          font-size: 14px;
           font-weight: 950;
         }
 
-        .phone-wrap {
-          border-radius: 28px;
-          min-height: calc(100vh - 32px);
+        .phone-panel {
+          min-height: calc(100vh - 28px);
+          border-radius: 26px;
           display: grid;
           place-items: center;
           padding: 18px;
@@ -981,47 +1094,56 @@ export default function Page() {
 
         .phone {
           width: 292px;
-          height: 640px;
+          height: 645px;
           border-radius: 42px;
           padding: 9px;
-          background: linear-gradient(145deg, #111827, #2f3541);
-          box-shadow:
-            0 34px 85px rgba(15, 23, 42, 0.22),
-            inset 0 0 0 2px rgba(255, 255, 255, 0.1);
+          background: linear-gradient(145deg, #111, #3b414a);
+          box-shadow: 0 26px 68px rgba(0,0,0,0.2);
         }
 
         .phone-screen {
           height: 100%;
           border-radius: 34px;
-          background:
-            radial-gradient(
-              circle at 50% 18%,
-              rgba(118, 108, 255, 0.16),
-              transparent 30%
-            ),
-            linear-gradient(180deg, #ffffff, #f1f3f7);
-          padding: 18px 14px;
+          background: linear-gradient(180deg, #ffffff, #edf1f4);
+          padding: 16px 13px;
           overflow: hidden;
         }
 
-        .phone-status,
+        .phone-status {
+          height: 27px;
+          display: grid;
+          grid-template-columns: 1fr 75px 1fr;
+          align-items: center;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .phone-status span {
+          justify-self: end;
+        }
+
+        .notch {
+          justify-self: center;
+          width: 74px;
+          height: 24px;
+          border-radius: 999px;
+          background: #050505;
+        }
+
         .phone-head {
+          margin-top: 10px;
           display: flex;
           align-items: center;
           justify-content: space-between;
         }
 
-        .phone-status {
-          font-size: 13px;
-          margin-bottom: 18px;
-        }
-
         .phone-head button {
           width: 32px;
           height: 32px;
-          border-radius: 999px;
-          background: #ffffff;
-          border: 1px solid rgba(17, 24, 39, 0.08);
+          border-radius: 50%;
+          border: 1px solid #d4d8dd;
+          background: #fff;
+          font-weight: 950;
         }
 
         .phone-head b {
@@ -1030,22 +1152,22 @@ export default function Page() {
           font-weight: 950;
         }
 
-        .phone-logo-card {
+        .phone-logo {
           width: 136px;
-          height: 166px;
-          margin: 20px auto 14px;
-          border-radius: 22px;
-          background: linear-gradient(145deg, #ffffff, #f0efff);
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 24px 46px rgba(15, 23, 42, 0.08);
-          overflow: hidden;
+          height: 168px;
+          margin: 14px auto 10px;
+          border-radius: 21px;
+          border: 1px solid #d4d8dd;
+          background: linear-gradient(145deg, #ffffff, #edf1f4);
+          display: grid;
+          place-items: center;
+          box-shadow: 0 16px 32px rgba(0,0,0,0.07);
         }
 
-        .phone-logo-card img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
+        .phone-logo b {
+          font-size: 24px;
+          letter-spacing: 6px;
+          font-weight: 950;
         }
 
         .phone-controls {
@@ -1054,82 +1176,287 @@ export default function Page() {
           gap: 8px;
         }
 
-        .phone-controls button,
-        .phone-input,
-        .phone-features button {
-          border-radius: 14px;
-          background: rgba(255, 255, 255, 0.9);
-          border: 1px solid rgba(17, 24, 39, 0.08);
-          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+        .phone-controls button {
           min-height: 40px;
+          border-radius: 14px;
           font-size: 11px;
-          font-weight: 900;
+          padding: 0 7px;
         }
 
-        .phone-controls .wide,
-        .phone-features .wide {
+        .phone-controls .wide {
           grid-column: 1 / -1;
         }
 
         .phone-input {
+          height: 50px;
           margin: 12px 0;
-          height: 48px;
+          border-radius: 17px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 0 10px;
-          color: #98a2b3;
+        }
+
+        .phone-input span {
           font-size: 11px;
+          color: #111;
+          font-weight: 900;
         }
 
         .phone-input button {
           width: 34px;
           height: 34px;
-          border-radius: 999px;
-          color: #fff;
-          background: linear-gradient(135deg, #7068ff, #8f86ff);
+          border-radius: 50%;
+          background: #fff;
+          border: 1px solid #d4d8dd;
+          font-weight: 950;
         }
 
-        .phone-features {
+        .phone-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 8px;
         }
 
-        .phone-features button {
-          min-height: 62px;
+        .phone-grid button {
+          min-height: 80px;
+          border-radius: 14px;
           padding: 6px 4px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 3px;
+        }
+
+        .phone-grid span {
+          font-size: 18px;
+          line-height: 1;
+        }
+
+        .phone-grid b {
+          font-size: 10px;
+          line-height: 1.05;
+        }
+
+        .phone-grid em {
+          font-style: normal;
+          font-size: 11px;
+        }
+
+        .phone-grid .single {
+          grid-column: 1 / 2;
+        }
+
+        .live-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 50;
           display: grid;
           place-items: center;
-          line-height: 1.1;
+          padding: 20px;
+          background: rgba(17, 24, 39, 0.38);
+          backdrop-filter: blur(12px);
         }
 
-        .phone-features button span {
-          color: #6d63ff;
-          font-size: 17px;
+        .live-modal {
+          width: min(930px, 96vw);
+          min-height: 560px;
+          border-radius: 30px;
+          border: 1px solid #cfd3d8;
+          background: linear-gradient(145deg, #ffffff, #edf1f4);
+          box-shadow: 0 32px 90px rgba(0,0,0,0.22);
+          padding: 18px;
+          display: grid;
+          grid-template-columns: 1fr 310px;
+          gap: 16px;
         }
 
-        .phone-bottom {
-          margin-top: 14px;
-          height: 46px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.78);
+        .live-left,
+        .live-side {
+          border-radius: 24px;
+          border: 1px solid #cfd3d8;
+          background: linear-gradient(145deg, #ffffff, #eef1f4);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.95),
+            0 12px 28px rgba(0,0,0,0.055);
+        }
+
+        .live-left {
+          padding: 16px;
+          position: relative;
+          display: grid;
+          grid-template-rows: auto 1fr auto;
+        }
+
+        .live-top {
           display: flex;
-          justify-content: space-around;
+          justify-content: space-between;
           align-items: center;
-          color: #667085;
+          font-weight: 950;
+          letter-spacing: 2px;
         }
 
-        .phone-bottom span:first-child {
-          color: #6d63ff;
+        .live-top button {
+          width: 38px;
+          height: 38px;
+          border-radius: 50%;
+          background: #111;
+          color: white;
+          font-size: 22px;
         }
 
-        @media (max-width: 1380px) {
+        .live-avatar {
+          position: relative;
+          display: grid;
+          place-items: center;
+        }
+
+        .live-avatar::before {
+          content: "";
+          width: 420px;
+          height: 420px;
+          max-width: 80%;
+          max-height: 80%;
+          position: absolute;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(255,255,255,1), rgba(217,222,228,0.75), transparent 70%);
+        }
+
+        .live-avatar img {
+          position: relative;
+          z-index: 2;
+          width: 210px;
+          height: 300px;
+          object-fit: cover;
+          border-radius: 30px;
+          border: 1px solid #c9ced4;
+          background: white;
+          box-shadow: 0 22px 50px rgba(0,0,0,0.12);
+        }
+
+        .live-avatar span {
+          position: absolute;
+          z-index: 3;
+          bottom: 24px;
+          padding: 10px 16px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.88);
+          border: 1px solid #d4d8dd;
+          font-weight: 950;
+        }
+
+        .live-ring {
+          position: absolute;
+          z-index: 1;
+          width: 250px;
+          height: 340px;
+          border-radius: 38px;
+          border: 1px solid rgba(17,17,17,0.18);
+          animation: livePulse 2.2s infinite;
+        }
+
+        .live-ring.two {
+          animation-delay: 1.1s;
+        }
+
+        @keyframes livePulse {
+          0% {
+            opacity: 0.75;
+            transform: scale(0.93);
+          }
+          100% {
+            opacity: 0;
+            transform: scale(1.18);
+          }
+        }
+
+        .live-actions {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+        }
+
+        .live-actions button {
+          height: 48px;
+          border-radius: 16px;
+        }
+
+        .live-actions button.on {
+          background: #111;
+          color: #fff;
+          border-color: #111;
+        }
+
+        .live-side {
+          padding: 14px;
+          display: grid;
+          gap: 12px;
+          align-content: start;
+        }
+
+        .camera-box {
+          height: 250px;
+          border-radius: 22px;
+          overflow: hidden;
+          background: #111;
+          border: 1px solid #cfd3d8;
+        }
+
+        .camera-box video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          transform: scaleX(-1);
+          display: block;
+        }
+
+        .camera-box > div {
+          height: 100%;
+          color: #fff;
+          display: grid;
+          place-items: center;
+          text-align: center;
+          font-weight: 950;
+        }
+
+        .camera-box span {
+          display: block;
+          font-size: 42px;
+        }
+
+        .camera-box p {
+          margin: 8px 0 0;
+        }
+
+        .transcript-box {
+          min-height: 155px;
+          border-radius: 20px;
+          padding: 14px;
+          background: rgba(255,255,255,0.82);
+          border: 1px solid #d4d8dd;
+        }
+
+        .transcript-box b {
+          display: block;
+          margin-bottom: 8px;
+          font-size: 14px;
+        }
+
+        .transcript-box p {
+          margin: 0;
+          color: #4b5563;
+          font-size: 13px;
+          font-weight: 850;
+          line-height: 1.45;
+        }
+
+        @media (max-width: 1420px) {
           .lyra-page {
-            grid-template-columns: 230px minmax(680px, 1fr);
+            grid-template-columns: 225px minmax(700px, 1fr);
           }
 
-          .phone-wrap {
+          .phone-panel {
             display: none;
           }
 
@@ -1146,7 +1473,6 @@ export default function Page() {
 
           .sidebar {
             min-height: auto;
-            border-radius: 24px;
           }
 
           .sidebar-bottom {
@@ -1157,59 +1483,49 @@ export default function Page() {
             grid-template-columns: repeat(2, 1fr);
           }
 
-          .desktop {
-            min-height: auto;
-            padding: 18px;
-          }
-
           .topbar h1 {
-            letter-spacing: 4px;
             font-size: 22px;
+            letter-spacing: 4px;
           }
 
-          .about {
+          .about-btn,
+          .round-btn {
             display: none;
-          }
-
-          .avatar-glow {
-            width: 190px;
-            height: 190px;
-          }
-
-          .avatar-frame {
-            width: 126px;
-            height: 168px;
           }
 
           .control-row {
             gap: 8px;
           }
 
-          .pill {
-            min-height: 42px;
+          .control-btn {
+            min-height: 45px;
+            min-width: auto;
             padding: 0 14px;
             font-size: 13px;
           }
 
-          .messages {
-            height: 310px;
+          .chat-panel {
+            min-height: 430px;
           }
 
-          .bubble {
-            max-width: 92%;
+          .message-scroll {
+            height: 285px;
           }
 
-          .input-area {
-            flex-wrap: wrap;
-          }
-
-          .input-area input {
-            order: -1;
-            flex-basis: 100%;
+          .first-message .bubble {
+            width: 100%;
           }
 
           .feature-grid {
             grid-template-columns: repeat(2, 1fr);
+          }
+
+          .live-modal {
+            grid-template-columns: 1fr;
+          }
+
+          .live-actions {
+            grid-template-columns: 1fr;
           }
         }
 
@@ -1222,8 +1538,23 @@ export default function Page() {
             grid-template-columns: 1fr;
           }
 
-          .brand {
-            font-size: 30px;
+          .prompt-hint {
+            font-size: 15px;
+          }
+
+          .bubble {
+            max-width: 94%;
+          }
+
+          .input-box {
+            flex-wrap: wrap;
+            height: auto;
+          }
+
+          .input-box input {
+            order: -1;
+            flex-basis: 100%;
+            height: 45px;
           }
         }
       `}</style>
