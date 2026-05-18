@@ -83,8 +83,112 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function makeMessageId() {
+  return Date.now() + Math.floor(Math.random() * 100000);
+}
+
+function isHealthCheckJson(text: string) {
+  const value = text.trim();
+
+  return (
+    value.startsWith("{") &&
+    value.includes('"ok"') &&
+    (
+      value.includes('"/api/search"') ||
+      value.includes('"/api/gemini"') ||
+      value.includes('"hasBraveKey"') ||
+      value.includes('"hasFreeFallback"') ||
+      value.includes('"route"')
+    )
+  );
+}
+
+function cleanLyraAnswer(value: unknown) {
+  if (typeof value !== "string") return "";
+
+  let text = value.trim();
+
+  if (!text) return "";
+
+  // API health-check JSON'u chat balonuna basılmasın.
+  if (isHealthCheckJson(text)) return "";
+
+  // Yanlışlıkla JSON stringify geldiyse temizle.
+  if (
+    text.includes('"route":"/api/search"') ||
+    text.includes('"route": "/api/search"') ||
+    text.includes('"hasFreeFallback"') ||
+    text.includes('"hasBraveKey"') ||
+    text.includes('"hasTavilyKey"') ||
+    text.includes('"hasExaKey"')
+  ) {
+    return "";
+  }
+
+  // Eski uzun hata girişini daha düzgün tek cümleye indir.
+  text = text.replace(
+    /Online araştırma bağlantısı gelmedi kanka\. Gemini\/API tarafı çalışmıyor olabilir\. Seni boş bırakmıyorum, API’siz modla cevaplıyorum:\s*/gi,
+    "Online araştırma şu an güçlü kaynak getirmedi kanka. API’siz modla cevaplıyorum:\n\n"
+  );
+
+  text = text.replace(
+    /Local AI şu an cevap vermedi kanka\. Ollama açık değilse bu normal\. API’siz Lyra moduna düşüp yine cevaplıyorum:\s*/gi,
+    "Local AI şu an cevap vermedi kanka. API’siz Lyra moduna düşüp cevaplıyorum:\n\n"
+  );
+
+  // Aynı metin peş peşe yapıştıysa kaba tekrarları azalt.
+  const marker = "Tamam kanka, bunu ders modunda şöyle çalışırız:";
+  const firstMarker = text.indexOf(marker);
+  const lastMarker = text.lastIndexOf(marker);
+
+  if (firstMarker !== -1 && lastMarker !== -1 && firstMarker !== lastMarker) {
+    text = text.slice(firstMarker);
+  }
+
+  return text.trim();
+}
+
+function pickApiAnswer(data: any) {
+  if (!data) return "";
+
+  if (typeof data === "string") {
+    return cleanLyraAnswer(data);
+  }
+
+  return cleanLyraAnswer(
+    data?.answer ||
+      data?.reply ||
+      data?.text ||
+      data?.message ||
+      data?.result ||
+      ""
+  );
+}
+
+async function postJson(url: string, body: any) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok && !data) {
+    throw new Error(`${url} bağlantısı başarısız.`);
+  }
+
+  return data;
+}
+
 function createOfflineAnswer(question: string) {
-  const q = question.toLocaleLowerCase("tr-TR");
+  const q = question.toLocaleLowerCase("tr-TR").trim();
+
+  if (q === "test") {
+    return "Test başarılı kanka. Lyra ekranı çalışıyor. API olmasa bile API’siz cevap modu devrede.";
+  }
 
   if (
     q.includes("merhaba") ||
@@ -229,29 +333,35 @@ Senin yazdığın konu için ben olsam önce şöyle ilerlerdim:
 İstersen bana konuyu biraz daha net yaz, ben direkt uygulanabilir hale çevireyim.`;
 }
 
-async function askGemini(message: string) {
-  const res = await fetch("/api/gemini", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      message,
-      mode: "online-research",
-    }),
+async function askOnlineResearch(message: string) {
+  // Önce yeni /api/search route'unu kullanır.
+  // Bu route key yoksa DuckDuckGo + Wikipedia ücretsiz fallback'e düşer.
+  const searchData = await postJson("/api/search", {
+    query: message,
+    message,
   });
 
-  const data = await res.json().catch(() => null);
+  const searchAnswer = pickApiAnswer(searchData);
 
-  if (!res.ok) {
-    throw new Error(data?.error || "Gemini bağlantısı başarısız.");
+  if (searchAnswer) return searchAnswer;
+
+  // Search route beklenmedik şekilde boş kalırsa Gemini'yi ikinci şans olarak dener.
+  try {
+    const geminiData = await postJson("/api/gemini", {
+      message,
+      mode: "online-research",
+    });
+
+    const geminiAnswer = pickApiAnswer(geminiData);
+
+    if (geminiAnswer) return geminiAnswer;
+  } catch {
+    // Sessiz geç; aşağıda temiz fallback var.
   }
 
   return (
-    data?.answer ||
-    data?.reply ||
-    data?.text ||
-    "Gemini cevap döndürdü ama answer/reply/text alanı bulunamadı."
+    "Online araştırma şu an güçlü kaynak getirmedi kanka. API’siz modla cevaplıyorum:\n\n" +
+    createOfflineAnswer(message)
   );
 }
 
@@ -324,58 +434,65 @@ export default function Page() {
     const clean = (customText ?? input).trim();
     if (!clean || loading) return;
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        role: "user",
-        text: clean,
-        time: now(),
-      },
-    ]);
+    const userMessage: Message = {
+      id: makeMessageId(),
+      role: "user",
+      text: clean,
+      time: now(),
+    };
 
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
 
-    let answer = "";
-
     try {
-      if (aiMode === "offline") {
-        await wait(350);
-        answer = createOfflineAnswer(clean);
-      }
+      let answer = "";
 
-      if (aiMode === "local") {
+      if (aiMode === "offline") {
+        await wait(250);
+        answer = createOfflineAnswer(clean);
+      } else if (aiMode === "local") {
         try {
           answer = await askLocalOllama(clean);
         } catch {
           answer =
-            "Local AI şu an cevap vermedi kanka. Ollama açık değilse bu normal. API’siz Lyra moduna düşüp yine cevaplıyorum:\n\n" +
+            "Local AI şu an cevap vermedi kanka. API’siz Lyra moduna düşüp cevaplıyorum:\n\n" +
             createOfflineAnswer(clean);
         }
-      }
-
-      if (aiMode === "online") {
+      } else {
         try {
-          answer = await askGemini(clean);
+          answer = await askOnlineResearch(clean);
         } catch {
           answer =
-            "Online araştırma bağlantısı gelmedi kanka. Gemini/API tarafı çalışmıyor olabilir. Seni boş bırakmıyorum, API’siz modla cevaplıyorum:\n\n" +
+            "Online araştırma şu an güçlü kaynak getirmedi kanka. API’siz modla cevaplıyorum:\n\n" +
             createOfflineAnswer(clean);
         }
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          role: "lyra",
-          text: answer,
-          time: now(),
-        },
-      ]);
+      const finalAnswer =
+        cleanLyraAnswer(answer) || createOfflineAnswer(clean);
 
-      speak(answer);
+      const lyraMessage: Message = {
+        id: makeMessageId(),
+        role: "lyra",
+        text: finalAnswer,
+        time: now(),
+      };
+
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+
+        if (
+          last?.role === "lyra" &&
+          last.text.trim() === lyraMessage.text.trim()
+        ) {
+          return prev;
+        }
+
+        return [...prev, lyraMessage];
+      });
+
+      speak(finalAnswer);
       lyraVideoRef.current?.play().catch(() => {});
     } finally {
       setLoading(false);
