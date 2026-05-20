@@ -2153,12 +2153,12 @@ export default function Page() {
           position: absolute;
           z-index: 3;
           left: 50%;
-          bottom: 105px;
-          width: 118%;
-          max-width: 570px;
+          bottom: 118px;
+          width: 86%;
+          max-width: 390px;
           height: auto;
           transform: translateX(-50%);
-          object-fit: cover;
+          object-fit: contain;
           object-position: center bottom;
           filter: drop-shadow(0 30px 45px rgba(78, 47, 29, 0.13));
           animation: callFloat 5s ease-in-out infinite;
@@ -2168,9 +2168,9 @@ export default function Page() {
           position: absolute;
           z-index: 2;
           left: 50%;
-          bottom: 138px;
-          width: 260px;
-          height: 470px;
+          bottom: 128px;
+          width: 220px;
+          height: 410px;
           transform: translateX(-50%);
           animation: callFloat 5s ease-in-out infinite;
         }
@@ -2299,7 +2299,7 @@ export default function Page() {
           z-index: 7;
           left: 26px;
           right: 26px;
-          bottom: 162px;
+          bottom: 148px;
           display: flex;
           flex-direction: column;
           align-items: flex-start;
@@ -2563,10 +2563,22 @@ export default function Page() {
             font-size: 28px;
           }
 
+          .call-video {
+            width: 88%;
+            max-width: 380px;
+            bottom: 116px;
+          }
+
+          .avatar-fallback {
+            width: 215px;
+            height: 400px;
+            bottom: 126px;
+          }
+
           .live-floating-chat {
             left: 22px;
             right: 22px;
-            bottom: 154px;
+            bottom: 148px;
           }
 
           .live-bubble {
