@@ -28,6 +28,19 @@ type Message = {
 
 const LYRA_AVATAR = "/lyra-avatar.jpg.jpeg";
 const LYRA_VIDEO = "/lyra-avatar-mp4.mp4";
+const SIRIUS_CORE_API_URL = "https://sirius-core-apii.vercel.app";
+
+type SiriusLyraResponse = {
+  ok?: boolean;
+  reply?: string;
+  speakText?: string;
+  emotion?: string;
+  reaction?: string;
+  voicePacket?: any;
+  voiceHints?: any;
+  mode?: string;
+};
+
 
 const navItems: { icon: string; label: string; action: NavAction }[] = [
   { icon: "+", label: "Yeni Sohbet", action: "new" },
@@ -82,7 +95,7 @@ const starterMessages: Message[] = [
     role: "lyra",
     time: "13:21",
     text:
-      "Merhaba kanka. Ben Lyra 🤍\n\nBugün biraz daha gerçek insan gibi konuşmaya çalışacağım: kısa, doğal, gerektiğinde komik, gerektiğinde ciddi. Bana yaz, mikrofonla konuş ya da Canlı Konuşma’yı aç; ben buradayım.",
+      "Merhaba kanka. Ben Lyra 🤍\n\nBugün Sirius Core API beynime bağlandım: kısa, doğal, gerektiğinde komik, gerektiğinde ciddi konuşacağım. Bana yaz, mikrofonla konuş ya da Canlı Konuşma’yı aç; ben buradayım.",
   },
 ];
 
@@ -193,6 +206,73 @@ async function postJson(url: string, body: any) {
 
   if (!res.ok && !data) {
     throw new Error(`${url} bağlantısı başarısız.`);
+  }
+
+  return data;
+}
+
+function mapLyraMode(aiMode: AiMode, message: string) {
+  const q = message.toLocaleLowerCase("tr-TR");
+
+  if (aiMode === "online") return "research";
+
+  if (
+    q.includes("formül") ||
+    q.includes("inci") ||
+    q.includes("kozmetik") ||
+    q.includes("kimya") ||
+    q.includes("serum") ||
+    q.includes("titrasyon") ||
+    q.includes("konsantrasyon")
+  ) {
+    return "lab";
+  }
+
+  if (
+    q.includes("video") ||
+    q.includes("hook") ||
+    q.includes("reels") ||
+    q.includes("tiktok") ||
+    q.includes("içerik") ||
+    q.includes("metin") ||
+    q.includes("seslendirme")
+  ) {
+    return "content";
+  }
+
+  if (
+    q.includes("ses") ||
+    q.includes("konuş") ||
+    q.includes("mikrofon") ||
+    q.includes("canlı")
+  ) {
+    return "voice";
+  }
+
+  return "chat";
+}
+
+async function askSiriusLyra(
+  message: string,
+  aiMode: AiMode
+): Promise<SiriusLyraResponse> {
+  const res = await fetch(`${SIRIUS_CORE_API_URL}/api/lyra`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      userId: "merve",
+      sessionId: "lyra-main",
+      mode: mapLyraMode(aiMode, message),
+    }),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok || !data?.ok) {
+    throw new Error("Sirius Core API cevap vermedi.");
   }
 
   return data;
@@ -418,9 +498,9 @@ export default function Page() {
   }
 
   function modeLabel() {
-    if (aiMode === "offline") return "API’siz Lyra";
-    if (aiMode === "local") return "Local AI";
-    return "Online Araştırma";
+    if (aiMode === "offline") return "Sirius Core";
+    if (aiMode === "local") return "Local Model";
+    return "Sirius Araştırma";
   }
 
   function pushLyraMessage(text: string) {
@@ -450,7 +530,7 @@ export default function Page() {
     );
   }
 
-  function speakHuman(text: string) {
+  function speakHuman(text: string, voicePacket?: any) {
     if (muted || typeof window === "undefined") return;
 
     const synth = window.speechSynthesis;
@@ -460,7 +540,7 @@ export default function Page() {
 
     const clean = text
       .replace(/\n+/g, ". ")
-      .replace(/🤍|😄|😅|😌|✨/g, "")
+      .replace(/🤍|😄|😅|😌|✨|🔥/g, "")
       .replace(/\s+/g, " ")
       .trim();
 
@@ -472,14 +552,37 @@ export default function Page() {
 
     const voice = getBestTurkishVoice();
 
+    const tone = String(
+      voicePacket?.voiceProfile?.tone || voicePacket?.voiceHints?.tone || ""
+    );
+    const pace = String(voicePacket?.voiceProfile?.pace || "");
+
+    const rate =
+      pace.includes("fast") || tone.includes("alert")
+        ? 0.98
+        : pace.includes("slow") || tone.includes("supportive")
+          ? 0.84
+          : gender === "Kadın"
+            ? 0.92
+            : 0.88;
+
+    const pitch =
+      tone.includes("sassy") || tone.includes("alert") || tone.includes("excited")
+        ? 1.1
+        : tone.includes("supportive")
+          ? 1.0
+          : gender === "Kadın"
+            ? 1.07
+            : 0.88;
+
     function speakPart(index: number) {
       if (index >= parts.length) return;
 
       const utter = new SpeechSynthesisUtterance(parts[index]);
       utter.lang = "tr-TR";
       utter.voice = voice || null;
-      utter.rate = gender === "Kadın" ? 0.92 : 0.88;
-      utter.pitch = gender === "Kadın" ? 1.07 : 0.88;
+      utter.rate = rate;
+      utter.pitch = pitch;
       utter.volume = 1;
 
       utter.onend = () => {
@@ -508,31 +611,28 @@ export default function Page() {
     setLoading(true);
 
     try {
-      let answer = "";
+      let data: SiriusLyraResponse | null = null;
 
-      if (aiMode === "offline") {
-        await wait(250);
-        answer = createOfflineAnswer(clean);
-      } else if (aiMode === "local") {
-        try {
-          answer = await askLocalOllama(clean);
-        } catch {
-          answer =
-            "Local AI şu an cevap vermedi kanka. Sorun değil, API’siz moda düşüyorum:\n\n" +
-            createOfflineAnswer(clean);
-        }
-      } else {
-        try {
-          answer = await askOnlineResearch(clean);
-        } catch {
-          answer =
-            "Online araştırma şu an sağlam cevap getirmedi kanka. API’siz modla devam ediyorum:\n\n" +
-            createOfflineAnswer(clean);
-        }
+      try {
+        data = await askSiriusLyra(clean, aiMode);
+      } catch {
+        const fallback =
+          "Sirius Core API şu an cevap vermedi kanka. Panik yok, Lyra yedek moddan devam ediyor:\n\n" +
+          createOfflineAnswer(clean);
+
+        data = {
+          ok: false,
+          reply: fallback,
+          speakText: fallback,
+          emotion: "supportive",
+          reaction: "tamam-sakin",
+        };
       }
 
-      const cleaned = cleanLyraAnswer(answer) || createOfflineAnswer(clean);
-      const finalAnswer = humanizeAnswer(cleaned, clean);
+      const finalAnswer =
+        cleanLyraAnswer(data?.reply || "") ||
+        cleanLyraAnswer(data?.speakText || "") ||
+        createOfflineAnswer(clean);
 
       const lyraMessage: Message = {
         id: makeMessageId(),
@@ -542,7 +642,7 @@ export default function Page() {
       };
 
       setMessages((prev) => [...prev, lyraMessage]);
-      speakHuman(finalAnswer);
+      speakHuman(data?.speakText || finalAnswer, data?.voicePacket || data?.voiceHints);
       lyraVideoRef.current?.play().catch(() => {});
     } finally {
       setLoading(false);
@@ -845,21 +945,21 @@ export default function Page() {
             className={aiMode === "offline" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("offline")}
           >
-            API’siz Lyra
+            Sirius Core
           </button>
 
           <button
             className={aiMode === "local" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("local")}
           >
-            Local AI
+            Local Model
           </button>
 
           <button
             className={aiMode === "online" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("online")}
           >
-            Online Araştırma
+            Sirius Araştırma
           </button>
         </section>
 
@@ -930,10 +1030,10 @@ export default function Page() {
                 <div className="chat-bubble lyra">
                   <p>
                     {aiMode === "offline"
-                      ? "Hımm tamam, düşünüyorum... Çok ciddi durmayayım ama cevabı da boşlamayayım 😄"
+                      ? "Sirius Core cevap hazırlıyor... biraz havalıyım ama çalışıyorum 😄"
                       : aiMode === "local"
-                        ? "Local AI cevap hazırlıyor..."
-                        : "Online araştırma deneniyor..."}
+                        ? "Local model kapısı hazırlanıyor..."
+                        : "Sirius araştırma modu deneniyor..."}
                   </p>
                 </div>
               </div>
@@ -942,10 +1042,10 @@ export default function Page() {
 
           <p className="prompt-hint">
             {aiMode === "offline"
-              ? "API’siz mod açık. Lyra daha doğal, sıcak ve hızlı cevap verir."
+              ? "Sirius Core bağlı. Lyra cevabı artık kendi API beynimizden alıyor."
               : aiMode === "local"
-                ? "Local AI modu açık. Ollama açıksa bilgisayarındaki modelle cevap verir."
-                : "Online Araştırma modu açık. API yoksa otomatik API’siz moda düşer."}
+                ? "Local Model modu yakında kendi açık kaynak model motoruna bağlanacak."
+                : "Sirius Araştırma modu açık. Araştırma motoru bağlanınca kaynaklı cevap verecek."}
           </p>
 
           <div className="input-box">
@@ -1004,8 +1104,8 @@ export default function Page() {
             </div>
 
             <div className="phone-controls">
-              <button onClick={() => setAiMode("offline")}>API’siz</button>
-              <button onClick={() => setAiMode("local")}>Local AI</button>
+              <button onClick={() => setAiMode("offline")}>Sirius</button>
+              <button onClick={() => setAiMode("local")}>Local</button>
               <button onClick={() => setAiMode("online")}>Online</button>
               <button onClick={() => setMuted((v) => !v)}>Sessiz</button>
               <button className="wide" onClick={openLive}>
@@ -2633,3 +2733,4 @@ export default function Page() {
     </main>
   );
 }
+
