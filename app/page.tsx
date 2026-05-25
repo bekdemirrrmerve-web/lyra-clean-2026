@@ -58,7 +58,7 @@ const features = [
   {
     icon: "⌕",
     title: "Araştırma Modu",
-    desc: "Güncel bilgi gerekiyorsa online araştırma dener.",
+    desc: "Güncel bilgi gerekiyorsa araştırma modunu dener.",
   },
   {
     icon: "✎",
@@ -98,7 +98,7 @@ const starterMessages: Message[] = [
     role: "lyra",
     time: "13:21",
     text:
-      "Merhaba kanka. Ben Lyra 🤍\n\nBugün Sirius Core API beynime bağlandım: kısa, doğal, gerektiğinde komik, gerektiğinde ciddi konuşacağım. Bana yaz, mikrofonla konuş ya da Canlı Konuşma’yı aç; ben buradayım.",
+      "Merhaba kanka. Ben Lyra 🤍\n\nBugün daha canlı, daha doğal ve daha yakın arkadaş gibi buradayım. Bana yaz, mikrofonla konuş ya da Canlı Konuşma’yı aç; beraber toparlayalım.",
   },
 ];
 
@@ -133,13 +133,13 @@ function cleanLyraAnswer(value: unknown) {
   if (isHealthCheckJson(text)) return "";
 
   text = text.replace(
-    /Online araştırma bağlantısı gelmedi kanka\. Gemini\/API tarafı çalışmıyor olabilir\. Seni boş bırakmıyorum, API’siz modla cevaplıyorum:\s*/gi,
-    "Online araştırma şu an düzgün kaynak getirmedi kanka. Ben seni boş bırakmıyorum, API’siz moddan cevaplıyorum:\n\n"
+    /Online araştırma bağlantısı gelmedi kanka\. Gemini\/API tarafı çalışmıyor olabilir\. Seni boş bırakmıyorum, sohbet moduyla cevaplıyorum:\s*/gi,
+    "Araştırma modu şu an güçlü kaynak getirmedi kanka. Ben seni boş bırakmıyorum, sohbet modundan cevaplıyorum:\n\n"
   );
 
   text = text.replace(
-    /Local AI şu an cevap vermedi kanka\. Ollama açık değilse bu normal\. API’siz Lyra moduna düşüp yine cevaplıyorum:\s*/gi,
-    "Local AI şu an cevap vermedi kanka. Sorun değil, API’siz Lyra moduna düşüp devam ediyorum:\n\n"
+    /Local AI şu an cevap vermedi kanka\. Ollama açık değilse bu normal\. Lyra sohbet moduna düşüp yine cevaplıyorum:\s*/gi,
+    "Cihaz modu şu an cevap vermedi kanka. Sorun değil, Lyra sohbet modunda devam ediyor:\n\n"
   );
 
   return text.trim();
@@ -297,7 +297,7 @@ async function askSiriusLyra(
   const data = await res.json().catch(() => null);
 
   if (!res.ok || !data?.ok) {
-    throw new Error("Sirius Core API cevap vermedi.");
+    throw new Error("Lyra bağlantısı cevap vermedi.");
   }
 
   return data;
@@ -307,7 +307,7 @@ function createOfflineAnswer(question: string) {
   const q = question.toLocaleLowerCase("tr-TR").trim();
 
   if (q === "test") {
-    return "Test başarılı kanka. Lyra ayakta. Şu an API’siz moddayım ama boş boş bakmıyorum, cevap üretiyorum 😄";
+    return "Test başarılı kanka. Lyra ayakta. Şu an sakin sohbet modundayım ama boş boş bakmıyorum, cevap üretiyorum 😄";
   }
 
   if (
@@ -381,11 +381,11 @@ Ben olsam önce hedefi seçer, sonra formülü faz faz kurardım. Yoksa formül 
     q.includes("2026") ||
     q.includes("internetten")
   ) {
-    return `Burada dürüst olayım kanka: API’siz moddayken canlı internete çıkamam.
+    return `Burada dürüst olayım kanka: araştırma modu kapalıyken canlı internete çıkamam.
 
 Ama şöyle yaparız:
 1. Ben önce bilgiyi sade şekilde toparlarım.
-2. Online Araştırma modunu açarsan /api/search veya Gemini varsa güncel veri deneriz.
+2. Araştırma modunu açarsan güncel veri denemesi yaparız.
 3. Gelen cevabı da senin içerik diline çeviririm.
 
 Yani ben olsam: önce taslak, sonra güncel kaynak, sonra video metni şeklinde giderdim.`;
@@ -416,7 +416,7 @@ Bence en iyi öğrenme şekli bu: az bilgi, bol tekrar, azıcık da “haa tamam
 - aksiyon listesi
 - içerik fikrine dönüşebilecek noktalar
 
-PDF okuma backend’i bağlanırsa bunu dosyadan da yaparız. Şimdilik metni yapıştırırsan ben onu tertemiz toparlarım.`;
+PDF okuma özelliği bağlanınca bunu dosyadan da yaparız. Şimdilik metni yapıştırırsan ben onu tertemiz toparlarım.`;
   }
 
   if (
@@ -432,7 +432,7 @@ PDF okuma backend’i bağlanırsa bunu dosyadan da yaparız. Şimdilik metni ya
 Konuya göre bunu Lyra, InciLab, kozmetik laboratuvarı ya da içerik odası gibi ayrı ayrı parlatırız.`;
   }
 
-  return `Bunu anladım kanka. Şu an API’siz Lyra modundayım; yani canlı internet olmadan kendi mantığımla cevap veriyorum.
+  return `Bunu anladım kanka. Şu an sohbet modundayım; yani canlı araştırma açmadan kendi mantığımla cevap veriyorum.
 
 Ben olsam önce şuna bakardım:
 1. Bu konu bilgi mi istiyor?
@@ -467,7 +467,7 @@ async function askOnlineResearch(message: string) {
   }
 
   return (
-    "Online araştırma şu an güçlü kaynak getirmedi. API’siz modla cevaplıyorum:\n\n" +
+    "Araştırma modu şu an güçlü kaynak getirmedi. Sohbet modundan cevaplıyorum:\n\n" +
     createOfflineAnswer(message)
   );
 }
@@ -488,7 +488,7 @@ async function askLocalOllama(message: string) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok || !data?.response) {
-    throw new Error("Local model cevap vermedi.");
+    throw new Error("Cihaz modu cevap vermedi.");
   }
 
   return data.response;
@@ -526,9 +526,9 @@ export default function Page() {
   }
 
   function modeLabel() {
-    if (aiMode === "offline") return "Sirius Core";
-    if (aiMode === "local") return "Local Model";
-    return "Sirius Araştırma";
+    if (aiMode === "offline") return "Akıllı Sohbet";
+    if (aiMode === "local") return "Cihaz Modu";
+    return "Araştırma";
   }
 
   function pushLyraMessage(text: string) {
@@ -662,7 +662,7 @@ export default function Page() {
         data = await askSiriusLyra(clean, aiMode);
       } catch {
         const fallback =
-          "Sirius Core API şu an cevap vermedi kanka. Panik yok, Lyra yedek moddan devam ediyor:\n\n" +
+          "Bağlantı bir an takıldı kanka. Panik yok, ben yine buradayım:\n\n" +
           createOfflineAnswer(clean);
 
         data = {
@@ -677,7 +677,7 @@ export default function Page() {
             lastEmotion: "supportive",
             lastTopic: "fallback",
             shouldRemember: false,
-            summary: "Sirius Core API cevap vermedi, Lyra yedek moda düştü.",
+            summary: "Lyra kısa süreli bağlantı sorununda yumuşak moda geçti.",
           },
         };
       }
@@ -913,7 +913,7 @@ export default function Page() {
 
     if (action === "settings") {
       pushLyraMessage(
-        "Ayarlar açıldı kanka. Buradan ses tonu, kadın/erkek ses, sessiz mod, API’siz/Local/Online mod ve canlı konuşma tercihleri yönetiliyor. Şu an en önemli ayar: Lyra daha doğal konuşsun diye insan modu açık 😌"
+        "Ayarlar açıldı kanka. Buradan ses tonu, kadın/erkek ses, sessiz mod, sohbet/araştırma modu ve canlı konuşma tercihleri yönetiliyor. Şu an en önemli ayar: Lyra daha doğal konuşsun diye insan modu açık 😌"
       );
       return;
     }
@@ -1011,21 +1011,21 @@ export default function Page() {
             className={aiMode === "offline" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("offline")}
           >
-            Sirius Core
+            Akıllı Sohbet
           </button>
 
           <button
             className={aiMode === "local" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("local")}
           >
-            Local Model
+            Cihaz Modu
           </button>
 
           <button
             className={aiMode === "online" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("online")}
           >
-            Sirius Araştırma
+            Araştırma
           </button>
         </section>
 
@@ -1099,10 +1099,10 @@ export default function Page() {
                 <div className="chat-bubble lyra">
                   <p>
                     {aiMode === "offline"
-                      ? "Sirius Core cevap hazırlıyor... biraz havalıyım ama çalışıyorum 😄"
+                      ? "Lyra cevap hazırlıyor... biraz havalıyım ama çalışıyorum 😄"
                       : aiMode === "local"
-                        ? "Local model kapısı hazırlanıyor..."
-                        : "Sirius araştırma modu deneniyor..."}
+                        ? "Cihaz modu hazırlanıyor..."
+                        : "Araştırma modu hazırlanıyor..."}
                   </p>
                 </div>
               </div>
@@ -1111,10 +1111,10 @@ export default function Page() {
 
           <p className="prompt-hint">
             {aiMode === "offline"
-              ? `Sirius Core bağlı. Duygu: ${currentEmotion} · Avatar: ${currentAvatarState}`
+              ? "Lyra hazır. Sesli konuşma ve canlı ekran aktif."
               : aiMode === "local"
-                ? "Local Model modu yakında kendi açık kaynak model motoruna bağlanacak."
-                : "Sirius Araştırma modu açık. Araştırma motoru bağlanınca kaynaklı cevap verecek."}
+                ? "Cihaz modu yakında daha güçlü kişisel çalışma alanına bağlanacak."
+                : "Araştırma modu açık. Güncel bilgi gerektiğinde kaynaklı cevap için hazırlanıyor."}
           </p>
 
           <div className="input-box">
@@ -1173,9 +1173,9 @@ export default function Page() {
             </div>
 
             <div className="phone-controls">
-              <button onClick={() => setAiMode("offline")}>Sirius</button>
-              <button onClick={() => setAiMode("local")}>Local</button>
-              <button onClick={() => setAiMode("online")}>Online</button>
+              <button onClick={() => setAiMode("offline")}>Sohbet</button>
+              <button onClick={() => setAiMode("local")}>Cihaz</button>
+              <button onClick={() => setAiMode("online")}>Araştırma</button>
               <button onClick={() => setMuted((v) => !v)}>Sessiz</button>
               <button className="wide" onClick={openLive}>
                 ≋ Canlı Konuşma ›
