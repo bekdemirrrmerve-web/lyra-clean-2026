@@ -28,14 +28,17 @@ type Message = {
 
 const LYRA_AVATAR = "/lyra-avatar.jpg.jpeg";
 const LYRA_VIDEO = "/lyra-avatar-mp4.mp4";
-const SIRIUS_CORE_API_URL = "https://sirius-core-apii.vercel.app";
+const LYRA_PROXY_URL = "/api/lyra";
 
 type SiriusLyraResponse = {
   ok?: boolean;
   reply?: string;
   speakText?: string;
   emotion?: string;
+  mood?: string;
   reaction?: string;
+  avatarState?: string;
+  memoryUpdate?: any;
   voicePacket?: any;
   voiceHints?: any;
   mode?: string;
@@ -211,6 +214,28 @@ async function postJson(url: string, body: any) {
   return data;
 }
 
+function saveLyraMemory(memoryUpdate: any) {
+  if (typeof window === "undefined" || !memoryUpdate) return;
+
+  try {
+    const oldRaw = localStorage.getItem("lyra_memory_v1");
+    const oldList = oldRaw ? JSON.parse(oldRaw) : [];
+
+    const nextList = [
+      ...(Array.isArray(oldList) ? oldList : []),
+      {
+        ...memoryUpdate,
+        savedAt: new Date().toISOString(),
+      },
+    ].slice(-40);
+
+    localStorage.setItem("lyra_memory_v1", JSON.stringify(nextList));
+    localStorage.setItem("lyra_last_memory", JSON.stringify(memoryUpdate));
+  } catch {
+    // localStorage dolu/kapalıysa Lyra çalışmaya devam etsin.
+  }
+}
+
 function mapLyraMode(aiMode: AiMode, message: string) {
   const q = message.toLocaleLowerCase("tr-TR");
 
@@ -256,7 +281,7 @@ async function askSiriusLyra(
   message: string,
   aiMode: AiMode
 ): Promise<SiriusLyraResponse> {
-  const res = await fetch(`${SIRIUS_CORE_API_URL}/api/lyra`, {
+  const res = await fetch(LYRA_PROXY_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -482,6 +507,9 @@ export default function Page() {
   const [gender, setGender] = useState<"Kadın" | "Erkek">("Kadın");
   const [muted, setMuted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [currentEmotion, setCurrentEmotion] = useState("calm");
+  const [currentAvatarState, setCurrentAvatarState] = useState("idle-breathing");
+  const [lastReaction, setLastReaction] = useState("warm-calm");
 
   const [liveOpen, setLiveOpen] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
@@ -557,23 +585,40 @@ export default function Page() {
     );
     const pace = String(voicePacket?.voiceProfile?.pace || "");
 
+    const rateFromPacket =
+      typeof voicePacket?.prosody?.rate === "number"
+        ? voicePacket.prosody.rate
+        : null;
+
+    const pitchFromPacket =
+      typeof voicePacket?.prosody?.pitch === "number"
+        ? voicePacket.prosody.pitch
+        : null;
+
+    const volumeFromPacket =
+      typeof voicePacket?.prosody?.volume === "number"
+        ? voicePacket.prosody.volume
+        : 1;
+
     const rate =
-      pace.includes("fast") || tone.includes("alert")
+      rateFromPacket ??
+      (pace.includes("fast") || tone.includes("alert")
         ? 0.98
         : pace.includes("slow") || tone.includes("supportive")
           ? 0.84
           : gender === "Kadın"
             ? 0.92
-            : 0.88;
+            : 0.88);
 
     const pitch =
-      tone.includes("sassy") || tone.includes("alert") || tone.includes("excited")
+      pitchFromPacket ??
+      (tone.includes("sassy") || tone.includes("alert") || tone.includes("excited")
         ? 1.1
         : tone.includes("supportive")
           ? 1.0
           : gender === "Kadın"
             ? 1.07
-            : 0.88;
+            : 0.88);
 
     function speakPart(index: number) {
       if (index >= parts.length) return;
@@ -583,7 +628,7 @@ export default function Page() {
       utter.voice = voice || null;
       utter.rate = rate;
       utter.pitch = pitch;
-      utter.volume = 1;
+      utter.volume = volumeFromPacket;
 
       utter.onend = () => {
         window.setTimeout(() => speakPart(index + 1), 120);
@@ -626,6 +671,14 @@ export default function Page() {
           speakText: fallback,
           emotion: "supportive",
           reaction: "tamam-sakin",
+          avatarState: "soft-support",
+          memoryUpdate: {
+            lastMood: "normal",
+            lastEmotion: "supportive",
+            lastTopic: "fallback",
+            shouldRemember: false,
+            summary: "Sirius Core API cevap vermedi, Lyra yedek moda düştü.",
+          },
         };
       }
 
@@ -633,6 +686,19 @@ export default function Page() {
         cleanLyraAnswer(data?.reply || "") ||
         cleanLyraAnswer(data?.speakText || "") ||
         createOfflineAnswer(clean);
+
+      const nextEmotion = data?.emotion || "supportive";
+      const nextAvatarState = data?.avatarState || "soft-support";
+      const nextReaction = data?.reaction || "soft-care";
+
+      setCurrentEmotion(nextEmotion);
+      setCurrentAvatarState(nextAvatarState);
+      setLastReaction(nextReaction);
+      saveLyraMemory(data?.memoryUpdate);
+
+      if (liveOpen) {
+        setLiveText(data?.speakText || finalAnswer);
+      }
 
       const lyraMessage: Message = {
         id: makeMessageId(),
@@ -964,7 +1030,10 @@ export default function Page() {
         </section>
 
         <section className="avatar-area">
-          <div className="halo">
+          <div
+            className={`halo lyra-avatar-state ${currentAvatarState} emotion-${currentEmotion}`}
+            title={`Lyra modu: ${currentEmotion} / ${lastReaction}`}
+          >
             <div className="avatar-card">
               <img src={LYRA_AVATAR} alt="Lyra Avatar" />
             </div>
@@ -1042,7 +1111,7 @@ export default function Page() {
 
           <p className="prompt-hint">
             {aiMode === "offline"
-              ? "Sirius Core bağlı. Lyra cevabı artık kendi API beynimizden alıyor."
+              ? `Sirius Core bağlı. Duygu: ${currentEmotion} · Avatar: ${currentAvatarState}`
               : aiMode === "local"
                 ? "Local Model modu yakında kendi açık kaynak model motoruna bağlanacak."
                 : "Sirius Araştırma modu açık. Araştırma motoru bağlanınca kaynaklı cevap verecek."}
@@ -1142,7 +1211,7 @@ export default function Page() {
 
       {liveOpen && (
         <div className="live-overlay">
-          <section className="lyra-call">
+          <section className={`lyra-call ${currentAvatarState} emotion-${currentEmotion}`}>
             <div className="call-status">
               <b>9:41</b>
               <div>
@@ -1165,7 +1234,7 @@ export default function Page() {
                 <h2>Live Talk</h2>
                 <p>
                   <span className="green-dot" />
-                  {loading ? "Thinking..." : "Connected"}
+                  {loading ? "Thinking..." : `Connected · ${currentEmotion}`}
                   <span className="call-wave">
                     <i />
                     <i />
@@ -1184,7 +1253,7 @@ export default function Page() {
               </button>
             </header>
 
-            <div className="call-stage">
+            <div className={`call-stage ${currentAvatarState} emotion-${currentEmotion}`}>
               <div className="room-arch" />
               <div className="room-lamp" />
               <div className="room-glow one" />
@@ -1639,6 +1708,87 @@ export default function Page() {
           box-shadow:
             inset 0 0 50px rgba(255, 255, 255, 0.8),
             0 30px 70px rgba(110, 126, 140, 0.25);
+        }
+
+        .lyra-avatar-state {
+          transition:
+            filter 0.25s ease,
+            transform 0.25s ease,
+            box-shadow 0.25s ease;
+        }
+
+        .lyra-avatar-state.playful-glow,
+        .lyra-call.playful-glow .call-video,
+        .lyra-call.playful-glow .avatar-fallback {
+          filter: drop-shadow(0 0 24px rgba(255, 255, 255, 0.9));
+        }
+
+        .lyra-avatar-state.sassy-spark,
+        .lyra-call.sassy-spark .call-video,
+        .lyra-call.sassy-spark .avatar-fallback {
+          filter: drop-shadow(0 0 24px rgba(255, 190, 240, 0.72));
+        }
+
+        .lyra-avatar-state.soft-support,
+        .lyra-call.soft-support .call-video,
+        .lyra-call.soft-support .avatar-fallback {
+          filter: drop-shadow(0 0 22px rgba(205, 218, 255, 0.72));
+        }
+
+        .lyra-avatar-state.happy-bright,
+        .lyra-call.happy-bright .call-video,
+        .lyra-call.happy-bright .avatar-fallback {
+          filter: drop-shadow(0 0 28px rgba(255, 245, 185, 0.82));
+        }
+
+        .lyra-avatar-state.tech-focus,
+        .lyra-call.tech-focus .call-video,
+        .lyra-call.tech-focus .avatar-fallback,
+        .lyra-avatar-state.study-focus,
+        .lyra-call.study-focus .call-video,
+        .lyra-call.study-focus .avatar-fallback {
+          filter: drop-shadow(0 0 24px rgba(170, 215, 255, 0.78));
+        }
+
+        .lyra-avatar-state.creative-glow,
+        .lyra-call.creative-glow .call-video,
+        .lyra-call.creative-glow .avatar-fallback {
+          filter: drop-shadow(0 0 24px rgba(235, 205, 255, 0.78));
+        }
+
+        .lyra-avatar-state.thinking-glow,
+        .lyra-call.thinking-glow .call-video,
+        .lyra-call.thinking-glow .avatar-fallback {
+          filter: drop-shadow(0 0 22px rgba(210, 225, 235, 0.85));
+        }
+
+        .lyra-avatar-state.gentle-dim,
+        .lyra-call.gentle-dim .call-video,
+        .lyra-call.gentle-dim .avatar-fallback {
+          filter: saturate(0.92) drop-shadow(0 0 16px rgba(210, 215, 225, 0.62));
+        }
+
+        .lyra-avatar-state.focused-calm,
+        .lyra-call.focused-calm .call-video,
+        .lyra-call.focused-calm .avatar-fallback {
+          filter: drop-shadow(0 0 22px rgba(185, 220, 215, 0.72));
+        }
+
+        .lyra-avatar-state.emotion-sassy .avatar-card,
+        .lyra-avatar-state.emotion-playful .avatar-card,
+        .lyra-avatar-state.emotion-happy .avatar-card {
+          animation: lyraMicroBounce 2.4s ease-in-out infinite;
+        }
+
+        @keyframes lyraMicroBounce {
+          0%,
+          100% {
+            transform: translateY(0) scale(1);
+          }
+
+          50% {
+            transform: translateY(-4px) scale(1.012);
+          }
         }
 
         .avatar-card {
@@ -2199,6 +2349,32 @@ export default function Page() {
             linear-gradient(180deg, #f4e5d4 0%, #ead2bd 100%);
         }
 
+        .call-stage.playful-glow,
+        .call-stage.sassy-spark,
+        .call-stage.happy-bright {
+          background:
+            radial-gradient(circle at 18% 46%, rgba(255, 255, 255, 0.78), transparent 25%),
+            radial-gradient(circle at 80% 54%, rgba(255, 224, 194, 0.76), transparent 23%),
+            linear-gradient(180deg, #f7e7d8 0%, #eecfb7 100%);
+        }
+
+        .call-stage.soft-support,
+        .call-stage.gentle-dim {
+          background:
+            radial-gradient(circle at 18% 46%, rgba(255, 255, 255, 0.75), transparent 25%),
+            radial-gradient(circle at 80% 54%, rgba(226, 232, 255, 0.58), transparent 24%),
+            linear-gradient(180deg, #f4e7dc 0%, #e8d4c4 100%);
+        }
+
+        .call-stage.tech-focus,
+        .call-stage.study-focus,
+        .call-stage.thinking-glow {
+          background:
+            radial-gradient(circle at 18% 46%, rgba(255, 255, 255, 0.72), transparent 25%),
+            radial-gradient(circle at 80% 54%, rgba(206, 232, 255, 0.62), transparent 24%),
+            linear-gradient(180deg, #f3e5d6 0%, #e7d1bd 100%);
+        }
+
         .room-arch {
           position: absolute;
           left: -42px;
@@ -2733,4 +2909,5 @@ export default function Page() {
     </main>
   );
 }
+
 
