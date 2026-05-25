@@ -507,6 +507,7 @@ export default function Page() {
   const [gender, setGender] = useState<"Kadın" | "Erkek">("Kadın");
   const [muted, setMuted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentEmotion, setCurrentEmotion] = useState("calm");
   const [currentAvatarState, setCurrentAvatarState] = useState("idle-breathing");
   const [lastReaction, setLastReaction] = useState("warm-calm");
@@ -559,12 +560,19 @@ export default function Page() {
   }
 
   function speakHuman(text: string, voicePacket?: any) {
-    if (muted || typeof window === "undefined") return;
+    if (muted || typeof window === "undefined") {
+      setIsSpeaking(false);
+      return;
+    }
 
     const synth = window.speechSynthesis;
-    if (!synth) return;
+    if (!synth) {
+      setIsSpeaking(false);
+      return;
+    }
 
     synth.cancel();
+    setIsSpeaking(false);
 
     const clean = text
       .replace(/\n+/g, ". ")
@@ -620,8 +628,16 @@ export default function Page() {
             ? 1.07
             : 0.88);
 
+    if (!parts.length) {
+      setIsSpeaking(false);
+      return;
+    }
+
     function speakPart(index: number) {
-      if (index >= parts.length) return;
+      if (index >= parts.length) {
+        setIsSpeaking(false);
+        return;
+      }
 
       const utter = new SpeechSynthesisUtterance(parts[index]);
       utter.lang = "tr-TR";
@@ -630,8 +646,21 @@ export default function Page() {
       utter.pitch = pitch;
       utter.volume = volumeFromPacket;
 
+      utter.onstart = () => {
+        setIsSpeaking(true);
+      };
+
       utter.onend = () => {
+        if (index + 1 >= parts.length) {
+          setIsSpeaking(false);
+          return;
+        }
+
         window.setTimeout(() => speakPart(index + 1), 120);
+      };
+
+      utter.onerror = () => {
+        setIsSpeaking(false);
       };
 
       synth.speak(utter);
@@ -828,6 +857,7 @@ export default function Page() {
 
     if (typeof window !== "undefined") {
       window.speechSynthesis?.cancel?.();
+      setIsSpeaking(false);
     }
   }
 
@@ -878,6 +908,11 @@ export default function Page() {
       setInput("");
       setAiMode("offline");
       if (typeof window !== "undefined") window.speechSynthesis?.cancel?.();
+      setIsSpeaking(false);
+      setCurrentEmotion("calm");
+      setCurrentAvatarState("idle-breathing");
+      setLastReaction("warm-calm");
+      setLiveText("Canlı konuşma beklemede.");
       return;
     }
 
@@ -1031,8 +1066,7 @@ export default function Page() {
 
         <section className="avatar-area">
           <div
-            className={`halo lyra-avatar-state ${currentAvatarState} emotion-${currentEmotion}`}
-            title={`Lyra modu: ${currentEmotion} / ${lastReaction}`}
+            className={`halo lyra-avatar-state ${currentAvatarState} emotion-${currentEmotion} ${isSpeaking ? "is-speaking" : ""} ${micOn ? "is-listening" : ""}`}
           >
             <div className="avatar-card">
               <img src={LYRA_AVATAR} alt="Lyra Avatar" />
@@ -1049,6 +1083,7 @@ export default function Page() {
               onClick={() => {
                 setMuted((v) => !v);
                 window.speechSynthesis?.cancel?.();
+                setIsSpeaking(false);
               }}
             >
               ♫ {muted ? "Ses Kapalı" : "Sessize Al"}
@@ -1211,7 +1246,7 @@ export default function Page() {
 
       {liveOpen && (
         <div className="live-overlay">
-          <section className={`lyra-call ${currentAvatarState} emotion-${currentEmotion}`}>
+          <section className={`lyra-call ${currentAvatarState} emotion-${currentEmotion} ${isSpeaking ? "is-speaking" : ""} ${micOn ? "is-listening" : ""}`}>
             <div className="call-status">
               <b>9:41</b>
               <div>
@@ -1231,10 +1266,10 @@ export default function Page() {
               </button>
 
               <div className="call-title">
-                <h2>Live Talk</h2>
+                <h2>Canlı Konuşma</h2>
                 <p>
                   <span className="green-dot" />
-                  {loading ? "Thinking..." : `Connected · ${currentEmotion}`}
+                  {loading ? "Düşünüyor..." : isSpeaking ? "Konuşuyor..." : micOn ? "Dinliyorum..." : "Bağlı"}
                   <span className="call-wave">
                     <i />
                     <i />
@@ -1253,7 +1288,7 @@ export default function Page() {
               </button>
             </header>
 
-            <div className={`call-stage ${currentAvatarState} emotion-${currentEmotion}`}>
+            <div className={`call-stage ${currentAvatarState} emotion-${currentEmotion} ${isSpeaking ? "is-speaking" : ""} ${micOn ? "is-listening" : ""}`}>
               <div className="room-arch" />
               <div className="room-lamp" />
               <div className="room-glow one" />
@@ -1335,7 +1370,7 @@ export default function Page() {
 
                   {micOn && liveText && (
                     <article className="live-bubble listening">
-                      <time>Live</time>
+                      <time>Canlı</time>
                       <p>{liveText}</p>
                     </article>
                   )}
@@ -1349,7 +1384,7 @@ export default function Page() {
                 onClick={toggleMic}
               >
                 <span>🎙️</span>
-                <b>{micOn ? "Dinliyor" : "Mute"}</b>
+                <b>{micOn ? "Dinliyor" : "Mikrofon"}</b>
               </button>
 
               <button
@@ -1357,10 +1392,11 @@ export default function Page() {
                 onClick={() => {
                   setMuted((v) => !v);
                   window.speechSynthesis?.cancel?.();
+                  setIsSpeaking(false);
                 }}
               >
                 <span>🔊</span>
-                <b>{muted ? "Sessiz" : "Speaker"}</b>
+                <b>{muted ? "Sessiz" : "Ses"}</b>
               </button>
 
               <button
@@ -1368,12 +1404,12 @@ export default function Page() {
                 onClick={() => setShowLiveChat((v) => !v)}
               >
                 <span>💬</span>
-                <b>Chat</b>
+                <b>Sohbet</b>
               </button>
 
               <button className="call-control end" onClick={closeLive}>
                 <span>☎</span>
-                <b>End</b>
+                <b>Kapat</b>
               </button>
             </nav>
 
@@ -1711,10 +1747,69 @@ export default function Page() {
         }
 
         .lyra-avatar-state {
+          position: relative;
           transition:
             filter 0.25s ease,
             transform 0.25s ease,
             box-shadow 0.25s ease;
+        }
+
+        .lyra-avatar-state::after {
+          content: "";
+          position: absolute;
+          inset: 5%;
+          border-radius: inherit;
+          pointer-events: none;
+          opacity: 0;
+          border: 1px solid rgba(255, 255, 255, 0.9);
+        }
+
+        .lyra-avatar-state.is-speaking::after {
+          opacity: 1;
+          animation: lyraVoiceRing 1.35s ease-out infinite;
+        }
+
+        .lyra-avatar-state.is-listening::after {
+          opacity: 1;
+          animation: lyraListeningRing 1.6s ease-out infinite;
+        }
+
+        .lyra-avatar-state.is-speaking {
+          transform: scale(1.012);
+        }
+
+        .lyra-call.is-speaking .call-video,
+        .lyra-call.is-speaking .avatar-fallback {
+          filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.9)) brightness(1.035);
+        }
+
+        .lyra-call.is-listening .call-video,
+        .lyra-call.is-listening .avatar-fallback {
+          filter: drop-shadow(0 0 26px rgba(190, 220, 255, 0.82));
+        }
+
+        @keyframes lyraVoiceRing {
+          0% {
+            transform: scale(0.92);
+            opacity: 0.78;
+          }
+
+          100% {
+            transform: scale(1.18);
+            opacity: 0;
+          }
+        }
+
+        @keyframes lyraListeningRing {
+          0% {
+            transform: scale(0.94);
+            opacity: 0.62;
+          }
+
+          100% {
+            transform: scale(1.14);
+            opacity: 0;
+          }
         }
 
         .lyra-avatar-state.playful-glow,
