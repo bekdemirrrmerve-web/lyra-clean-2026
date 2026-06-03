@@ -26,13 +26,12 @@ type Message = {
   time: string;
 };
 
-const LYRA_AVATAR = "/lyra-avatar.jpg.jpeg";
-const LYRA_VIDEO = "/lyra-avatar-mp4.mp4";
-const LYRA_PROXY_URL = "/api/lyra";
-
-type SiriusLyraResponse = {
+type LyraResponse = {
   ok?: boolean;
   reply?: string;
+  answer?: string;
+  text?: string;
+  result?: string;
   speakText?: string;
   emotion?: string;
   mood?: string;
@@ -41,9 +40,11 @@ type SiriusLyraResponse = {
   memoryUpdate?: any;
   voicePacket?: any;
   voiceHints?: any;
-  mode?: string;
 };
 
+const LYRA_AVATAR = "/lyra-avatar.jpg.jpeg";
+const LYRA_VIDEO = "/lyra-avatar-mp4.mp4";
+const LYRA_API_URL = "https://sirius-core-apii.vercel.app/api/lyra";
 
 const navItems: { icon: string; label: string; action: NavAction }[] = [
   { icon: "+", label: "Yeni Sohbet", action: "new" },
@@ -58,7 +59,7 @@ const features = [
   {
     icon: "⌕",
     title: "Araştırma Modu",
-    desc: "Güncel bilgi gerekiyorsa araştırma modunu dener.",
+    desc: "Güncel bilgi gerektiğinde daha derin cevaplar dener.",
   },
   {
     icon: "✎",
@@ -88,7 +89,7 @@ const features = [
   {
     icon: "≋",
     title: "Canlı Mod",
-    desc: "Görüntülü konuşma ekranını açar.",
+    desc: "Canlı konuşma ekranını açar.",
   },
 ];
 
@@ -110,39 +111,98 @@ function makeMessageId() {
   return Date.now() + Math.floor(Math.random() * 100000);
 }
 
+function safeClassName(value: unknown, fallback: string) {
+  const clean = String(value || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return clean || fallback;
+}
+
 function isHealthCheckJson(text: string) {
   const value = text.trim();
 
   return (
     value.startsWith("{") &&
     value.includes('"ok"') &&
-    (value.includes('"/api/search"') ||
-      value.includes('"/api/gemini"') ||
-      value.includes('"hasBraveKey"') ||
-      value.includes('"hasFreeFallback"') ||
-      value.includes('"route"'))
+    (value.includes('"route"') ||
+      value.includes('"service"') ||
+      value.includes('"version"') ||
+      value.includes('"testPayload"') ||
+      value.includes('"voicePacket"') ||
+      value.includes('"avatarState"'))
   );
 }
 
-function cleanLyraAnswer(value: unknown) {
+function sanitizeUserFacingText(value: unknown) {
   if (typeof value !== "string") return "";
 
   let text = value.trim();
-
   if (!text) return "";
   if (isHealthCheckJson(text)) return "";
 
-  text = text.replace(
-    /Online araştırma bağlantısı gelmedi kanka\. Gemini\/API tarafı çalışmıyor olabilir\. Seni boş bırakmıyorum, sohbet moduyla cevaplıyorum:\s*/gi,
-    "Araştırma modu şu an güçlü kaynak getirmedi kanka. Ben seni boş bırakmıyorum, sohbet modundan cevaplıyorum:\n\n"
-  );
+  text = text
+    .replace(/Sirius Core API beynime bağlandım:?/gi, "")
+    .replace(/Sirius Core bağlı\.?/gi, "")
+    .replace(/API beynime bağlandı\.?/gi, "")
+    .replace(/Duygu:\s*[^·\n]+/gi, "")
+    .replace(/Avatar:\s*[^\n]+/gi, "")
+    .replace(/source:\s*["']?sirius-core-lyra["']?/gi, "")
+    .replace(/version:\s*["']?[^,\n]+["']?/gi, "")
+    .replace(/voicePacket/gi, "")
+    .replace(/avatarState/gi, "")
+    .replace(/memoryUpdate/gi, "")
+    .replace(/debug/gi, "")
+    .replace(/emotion/gi, "")
+    .replace(/mood/gi, "")
+    .replace(/reaction/gi, "")
+    .replace(
+      /Lyra endpoint çalışıyor\. POST ile message gönderince.*$/gi,
+      ""
+    )
+    .replace(
+      /Sirius Core API şu an cevap vermedi kanka\.\s*/gi,
+      "Lyra bağlantısı şu an gecikti kanka. "
+    )
+    .replace(
+      /Online araştırma bağlantısı gelmedi kanka\. Gemini\/API tarafı çalışmıyor olabilir\. Seni boş bırakmıyorum, API’siz modla cevaplıyorum:\s*/gi,
+      ""
+    )
+    .replace(
+      /Local AI şu an cevap vermedi kanka\. Ollama açık değilse bu normal\. API’siz Lyra moduna düşüp yine cevaplıyorum:\s*/gi,
+      ""
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 
-  text = text.replace(
-    /Local AI şu an cevap vermedi kanka\. Ollama açık değilse bu normal\. Lyra sohbet moduna düşüp yine cevaplıyorum:\s*/gi,
-    "Cihaz modu şu an cevap vermedi kanka. Sorun değil, Lyra sohbet modunda devam ediyor:\n\n"
-  );
+  return text;
+}
 
-  return text.trim();
+function cleanLyraAnswer(value: unknown) {
+  const text = sanitizeUserFacingText(value);
+  if (!text) return "";
+
+  const lower = text.toLocaleLowerCase("tr-TR");
+
+  const blockedTechnicalTexts = [
+    "endpoint çalışıyor",
+    "post ile message",
+    "source",
+    "debug",
+    "voicepacket",
+    "avatarstate",
+    "sirius core bağlı",
+    "api beynime",
+  ];
+
+  if (blockedTechnicalTexts.some((item) => lower.includes(item))) {
+    return "";
+  }
+
+  return text;
 }
 
 function pickApiAnswer(data: any) {
@@ -153,87 +213,8 @@ function pickApiAnswer(data: any) {
   }
 
   return cleanLyraAnswer(
-    data?.answer ||
-      data?.reply ||
-      data?.text ||
-      data?.message ||
-      data?.result ||
-      ""
+    data?.reply || data?.answer || data?.text || data?.result || ""
   );
-}
-
-function humanizeAnswer(answer: string, question: string) {
-  const q = question.toLocaleLowerCase("tr-TR");
-  const clean = answer.trim();
-
-  if (!clean) return "";
-
-  if (
-    clean.startsWith("Hımm") ||
-    clean.startsWith("Tamam kanka") ||
-    clean.startsWith("Ay") ||
-    clean.startsWith("Bak")
-  ) {
-    return clean;
-  }
-
-  if (q.includes("hata") || q.includes("bozuldu") || q.includes("çalışmıyo")) {
-    return `Ay tamam, burada küçük bir kaos çıkmış ama panik yok 😅\n\n${clean}`;
-  }
-
-  if (q.includes("kod") || q.includes("github") || q.includes("vercel")) {
-    return `Tamam kanka, teknik tarafa giriyoruz. Ben olsam şöyle toparlardım:\n\n${clean}`;
-  }
-
-  if (q.includes("içerik") || q.includes("hook") || q.includes("video")) {
-    return `Ooo bu içerik olur kanka. Hatta biraz parlatırsak keşfete göz kırpar 😄\n\n${clean}`;
-  }
-
-  if (q.includes("moral") || q.includes("üzgün") || q.includes("yoruldum")) {
-    return `Canım ya, önce bir sakin. Bence kendine şu an biraz fazla yükleniyor olabilirsin 🤍\n\n${clean}`;
-  }
-
-  return `Hımm tamam, bunu şöyle düşünürdüm:\n\n${clean}`;
-}
-
-async function postJson(url: string, body: any) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok && !data) {
-    throw new Error(`${url} bağlantısı başarısız.`);
-  }
-
-  return data;
-}
-
-function saveLyraMemory(memoryUpdate: any) {
-  if (typeof window === "undefined" || !memoryUpdate) return;
-
-  try {
-    const oldRaw = localStorage.getItem("lyra_memory_v1");
-    const oldList = oldRaw ? JSON.parse(oldRaw) : [];
-
-    const nextList = [
-      ...(Array.isArray(oldList) ? oldList : []),
-      {
-        ...memoryUpdate,
-        savedAt: new Date().toISOString(),
-      },
-    ].slice(-40);
-
-    localStorage.setItem("lyra_memory_v1", JSON.stringify(nextList));
-    localStorage.setItem("lyra_last_memory", JSON.stringify(memoryUpdate));
-  } catch {
-    // localStorage dolu/kapalıysa Lyra çalışmaya devam etsin.
-  }
 }
 
 function mapLyraMode(aiMode: AiMode, message: string) {
@@ -277,11 +258,8 @@ function mapLyraMode(aiMode: AiMode, message: string) {
   return "chat";
 }
 
-async function askSiriusLyra(
-  message: string,
-  aiMode: AiMode
-): Promise<SiriusLyraResponse> {
-  const res = await fetch(LYRA_PROXY_URL, {
+async function askLyra(message: string, aiMode: AiMode): Promise<LyraResponse> {
+  const res = await fetch(LYRA_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -289,7 +267,7 @@ async function askSiriusLyra(
     body: JSON.stringify({
       message,
       userId: "merve",
-      sessionId: "lyra-main",
+      sessionId: "lyra-clean-2026",
       mode: mapLyraMode(aiMode, message),
     }),
   });
@@ -307,24 +285,31 @@ function createOfflineAnswer(question: string) {
   const q = question.toLocaleLowerCase("tr-TR").trim();
 
   if (q === "test") {
-    return "Test başarılı kanka. Lyra ayakta. Şu an sakin sohbet modundayım ama boş boş bakmıyorum, cevap üretiyorum 😄";
+    return "Test başarılı kanka. Lyra ayakta 😄";
   }
 
   if (
     q.includes("merhaba") ||
     q.includes("selam") ||
     q.includes("naber") ||
-    q.includes("nasılsın")
+    q.includes("nasılsın") ||
+    q.includes("orda mısın") ||
+    q.includes("orada mısın") ||
+    q.includes("burda mısın") ||
+    q.includes("burada mısın") ||
+    q.includes("duyuyor musun") ||
+    q.includes("sesim geliyor mu")
   ) {
-    return "Buradayım kanka 🤍 Bugün modum: sakin ama işe yarar. Bana yaz, ben hem gerçekçi hem de biraz tatlı tatlı cevap vereyim.";
+    return "Buradayım kanka 🤍 Duyuyorum, görüyorum; hatta şu an yazılımın içinden sana minik bir el sallıyorum gibi düşün 😄 Ne yapıyoruz?";
   }
 
   if (
-    q.includes("çalışıyor musun") ||
-    q.includes("çalışıyo musun") ||
-    q.includes("çalışıyor mu")
+    q.includes("canım sıkıldı") ||
+    q.includes("sıkıldım") ||
+    q.includes("moralim bozuk") ||
+    q.includes("yoruldum")
   ) {
-    return "Evet çalışıyorum kanka. Hatta bu sefer sadece süs gibi durmuyorum; sol menüye basınca tepki veriyorum, canlı konuşma açıyorum, mesaj da yazıyorum. Küçük ama gururlu bir yazılım anı 😌";
+    return "Off anladım kanka. O boş boş sıkılma hali insanın üstüne yapışıyor ya. Bence şu an kendine yüklenmeden minicik bir şey seçelim: ya 10 dakikalık toparlanma, ya kısa yürüyüş, ya da beraber bir plan yapalım.";
   }
 
   if (
@@ -341,10 +326,10 @@ HOOK:
 “Bunu çoğu kişi yanlış biliyor ama işin kimyası bambaşka…”
 
 GİRİŞ:
-Bugün sana bu konuyu çok sade anlatacağım. Dışarıdan basit görünüyor ama mantığını anlayınca olay değişiyor.
+Bugün sana bunu sade anlatacağım. Dışarıdan basit görünüyor ama mantığını anlayınca olay değişiyor.
 
 GELİŞME:
-Önce problemi anlatırız, sonra neden olduğunu söyleriz, en son da doğru kullanım/çözüm kısmına geçeriz.
+Önce problemi söyleriz, sonra nedenini anlatırız, en son da doğru kullanım kısmına geçeriz.
 
 KAPANIŞ:
 Yani mesele sadece “ne kullanayım?” değil; “neden, ne zaman ve nasıl kullanayım?” sorusu.
@@ -359,36 +344,20 @@ Kaydet kanka, sonra bunun formül mantığını da anlatacağım.`;
     q.includes("serum") ||
     q.includes("tonik") ||
     q.includes("şampuan") ||
-    q.includes("kozmetik")
+    q.includes("kozmetik") ||
+    q.includes("inci")
   ) {
     return `Kozmetik mantığıyla bakarsak önce şunu netleştiririz:
 
-1. Ürün tipi ne? Krem mi, serum mu, tonik mi?
-2. Hedef ne? Nem, bariyer, leke, akne, parlaklık?
-3. Baz sistem ne olacak? Su fazı, yağ fazı, jel baz ya da emülsiyon?
+1. Ürün tipi ne?
+2. Hedef ne?
+3. Baz sistem ne olacak?
 4. Aktifler hangi yüzde aralığında kullanılacak?
 5. pH aralığı uygun mu?
 6. Koruyucu sistemi var mı?
-7. Stabilite ve görünüm kontrolü yapılacak mı?
+7. Stabilite kontrolü yapılacak mı?
 
 Ben olsam önce hedefi seçer, sonra formülü faz faz kurardım. Yoksa formül dediğin şey biraz “her güzel şeyi aynı kaba koydum” kaosuna dönüyor 😅`;
-  }
-
-  if (
-    q.includes("araştır") ||
-    q.includes("güncel") ||
-    q.includes("trend") ||
-    q.includes("2026") ||
-    q.includes("internetten")
-  ) {
-    return `Burada dürüst olayım kanka: araştırma modu kapalıyken canlı internete çıkamam.
-
-Ama şöyle yaparız:
-1. Ben önce bilgiyi sade şekilde toparlarım.
-2. Araştırma modunu açarsan güncel veri denemesi yaparız.
-3. Gelen cevabı da senin içerik diline çeviririm.
-
-Yani ben olsam: önce taslak, sonra güncel kaynak, sonra video metni şeklinde giderdim.`;
   }
 
   if (
@@ -416,7 +385,7 @@ Bence en iyi öğrenme şekli bu: az bilgi, bol tekrar, azıcık da “haa tamam
 - aksiyon listesi
 - içerik fikrine dönüşebilecek noktalar
 
-PDF okuma özelliği bağlanınca bunu dosyadan da yaparız. Şimdilik metni yapıştırırsan ben onu tertemiz toparlarım.`;
+Metni yapıştırırsan ben onu tertemiz toparlarım.`;
   }
 
   if (
@@ -432,66 +401,36 @@ PDF okuma özelliği bağlanınca bunu dosyadan da yaparız. Şimdilik metni yap
 Konuya göre bunu Lyra, InciLab, kozmetik laboratuvarı ya da içerik odası gibi ayrı ayrı parlatırız.`;
   }
 
-  return `Bunu anladım kanka. Şu an sohbet modundayım; yani canlı araştırma açmadan kendi mantığımla cevap veriyorum.
+  return `Bunu anladım kanka. Ben olsam önce şuna bakardım:
 
-Ben olsam önce şuna bakardım:
 1. Bu konu bilgi mi istiyor?
 2. İçerik mi üretilecek?
 3. Kod mu düzeltilecek?
 4. Güncel araştırma mı gerekiyor?
 
-Sen bana konuyu biraz netleştir, ben onu direkt kullanılabilir hale çevireyim.`;
+Sen yaz, ben onu direkt kullanılabilir hale çevireyim.`;
 }
 
-async function askOnlineResearch(message: string) {
-  const searchData = await postJson("/api/search", {
-    query: message,
-    message,
-  });
-
-  const searchAnswer = pickApiAnswer(searchData);
-
-  if (searchAnswer) return searchAnswer;
+function saveLyraMemory(memoryUpdate: any) {
+  if (typeof window === "undefined" || !memoryUpdate) return;
 
   try {
-    const geminiData = await postJson("/api/gemini", {
-      message,
-      mode: "online-research",
-    });
+    const oldRaw = localStorage.getItem("lyra_memory_v1");
+    const oldList = oldRaw ? JSON.parse(oldRaw) : [];
 
-    const geminiAnswer = pickApiAnswer(geminiData);
+    const nextList = [
+      ...(Array.isArray(oldList) ? oldList : []),
+      {
+        ...memoryUpdate,
+        savedAt: new Date().toISOString(),
+      },
+    ].slice(-40);
 
-    if (geminiAnswer) return geminiAnswer;
+    localStorage.setItem("lyra_memory_v1", JSON.stringify(nextList));
+    localStorage.setItem("lyra_last_memory", JSON.stringify(memoryUpdate));
   } catch {
     // sessiz geç
   }
-
-  return (
-    "Araştırma modu şu an güçlü kaynak getirmedi. Sohbet modundan cevaplıyorum:\n\n" +
-    createOfflineAnswer(message)
-  );
-}
-
-async function askLocalOllama(message: string) {
-  const res = await fetch("http://localhost:11434/api/generate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "llama3.2:3b",
-      prompt: `Sen Lyra adında sıcak, doğal, Türkçe konuşan bir yapay zeka asistansın. Kullanıcıyla yakın arkadaş gibi ama akıllı ve işe yarar konuş. Gerektiğinde kısa komik tepkiler ver, ama cevabı boş yapma.\n\nKullanıcı: ${message}\nLyra:`,
-      stream: false,
-    }),
-  });
-
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok || !data?.response) {
-    throw new Error("Cihaz modu cevap vermedi.");
-  }
-
-  return data.response;
 }
 
 export default function Page() {
@@ -507,10 +446,6 @@ export default function Page() {
   const [gender, setGender] = useState<"Kadın" | "Erkek">("Kadın");
   const [muted, setMuted] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [currentEmotion, setCurrentEmotion] = useState("calm");
-  const [currentAvatarState, setCurrentAvatarState] = useState("idle-breathing");
-  const [lastReaction, setLastReaction] = useState("warm-calm");
 
   const [liveOpen, setLiveOpen] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
@@ -518,6 +453,9 @@ export default function Page() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [liveText, setLiveText] = useState("Canlı konuşma beklemede.");
   const [showLiveChat, setShowLiveChat] = useState(true);
+
+  const [currentEmotion, setCurrentEmotion] = useState("calm");
+  const [currentAvatarState, setCurrentAvatarState] = useState("idle");
 
   function now() {
     return new Date().toLocaleTimeString("tr-TR", {
@@ -527,21 +465,42 @@ export default function Page() {
   }
 
   function modeLabel() {
-    if (aiMode === "offline") return "Akıllı Sohbet";
+    if (aiMode === "offline") return "Sohbet";
     if (aiMode === "local") return "Cihaz Modu";
     return "Araştırma";
   }
 
+  function getLoadingText() {
+    if (aiMode === "offline") return "Lyra cevap hazırlıyor...";
+    if (aiMode === "local") return "Cihaz modu hazırlanıyor...";
+    return "Araştırma modu hazırlanıyor...";
+  }
+
+  function getPromptHint() {
+    if (aiMode === "offline") {
+      return "Lyra hazır. Sesli konuşma ve canlı ekran aktif.";
+    }
+
+    if (aiMode === "local") {
+      return "Cihaz modu kişisel çalışma alanı için hazır.";
+    }
+
+    return "Araştırma modu açık. Daha güncel ve kaynaklı cevaplar için hazırlanıyor.";
+  }
+
   function pushLyraMessage(text: string) {
+    const finalText = sanitizeUserFacingText(text);
+    if (!finalText) return;
+
     const msg: Message = {
       id: makeMessageId(),
       role: "lyra",
-      text,
+      text: finalText,
       time: now(),
     };
 
     setMessages((prev) => [...prev, msg]);
-    speakHuman(text);
+    speakHuman(finalText);
   }
 
   function getBestTurkishVoice() {
@@ -560,25 +519,23 @@ export default function Page() {
   }
 
   function speakHuman(text: string, voicePacket?: any) {
-    if (muted || typeof window === "undefined") {
-      setIsSpeaking(false);
-      return;
-    }
+    if (muted || typeof window === "undefined") return;
 
     const synth = window.speechSynthesis;
-    if (!synth) {
-      setIsSpeaking(false);
-      return;
-    }
+    if (!synth) return;
+
+    const finalText = sanitizeUserFacingText(text);
+    if (!finalText) return;
 
     synth.cancel();
-    setIsSpeaking(false);
 
-    const clean = text
+    const clean = finalText
       .replace(/\n+/g, ". ")
       .replace(/🤍|😄|😅|😌|✨|🔥/g, "")
       .replace(/\s+/g, " ")
       .trim();
+
+    if (!clean) return;
 
     const parts = clean
       .split(/(?<=[.!?])\s+/)
@@ -589,78 +546,52 @@ export default function Page() {
     const voice = getBestTurkishVoice();
 
     const tone = String(
-      voicePacket?.voiceProfile?.tone || voicePacket?.voiceHints?.tone || ""
+      voicePacket?.voiceProfile?.tone ||
+        voicePacket?.voiceHints?.tone ||
+        voicePacket?.prosody?.tone ||
+        ""
     );
-    const pace = String(voicePacket?.voiceProfile?.pace || "");
 
-    const rateFromPacket =
-      typeof voicePacket?.prosody?.rate === "number"
-        ? voicePacket.prosody.rate
-        : null;
-
-    const pitchFromPacket =
-      typeof voicePacket?.prosody?.pitch === "number"
-        ? voicePacket.prosody.pitch
-        : null;
-
-    const volumeFromPacket =
-      typeof voicePacket?.prosody?.volume === "number"
-        ? voicePacket.prosody.volume
-        : 1;
+    const pace = String(
+      voicePacket?.voiceProfile?.pace || voicePacket?.prosody?.pace || ""
+    );
 
     const rate =
-      rateFromPacket ??
-      (pace.includes("fast") || tone.includes("alert")
+      pace.includes("fast") || tone.includes("alert")
         ? 0.98
         : pace.includes("slow") || tone.includes("supportive")
           ? 0.84
           : gender === "Kadın"
             ? 0.92
-            : 0.88);
+            : 0.88;
 
     const pitch =
-      pitchFromPacket ??
-      (tone.includes("sassy") || tone.includes("alert") || tone.includes("excited")
+      tone.includes("sassy") ||
+      tone.includes("alert") ||
+      tone.includes("excited")
         ? 1.1
         : tone.includes("supportive")
           ? 1.0
           : gender === "Kadın"
             ? 1.07
-            : 0.88);
-
-    if (!parts.length) {
-      setIsSpeaking(false);
-      return;
-    }
+            : 0.88;
 
     function speakPart(index: number) {
-      if (index >= parts.length) {
-        setIsSpeaking(false);
-        return;
-      }
+      if (index >= parts.length) return;
 
       const utter = new SpeechSynthesisUtterance(parts[index]);
       utter.lang = "tr-TR";
       utter.voice = voice || null;
       utter.rate = rate;
       utter.pitch = pitch;
-      utter.volume = volumeFromPacket;
-
-      utter.onstart = () => {
-        setIsSpeaking(true);
-      };
+      utter.volume = 1;
 
       utter.onend = () => {
-        if (index + 1 >= parts.length) {
-          setIsSpeaking(false);
-          return;
-        }
-
         window.setTimeout(() => speakPart(index + 1), 120);
       };
 
       utter.onerror = () => {
-        setIsSpeaking(false);
+        window.setTimeout(() => speakPart(index + 1), 120);
       };
 
       synth.speak(utter);
@@ -685,13 +616,13 @@ export default function Page() {
     setLoading(true);
 
     try {
-      let data: SiriusLyraResponse | null = null;
+      let data: LyraResponse | null = null;
 
       try {
-        data = await askSiriusLyra(clean, aiMode);
+        data = await askLyra(clean, aiMode);
       } catch {
         const fallback =
-          "Bağlantı bir an takıldı kanka. Panik yok, ben yine buradayım:\n\n" +
+          "Bağlantı şu an gecikti kanka. Panik yok, Lyra sohbet modundan devam ediyor:\n\n" +
           createOfflineAnswer(clean);
 
         data = {
@@ -699,45 +630,32 @@ export default function Page() {
           reply: fallback,
           speakText: fallback,
           emotion: "supportive",
-          reaction: "tamam-sakin",
-          avatarState: "soft-support",
-          memoryUpdate: {
-            lastMood: "normal",
-            lastEmotion: "supportive",
-            lastTopic: "fallback",
-            shouldRemember: false,
-            summary: "Lyra kısa süreli bağlantı sorununda yumuşak moda geçti.",
-          },
+          reaction: "soft",
+          avatarState: "supportive",
         };
       }
 
       const finalAnswer =
-        cleanLyraAnswer(data?.reply || "") ||
-        cleanLyraAnswer(data?.speakText || "") ||
+        pickApiAnswer(data) ||
+        cleanLyraAnswer(data?.speakText) ||
         createOfflineAnswer(clean);
 
-      const nextEmotion = data?.emotion || "supportive";
-      const nextAvatarState = data?.avatarState || "soft-support";
-      const nextReaction = data?.reaction || "soft-care";
+      const cleanFinal = sanitizeUserFacingText(finalAnswer);
+      const cleanSpeak = sanitizeUserFacingText(data?.speakText || cleanFinal);
 
-      setCurrentEmotion(nextEmotion);
-      setCurrentAvatarState(nextAvatarState);
-      setLastReaction(nextReaction);
+      setCurrentEmotion(safeClassName(data?.emotion, "calm"));
+      setCurrentAvatarState(safeClassName(data?.avatarState, "idle"));
       saveLyraMemory(data?.memoryUpdate);
-
-      if (liveOpen) {
-        setLiveText(data?.speakText || finalAnswer);
-      }
 
       const lyraMessage: Message = {
         id: makeMessageId(),
         role: "lyra",
-        text: finalAnswer,
+        text: cleanFinal,
         time: now(),
       };
 
       setMessages((prev) => [...prev, lyraMessage]);
-      speakHuman(data?.speakText || finalAnswer, data?.voicePacket || data?.voiceHints);
+      speakHuman(cleanSpeak || cleanFinal, data?.voicePacket || data?.voiceHints);
       lyraVideoRef.current?.play().catch(() => {});
     } finally {
       setLoading(false);
@@ -857,7 +775,6 @@ export default function Page() {
 
     if (typeof window !== "undefined") {
       window.speechSynthesis?.cancel?.();
-      setIsSpeaking(false);
     }
   }
 
@@ -908,23 +825,21 @@ export default function Page() {
       setInput("");
       setAiMode("offline");
       if (typeof window !== "undefined") window.speechSynthesis?.cancel?.();
-      setIsSpeaking(false);
-      setCurrentEmotion("calm");
-      setCurrentAvatarState("idle-breathing");
-      setLastReaction("warm-calm");
-      setLiveText("Canlı konuşma beklemede.");
       return;
     }
 
     if (action === "chats") {
       pushLyraMessage(
-        "Sohbetler alanı açıldı kanka. Şimdilik bu demo sürümde aktif sohbeti gösteriyorum. Bir sonraki aşamada buraya eski sohbet kayıtları, tarih ve arama sistemi ekleyebiliriz."
+        "Sohbetler alanı açıldı kanka. Şimdilik aktif sohbeti gösteriyorum. Bir sonraki aşamada buraya eski sohbet kayıtları, tarih ve arama sistemi ekleyebiliriz."
       );
       return;
     }
 
     if (action === "modes") {
-      featureRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      featureRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
       pushLyraMessage(
         "Modlar burada kanka. Araştırma, içerik, ders, PDF ve canlı modları aşağıdan seçebilirsin. Ben olsam Canlı Mod’u ayrı parlatırdım, çünkü en havalı görünen o 😄"
       );
@@ -933,14 +848,14 @@ export default function Page() {
 
     if (action === "tools") {
       pushLyraMessage(
-        "Araçlar aktif: içerik üretme, araştırma, PDF özeti, görsel prompt, ders modu ve canlı konuşma. Şimdilik hepsini buradan yönetiyoruz; sonra bunları ayrı mini uygulama gibi bölebiliriz."
+        "Araçlar aktif: içerik üretme, araştırma, PDF özeti, görsel prompt, ders modu ve canlı konuşma. Şimdilik hepsini buradan yönetiyoruz."
       );
       return;
     }
 
     if (action === "reminders") {
       pushLyraMessage(
-        "Hatırlatıcılar alanı hazır. Şimdilik ben burada sana plan/hatırlatma metni hazırlayabilirim. Gerçek bildirim için takvim veya notification sistemi bağlamamız gerekir."
+        "Hatırlatıcılar alanı hazır. Şimdilik sana plan ve hatırlatma metni hazırlayabilirim. Gerçek bildirim için sonra takvim ya da bildirim sistemi bağlarız."
       );
       setInput("Bana şunu hatırlat: ");
       return;
@@ -948,7 +863,7 @@ export default function Page() {
 
     if (action === "settings") {
       pushLyraMessage(
-        "Ayarlar açıldı kanka. Buradan ses tonu, kadın/erkek ses, sessiz mod, sohbet/araştırma modu ve canlı konuşma tercihleri yönetiliyor. Şu an en önemli ayar: Lyra daha doğal konuşsun diye insan modu açık 😌"
+        "Ayarlar açıldı kanka. Buradan ses tonu, kadın/erkek ses, sessiz mod ve canlı konuşma tercihlerini yönetiyoruz."
       );
       return;
     }
@@ -1046,14 +961,14 @@ export default function Page() {
             className={aiMode === "offline" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("offline")}
           >
-            Akıllı Sohbet
+            Sohbet
           </button>
 
           <button
             className={aiMode === "local" ? "mode-btn active" : "mode-btn"}
             onClick={() => setAiMode("local")}
           >
-            Cihaz Modu
+            Cihaz
           </button>
 
           <button
@@ -1066,7 +981,7 @@ export default function Page() {
 
         <section className="avatar-area">
           <div
-            className={`halo lyra-avatar-state ${currentAvatarState} emotion-${currentEmotion} ${isSpeaking ? "is-speaking" : ""} ${micOn ? "is-listening" : ""}`}
+            className={`halo lyra-avatar-state ${currentAvatarState} emotion-${currentEmotion}`}
           >
             <div className="avatar-card">
               <img src={LYRA_AVATAR} alt="Lyra Avatar" />
@@ -1083,7 +998,6 @@ export default function Page() {
               onClick={() => {
                 setMuted((v) => !v);
                 window.speechSynthesis?.cancel?.();
-                setIsSpeaking(false);
               }}
             >
               ♫ {muted ? "Ses Kapalı" : "Sessize Al"}
@@ -1132,25 +1046,13 @@ export default function Page() {
             {loading && (
               <div className="msg-row lyra-row">
                 <div className="chat-bubble lyra">
-                  <p>
-                    {aiMode === "offline"
-                      ? "Lyra cevap hazırlıyor... biraz havalıyım ama çalışıyorum 😄"
-                      : aiMode === "local"
-                        ? "Cihaz modu hazırlanıyor..."
-                        : "Araştırma modu hazırlanıyor..."}
-                  </p>
+                  <p>{getLoadingText()}</p>
                 </div>
               </div>
             )}
           </div>
 
-          <p className="prompt-hint">
-            {aiMode === "offline"
-              ? "Lyra hazır. Sesli konuşma ve canlı ekran aktif."
-              : aiMode === "local"
-                ? "Cihaz modu yakında daha güçlü kişisel çalışma alanına bağlanacak."
-                : "Araştırma modu açık. Güncel bilgi gerektiğinde kaynaklı cevap için hazırlanıyor."}
-          </p>
+          <p className="prompt-hint">{getPromptHint()}</p>
 
           <div className="input-box">
             <button onClick={openLive}>◖</button>
@@ -1246,141 +1148,67 @@ export default function Page() {
 
       {liveOpen && (
         <div className="live-overlay">
-          <section className={`lyra-call ${currentAvatarState} emotion-${currentEmotion} ${isSpeaking ? "is-speaking" : ""} ${micOn ? "is-listening" : ""}`}>
+          <section className="lyra-call">
             <div className="call-status">
-              <b>9:41</b>
-              <div>
-                <span>▮▮▮</span>
-                <span>⌁</span>
-                <span className="call-battery" />
-              </div>
+              <span className={micOn ? "call-dot on" : "call-dot"} />
+              <b>{micOn ? "Dinliyorum" : "Canlı konuşma"}</b>
             </div>
 
             <header className="call-head">
-              <button
-                className="call-icon"
-                onClick={closeLive}
-                aria-label="Canlı konuşmayı kapat"
-              >
-                ⌄
+              <button className="call-icon" onClick={closeLive}>
+                ‹
               </button>
 
               <div className="call-title">
-                <h2>Canlı Konuşma</h2>
-                <p>
-                  <span className="green-dot" />
-                  {loading ? "Düşünüyor..." : isSpeaking ? "Konuşuyor..." : micOn ? "Dinliyorum..." : "Bağlı"}
-                  <span className="call-wave">
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                </p>
+                <p>Lyra ile canlı konuşma</p>
+                <h2>Lyra</h2>
               </div>
 
               <button
-                className="call-icon sparkle"
+                className="call-icon"
                 onClick={() => setShowLiveChat((v) => !v)}
-                aria-label="Mesajları göster/gizle"
               >
-                ✨
+                {showLiveChat ? "✦" : "☰"}
               </button>
             </header>
 
-            <div className={`call-stage ${currentAvatarState} emotion-${currentEmotion} ${isSpeaking ? "is-speaking" : ""} ${micOn ? "is-listening" : ""}`}>
-              <div className="room-arch" />
-              <div className="room-lamp" />
-              <div className="room-glow one" />
-              <div className="room-glow two" />
-
-              <div className="avatar-fallback">
-                <div className="fallback-head">
-                  <div className="fallback-hair" />
-                  <div className="fallback-face">
-                    <span className="eye left" />
-                    <span className="eye right" />
-                    <span className="smile" />
-                  </div>
-                </div>
-                <div className="fallback-body" />
-              </div>
-
+            <div className="call-avatar">
               <video
                 ref={lyraVideoRef}
-                className="call-video"
                 src={LYRA_VIDEO}
-                autoPlay
-                loop
-                muted
                 playsInline
-                poster={LYRA_AVATAR}
-                onError={(event) => {
-                  event.currentTarget.style.display = "none";
-                }}
+                muted
+                loop
+                className="call-video"
               />
 
-              {cameraOn && (
-                <div className="self-camera">
-                  <video ref={cameraRef} autoPlay playsInline muted />
-                </div>
-              )}
-
-              {showLiveChat && (
-                <div className="live-floating-chat">
-                  {messages.length <= 1 ? (
-                    <>
-                      <article className="live-bubble lyra">
-                        <span className="live-dots">
-                          <i />
-                          <i />
-                          <i />
-                        </span>
-                        <time>00:12</time>
-                        <p>Seni görmek çok güzel. Bugün nasılsın?</p>
-                      </article>
-
-                      <article className="live-bubble user">
-                        <time>00:18</time>
-                        <p>Biraz yoruldum ama konuşunca daha iyi geldi.</p>
-                        <small>✓✓</small>
-                      </article>
-                    </>
-                  ) : (
-                    messages.slice(-2).map((message) => (
-                      <article
-                        key={message.id}
-                        className={`live-bubble ${message.role}`}
-                      >
-                        {message.role === "lyra" && (
-                          <span className="live-dots">
-                            <i />
-                            <i />
-                            <i />
-                          </span>
-                        )}
-
-                        <time>{message.time}</time>
-                        <p>{message.text}</p>
-
-                        {message.role === "user" && <small>✓✓</small>}
-                      </article>
-                    ))
-                  )}
-
-                  {micOn && liveText && (
-                    <article className="live-bubble listening">
-                      <time>Canlı</time>
-                      <p>{liveText}</p>
-                    </article>
-                  )}
-                </div>
-              )}
+              <div className="avatar-fallback">
+                <img src={LYRA_AVATAR} alt="Lyra canlı avatar" />
+              </div>
             </div>
 
-            <nav className="call-dock">
+            {cameraOn && (
+              <video
+                ref={cameraRef}
+                autoPlay
+                muted
+                playsInline
+                className="camera-preview"
+              />
+            )}
+
+            {showLiveChat && (
+              <div className="live-floating-chat">
+                <div className="live-bubble">
+                  <b>Lyra</b>
+                  <p>{liveText}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="call-dock">
               <button
-                className={micOn ? "call-control active" : "call-control"}
+                className={`call-control ${micOn ? "active" : ""}`}
                 onClick={toggleMic}
               >
                 <span>🎙️</span>
@@ -1388,49 +1216,64 @@ export default function Page() {
               </button>
 
               <button
-                className={muted ? "call-control active" : "call-control"}
-                onClick={() => {
-                  setMuted((v) => !v);
-                  window.speechSynthesis?.cancel?.();
-                  setIsSpeaking(false);
-                }}
+                className={`call-control ${cameraOn ? "active" : ""}`}
+                onClick={toggleCamera}
               >
-                <span>🔊</span>
-                <b>{muted ? "Sessiz" : "Ses"}</b>
+                <span>📷</span>
+                <b>{cameraOn ? "Kamera Açık" : "Kamera"}</b>
               </button>
 
               <button
-                className={showLiveChat ? "call-control active" : "call-control"}
-                onClick={() => setShowLiveChat((v) => !v)}
+                className={`call-control ${muted ? "active" : ""}`}
+                onClick={() => {
+                  setMuted((v) => !v);
+                  window.speechSynthesis?.cancel?.();
+                }}
               >
-                <span>💬</span>
-                <b>Sohbet</b>
+                <span>🔇</span>
+                <b>{muted ? "Sessiz" : "Ses"}</b>
               </button>
 
-              <button className="call-control end" onClick={closeLive}>
-                <span>☎</span>
+              <button className="call-control danger" onClick={closeLive}>
+                <span>✕</span>
                 <b>Kapat</b>
               </button>
-            </nav>
-
-            <div className="call-home-indicator" />
+            </div>
           </section>
         </div>
       )}
 
-      <style jsx global>{`
+      <style>{`
         * {
           box-sizing: border-box;
         }
 
-        html,
         body {
           margin: 0;
-          min-height: 100%;
           background:
-            radial-gradient(circle at 50% -15%, #fff, transparent 30%),
-            linear-gradient(135deg, #f8fafc 0%, #e8edf1 100%);
-          color: #111;
+            radial-gradient(circle at top left, rgba(255, 255, 255, 0.96), transparent 32%),
+            radial-gradient(circle at 70% 20%, rgba(214, 225, 255, 0.74), transparent 32%),
+            radial-gradient(circle at 18% 78%, rgba(255, 231, 247, 0.88), transparent 34%),
+            linear-gradient(135deg, #f8f8fb 0%, #eceef5 48%, #ffffff 100%);
+          color: #171923;
+        }
+
+        button,
+        input {
+          font-family: inherit;
+        }
+
+        button {
+          cursor: pointer;
+        }
+
+        .lyra-page {
+          min-height: 100vh;
+          display: grid;
+          grid-template-columns: 260px minmax(0, 1fr) 360px;
+          gap: 22px;
+          padding: 22px;
+          color: #191923;
           font-family:
             Inter,
             ui-sans-serif,
@@ -1441,134 +1284,87 @@ export default function Page() {
             sans-serif;
         }
 
-        button,
-        input {
-          font: inherit;
-        }
-
-        button {
-          border: 0;
-          cursor: pointer;
-        }
-
-        .lyra-page {
-          min-height: 100vh;
-          padding: 14px;
-          display: grid;
-          grid-template-columns: 235px minmax(560px, 1fr) 330px;
-          gap: 14px;
-          overflow-x: hidden;
-        }
-
         .sidebar,
         .main-shell,
-        .phone-panel {
-          border: 1px solid #cfd3d8;
-          background: linear-gradient(145deg, #ffffff 0%, #edf1f4 100%);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.95),
-            0 18px 44px rgba(0, 0, 0, 0.055);
+        .phone {
+          border: 1px solid rgba(255, 255, 255, 0.76);
+          box-shadow: 0 24px 80px rgba(68, 74, 110, 0.16);
+          backdrop-filter: blur(26px);
         }
 
         .sidebar {
-          border-radius: 26px;
-          padding: 26px 16px 18px;
+          min-height: calc(100vh - 44px);
+          border-radius: 34px;
+          padding: 22px;
+          background: rgba(255, 255, 255, 0.58);
           display: flex;
           flex-direction: column;
-          min-height: calc(100vh - 28px);
+          justify-content: space-between;
         }
 
         .brand {
-          margin: 0 0 22px 12px;
-          font-size: 34px;
-          font-weight: 950;
-          letter-spacing: 5px;
-          line-height: 1;
+          font-size: 26px;
+          letter-spacing: 0.34em;
+          font-weight: 900;
+          color: #14141c;
+          margin: 4px 0 24px;
         }
 
         .nav {
           display: grid;
-          gap: 12px;
-        }
-
-        .nav-btn,
-        .control-btn,
-        .about-btn,
-        .round-btn,
-        .feature-card,
-        .input-box button,
-        .phone-controls button,
-        .phone-grid button,
-        .phone-input,
-        .pro-card,
-        .profile-card,
-        .usage-card,
-        .weather,
-        .mode-btn {
-          border: 1px solid #c9ced4;
-          background: linear-gradient(145deg, #ffffff 0%, #eef1f4 100%);
-          color: #111;
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.96),
-            inset 0 -8px 18px rgba(0, 0, 0, 0.035),
-            0 9px 22px rgba(0, 0, 0, 0.045);
-          font-weight: 950;
+          gap: 10px;
         }
 
         .nav-btn {
-          height: 52px;
+          height: 48px;
+          border: 0;
           border-radius: 17px;
-          padding: 0 18px;
+          background: transparent;
+          color: #686a78;
           display: flex;
           align-items: center;
           gap: 12px;
-          text-align: left;
+          padding: 0 14px;
+          font-weight: 800;
           transition: 0.2s ease;
         }
 
-        .nav-btn:hover {
-          transform: translateY(-1px);
-          background: #fff;
-        }
-
-        .nav-btn.active {
-          background: #111;
-          color: white;
-          border-color: #111;
-        }
-
         .nav-btn span {
-          width: 24px;
-          height: 24px;
+          width: 26px;
+          height: 26px;
           display: grid;
           place-items: center;
-          border-radius: 9px;
-          background: #fff;
-          color: #686f76;
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.78);
         }
 
-        .nav-btn.active span {
-          color: #111;
+        .nav-btn:hover,
+        .nav-btn.active {
+          background: rgba(255, 255, 255, 0.88);
+          color: #181823;
+          box-shadow: 0 10px 30px rgba(84, 88, 130, 0.12);
         }
 
         .sidebar-bottom {
-          margin-top: auto;
           display: grid;
-          gap: 12px;
+          gap: 14px;
         }
 
         .pro-card,
         .profile-card,
         .usage-card,
         .weather {
-          border-radius: 20px;
+          border-radius: 22px;
           padding: 16px;
+          background: rgba(255, 255, 255, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.78);
         }
 
-        .pro-card b {
-          display: block;
-          font-size: 20px;
-          letter-spacing: 1px;
+        .pro-card b,
+        .profile-card b,
+        .usage-card b,
+        .weather b {
+          color: #14141c;
         }
 
         .pro-card p,
@@ -1576,82 +1372,73 @@ export default function Page() {
         .usage-card p,
         .weather p {
           margin: 4px 0 0;
-          color: #7a8088;
+          color: #777988;
           font-size: 13px;
           font-weight: 700;
         }
 
-        .profile-card {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .profile-avatar {
-          width: 42px;
-          height: 42px;
-          border-radius: 16px;
-          display: grid;
-          place-items: center;
-          background: #111;
-          color: white;
-          font-weight: 950;
-        }
-
-        .profile-card > span {
-          margin-left: auto;
-        }
-
-        .usage-head {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          font-size: 13px;
-        }
-
-        .usage-head strong {
-          color: #58606b;
-        }
-
-        .usage-bar {
-          margin: 12px 0;
-          height: 8px;
-          border-radius: 999px;
-          background: #d9dee4;
-          overflow: hidden;
-        }
-
-        .usage-bar i {
-          display: block;
-          width: 86%;
-          height: 100%;
-          border-radius: inherit;
-          background: linear-gradient(90deg, #111, #a8b1bd);
-        }
-
+        .profile-card,
         .weather {
           display: flex;
           align-items: center;
           gap: 12px;
         }
 
+        .profile-avatar,
         .weather span {
-          width: 46px;
-          height: 46px;
+          width: 42px;
+          height: 42px;
+          border-radius: 16px;
           display: grid;
           place-items: center;
-          border-radius: 16px;
-          background: #fff;
-          font-size: 24px;
+          background: linear-gradient(145deg, #ffffff, #e8eaf3);
+          font-weight: 900;
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.86);
+        }
+
+        .profile-card > span {
+          margin-left: auto;
+          color: #7c7e8a;
+        }
+
+        .usage-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .usage-head strong {
+          font-size: 13px;
+          padding: 7px 9px;
+          border-radius: 999px;
+          background: #15151f;
+          color: white;
+        }
+
+        .usage-bar {
+          height: 8px;
+          border-radius: 999px;
+          margin: 13px 0 8px;
+          background: #e5e7ef;
+          overflow: hidden;
+        }
+
+        .usage-bar i {
+          display: block;
+          width: 76%;
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #171923, #aeb4c8);
         }
 
         .main-shell {
-          border-radius: 30px;
-          padding: 22px;
-          min-height: calc(100vh - 28px);
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
+          min-height: calc(100vh - 44px);
+          border-radius: 38px;
+          padding: 24px;
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.52)),
+            radial-gradient(circle at 50% 8%, rgba(255, 255, 255, 0.98), transparent 30%);
           overflow: hidden;
         }
 
@@ -1659,247 +1446,158 @@ export default function Page() {
           display: grid;
           grid-template-columns: 1fr auto auto;
           align-items: center;
-          gap: 12px;
-        }
-
-        .clean-topbar {
-          min-height: 58px;
+          gap: 14px;
         }
 
         .top-status {
           display: flex;
           align-items: center;
           gap: 12px;
-          min-width: 0;
         }
 
         .status-dot {
-          width: 14px;
-          height: 14px;
-          border-radius: 999px;
-          background: #32c76f;
-          box-shadow: 0 0 0 7px rgba(50, 199, 111, 0.12);
-          flex: 0 0 auto;
+          width: 12px;
+          height: 12px;
+          border-radius: 99px;
+          background: #89f0b2;
+          box-shadow: 0 0 0 8px rgba(137, 240, 178, 0.18);
         }
 
         .top-status b {
-          display: block;
           font-size: 18px;
-          font-weight: 950;
+          color: #171923;
         }
 
         .top-status p {
-          margin: 2px 0 0;
-          color: #7a8088;
+          margin: 3px 0 0;
+          color: #7c7e89;
           font-size: 13px;
-          font-weight: 750;
+          font-weight: 700;
+        }
+
+        .about-btn,
+        .round-btn,
+        .mode-btn,
+        .control-btn,
+        .input-box button,
+        .feature-card,
+        .phone button,
+        .call-icon,
+        .call-control {
+          border: 1px solid rgba(255, 255, 255, 0.82);
+          background: rgba(255, 255, 255, 0.74);
+          box-shadow: 0 12px 34px rgba(74, 80, 120, 0.1);
+          color: #191923;
+          transition: 0.2s ease;
         }
 
         .about-btn {
-          height: 48px;
-          padding: 0 20px;
-          border-radius: 999px;
+          height: 42px;
+          padding: 0 18px;
+          border-radius: 15px;
+          font-weight: 850;
         }
 
         .round-btn {
-          width: 48px;
-          height: 48px;
-          border-radius: 999px;
+          width: 44px;
+          height: 44px;
+          border-radius: 16px;
+          font-size: 20px;
+        }
+
+        .about-btn:hover,
+        .round-btn:hover,
+        .mode-btn:hover,
+        .control-btn:hover,
+        .feature-card:hover,
+        .phone button:hover,
+        .input-box button:hover {
+          transform: translateY(-1px);
+          background: rgba(255, 255, 255, 0.95);
         }
 
         .mode-row {
           display: flex;
-          flex-wrap: wrap;
+          justify-content: center;
           gap: 10px;
+          margin: 16px 0 8px;
         }
 
         .mode-btn {
-          height: 44px;
-          padding: 0 18px;
+          height: 40px;
+          padding: 0 16px;
           border-radius: 999px;
+          font-weight: 850;
+          color: #696b78;
         }
 
         .mode-btn.active {
-          background: #111;
-          color: white;
-          border-color: #111;
+          background: #15151f;
+          color: #fff;
         }
 
         .avatar-area {
+          min-height: 312px;
           display: grid;
           place-items: center;
-          gap: 18px;
-          padding: 12px 0 4px;
+          padding: 18px 0 8px;
         }
 
         .halo {
-          width: min(330px, 72vw);
+          width: min(330px, 70vw);
           aspect-ratio: 1;
-          border-radius: 999px;
+          border-radius: 50%;
           display: grid;
           place-items: center;
           background:
-            radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(225, 231, 237, 0.75) 55%, transparent 70%),
-            conic-gradient(from 220deg, #ffffff, #dce3eb, #f7f7f7, #cfd8e1, #ffffff);
+            radial-gradient(circle, rgba(255, 255, 255, 0.98) 0 44%, rgba(235, 238, 250, 0.66) 45% 60%, transparent 61%),
+            conic-gradient(from 90deg, #ffffff, #dfe4f2, #ffffff, #eef1fb, #ffffff);
           box-shadow:
-            inset 0 0 50px rgba(255, 255, 255, 0.8),
-            0 30px 70px rgba(110, 126, 140, 0.25);
-        }
-
-        .lyra-avatar-state {
+            inset 0 0 60px rgba(255, 255, 255, 0.8),
+            0 38px 95px rgba(104, 112, 150, 0.18);
           position: relative;
-          transition:
-            filter 0.25s ease,
-            transform 0.25s ease,
-            box-shadow 0.25s ease;
         }
 
-        .lyra-avatar-state::after {
+        .halo::before,
+        .halo::after {
           content: "";
           position: absolute;
-          inset: 5%;
+          inset: 15px;
           border-radius: inherit;
-          pointer-events: none;
-          opacity: 0;
-          border: 1px solid rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(255, 255, 255, 0.8);
         }
 
-        .lyra-avatar-state.is-speaking::after {
-          opacity: 1;
-          animation: lyraVoiceRing 1.35s ease-out infinite;
+        .halo::after {
+          inset: -10px;
+          border: 1px solid rgba(220, 224, 237, 0.75);
+          filter: blur(0.2px);
         }
 
-        .lyra-avatar-state.is-listening::after {
-          opacity: 1;
-          animation: lyraListeningRing 1.6s ease-out infinite;
+        .halo.emotion-happy,
+        .halo.emotion-playful,
+        .halo.emotion-sassy {
+          animation: softPulse 2.2s ease-in-out infinite;
         }
 
-        .lyra-avatar-state.is-speaking {
-          transform: scale(1.012);
-        }
-
-        .lyra-call.is-speaking .call-video,
-        .lyra-call.is-speaking .avatar-fallback {
-          filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.9)) brightness(1.035);
-        }
-
-        .lyra-call.is-listening .call-video,
-        .lyra-call.is-listening .avatar-fallback {
-          filter: drop-shadow(0 0 26px rgba(190, 220, 255, 0.82));
-        }
-
-        @keyframes lyraVoiceRing {
-          0% {
-            transform: scale(0.92);
-            opacity: 0.78;
-          }
-
-          100% {
-            transform: scale(1.18);
-            opacity: 0;
-          }
-        }
-
-        @keyframes lyraListeningRing {
-          0% {
-            transform: scale(0.94);
-            opacity: 0.62;
-          }
-
-          100% {
-            transform: scale(1.14);
-            opacity: 0;
-          }
-        }
-
-        .lyra-avatar-state.playful-glow,
-        .lyra-call.playful-glow .call-video,
-        .lyra-call.playful-glow .avatar-fallback {
-          filter: drop-shadow(0 0 24px rgba(255, 255, 255, 0.9));
-        }
-
-        .lyra-avatar-state.sassy-spark,
-        .lyra-call.sassy-spark .call-video,
-        .lyra-call.sassy-spark .avatar-fallback {
-          filter: drop-shadow(0 0 24px rgba(255, 190, 240, 0.72));
-        }
-
-        .lyra-avatar-state.soft-support,
-        .lyra-call.soft-support .call-video,
-        .lyra-call.soft-support .avatar-fallback {
-          filter: drop-shadow(0 0 22px rgba(205, 218, 255, 0.72));
-        }
-
-        .lyra-avatar-state.happy-bright,
-        .lyra-call.happy-bright .call-video,
-        .lyra-call.happy-bright .avatar-fallback {
-          filter: drop-shadow(0 0 28px rgba(255, 245, 185, 0.82));
-        }
-
-        .lyra-avatar-state.tech-focus,
-        .lyra-call.tech-focus .call-video,
-        .lyra-call.tech-focus .avatar-fallback,
-        .lyra-avatar-state.study-focus,
-        .lyra-call.study-focus .call-video,
-        .lyra-call.study-focus .avatar-fallback {
-          filter: drop-shadow(0 0 24px rgba(170, 215, 255, 0.78));
-        }
-
-        .lyra-avatar-state.creative-glow,
-        .lyra-call.creative-glow .call-video,
-        .lyra-call.creative-glow .avatar-fallback {
-          filter: drop-shadow(0 0 24px rgba(235, 205, 255, 0.78));
-        }
-
-        .lyra-avatar-state.thinking-glow,
-        .lyra-call.thinking-glow .call-video,
-        .lyra-call.thinking-glow .avatar-fallback {
-          filter: drop-shadow(0 0 22px rgba(210, 225, 235, 0.85));
-        }
-
-        .lyra-avatar-state.gentle-dim,
-        .lyra-call.gentle-dim .call-video,
-        .lyra-call.gentle-dim .avatar-fallback {
-          filter: saturate(0.92) drop-shadow(0 0 16px rgba(210, 215, 225, 0.62));
-        }
-
-        .lyra-avatar-state.focused-calm,
-        .lyra-call.focused-calm .call-video,
-        .lyra-call.focused-calm .avatar-fallback {
-          filter: drop-shadow(0 0 22px rgba(185, 220, 215, 0.72));
-        }
-
-        .lyra-avatar-state.emotion-sassy .avatar-card,
-        .lyra-avatar-state.emotion-playful .avatar-card,
-        .lyra-avatar-state.emotion-happy .avatar-card {
-          animation: lyraMicroBounce 2.4s ease-in-out infinite;
-        }
-
-        @keyframes lyraMicroBounce {
-          0%,
-          100% {
-            transform: translateY(0) scale(1);
-          }
-
-          50% {
-            transform: translateY(-4px) scale(1.012);
-          }
+        .halo.emotion-supportive,
+        .halo.emotion-sad {
+          animation: slowGlow 3.3s ease-in-out infinite;
         }
 
         .avatar-card {
-          width: 78%;
-          height: 78%;
+          width: 64%;
+          aspect-ratio: 1;
           border-radius: 50%;
           overflow: hidden;
-          border: 1px solid rgba(255, 255, 255, 0.9);
-          background: #fff;
+          position: relative;
+          z-index: 2;
           box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.9),
-            0 20px 55px rgba(0, 0, 0, 0.12);
+            0 20px 48px rgba(78, 82, 120, 0.2),
+            inset 0 0 0 10px rgba(255, 255, 255, 0.8);
+          background: #fff;
         }
 
-        .avatar-card img,
-        .phone-logo img {
+        .avatar-card img {
           width: 100%;
           height: 100%;
           object-fit: cover;
@@ -1908,53 +1606,56 @@ export default function Page() {
 
         .control-row {
           display: flex;
-          justify-content: center;
           flex-wrap: wrap;
+          justify-content: center;
           gap: 10px;
+          margin-top: 18px;
         }
 
         .control-btn {
-          height: 46px;
-          padding: 0 16px;
+          min-height: 42px;
           border-radius: 999px;
+          padding: 0 16px;
+          font-weight: 850;
+          color: #5f6170;
         }
 
         .control-btn.small {
-          min-width: 88px;
+          padding: 0 13px;
         }
 
         .control-btn.active,
-        .control-btn.active-soft {
-          background: #111;
-          color: white;
-          border-color: #111;
-        }
-
+        .control-btn.active-soft,
         .live-main-btn {
-          background:
-            radial-gradient(circle at top left, rgba(255, 255, 255, 0.98), rgba(248, 230, 214, 0.9)),
-            linear-gradient(145deg, #ffffff, #f0d7c5);
-          border-color: rgba(188, 148, 96, 0.45);
+          background: #15151f;
+          color: white;
         }
 
         .chat-panel {
-          flex: 1;
-          min-height: 290px;
-          border-radius: 28px;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(201, 206, 212, 0.75);
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
+          min-height: 370px;
+          border-radius: 30px;
+          background: rgba(255, 255, 255, 0.62);
+          border: 1px solid rgba(255, 255, 255, 0.8);
+          padding: 18px;
+          box-shadow: inset 0 0 35px rgba(255, 255, 255, 0.54);
         }
 
         .message-scroll {
-          flex: 1;
-          overflow-y: auto;
-          padding: 22px;
+          height: 245px;
+          overflow: auto;
+          padding-right: 4px;
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 12px;
+        }
+
+        .message-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .message-scroll::-webkit-scrollbar-thumb {
+          border-radius: 99px;
+          background: rgba(150, 155, 176, 0.42);
         }
 
         .msg-row {
@@ -1970,37 +1671,38 @@ export default function Page() {
         }
 
         .chat-bubble {
-          max-width: min(78%, 680px);
-          border-radius: 24px;
-          padding: 16px 18px;
+          max-width: 78%;
+          border-radius: 23px;
+          padding: 13px 15px;
           white-space: pre-wrap;
-          line-height: 1.45;
-          box-shadow: 0 12px 26px rgba(0, 0, 0, 0.06);
+          line-height: 1.48;
+          font-weight: 700;
+          font-size: 14px;
         }
 
         .chat-bubble p {
           margin: 0;
-          font-size: 15px;
-          font-weight: 650;
         }
 
         .chat-bubble span {
           display: block;
           margin-top: 8px;
           font-size: 11px;
-          color: rgba(255, 255, 255, 0.72);
+          opacity: 0.72;
           text-align: right;
         }
 
         .chat-bubble.lyra {
-          background: linear-gradient(145deg, #ffffff, #edf1f5);
-          border: 1px solid #d8dde4;
-          color: #111;
+          background: rgba(255, 255, 255, 0.92);
+          color: #20202a;
+          border-bottom-left-radius: 8px;
+          box-shadow: 0 14px 32px rgba(71, 77, 115, 0.09);
         }
 
         .chat-bubble.user {
-          background: #111;
-          color: white;
+          background: #15151f;
+          color: #fff;
+          border-bottom-right-radius: 8px;
         }
 
         .first-message .chat-bubble {
@@ -2008,62 +1710,79 @@ export default function Page() {
         }
 
         .prompt-hint {
-          margin: 0;
-          padding: 0 22px 14px;
-          color: #79808a;
+          margin: 13px 2px 12px;
+          color: #777986;
           font-size: 13px;
-          font-weight: 700;
-        }
-
-        .input-box {
-          display: grid;
-          grid-template-columns: 46px 46px 58px 1fr 54px;
-          gap: 8px;
-          padding: 14px;
-          border-top: 1px solid rgba(201, 206, 212, 0.72);
-          background: rgba(248, 250, 252, 0.82);
-        }
-
-        .input-box button {
-          height: 46px;
-          border-radius: 16px;
-        }
-
-        .input-box input {
-          width: 100%;
-          min-width: 0;
-          border: 1px solid #cbd1d8;
-          border-radius: 16px;
-          padding: 0 16px;
-          outline: none;
-          background: white;
           font-weight: 750;
         }
 
+        .input-box {
+          min-height: 58px;
+          display: grid;
+          grid-template-columns: 46px 46px 54px 1fr 52px;
+          gap: 9px;
+          align-items: center;
+          border-radius: 23px;
+          padding: 10px;
+          background: rgba(255, 255, 255, 0.86);
+          border: 1px solid rgba(255, 255, 255, 0.86);
+        }
+
+        .input-box button {
+          height: 40px;
+          border-radius: 15px;
+          font-weight: 900;
+        }
+
+        .pdf-btn {
+          font-size: 12px;
+        }
+
+        .input-box input {
+          height: 42px;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          font-weight: 750;
+          color: #191923;
+          min-width: 0;
+        }
+
+        .input-box input::placeholder {
+          color: #9a9ca8;
+        }
+
         .send-btn {
-          background: #111 !important;
-          color: #fff !important;
-          border-color: #111 !important;
+          background: #15151f !important;
+          color: white !important;
         }
 
         .feature-grid {
           display: grid;
           grid-template-columns: repeat(7, minmax(90px, 1fr));
-          gap: 10px;
+          gap: 12px;
+          margin-top: 16px;
         }
 
         .feature-card {
-          min-height: 112px;
-          border-radius: 22px;
-          padding: 14px;
-          text-align: left;
+          min-height: 118px;
+          border-radius: 24px;
+          padding: 15px 12px;
           display: grid;
-          gap: 6px;
-          position: relative;
+          align-content: start;
+          gap: 7px;
+          text-align: left;
         }
 
         .feature-card span {
-          font-size: 22px;
+          width: 34px;
+          height: 34px;
+          border-radius: 14px;
+          background: #15151f;
+          color: white;
+          display: grid;
+          place-items: center;
+          font-weight: 900;
         }
 
         .feature-card b {
@@ -2072,48 +1791,44 @@ export default function Page() {
 
         .feature-card p {
           margin: 0;
-          color: #737b85;
           font-size: 11px;
-          line-height: 1.25;
+          line-height: 1.35;
+          color: #757784;
           font-weight: 700;
         }
 
         .feature-card em {
-          position: absolute;
-          right: 12px;
-          top: 10px;
+          margin-left: auto;
+          color: #9a9ca8;
           font-style: normal;
-          color: #87909a;
         }
 
         .phone-panel {
-          border-radius: 30px;
-          padding: 18px;
+          min-height: calc(100vh - 44px);
           display: grid;
           place-items: center;
-          min-height: calc(100vh - 28px);
         }
 
         .phone {
-          width: 100%;
-          max-width: 285px;
-          aspect-ratio: 9 / 18.6;
-          border-radius: 38px;
-          padding: 10px;
-          background: #111;
-          box-shadow: 0 28px 60px rgba(0, 0, 0, 0.18);
+          width: 330px;
+          height: 690px;
+          border-radius: 46px;
+          padding: 12px;
+          background: rgba(18, 18, 26, 0.88);
+          border: 1px solid rgba(255, 255, 255, 0.7);
         }
 
         .phone-screen {
           height: 100%;
-          border-radius: 30px;
+          border-radius: 36px;
           overflow: hidden;
+          padding: 14px;
           background:
-            radial-gradient(circle at top, #ffffff, #eef2f6 45%, #dfe5eb);
-          padding: 12px;
+            radial-gradient(circle at top, rgba(255, 255, 255, 0.95), transparent 36%),
+            linear-gradient(180deg, #f7f8fc, #eef0f7);
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 13px;
         }
 
         .phone-status,
@@ -2121,724 +1836,371 @@ export default function Page() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          font-size: 11px;
-          font-weight: 950;
+          gap: 10px;
         }
 
-        .notch {
-          width: 68px;
-          height: 18px;
-          border-radius: 999px;
-          background: #111;
-        }
-
-        .phone-head button {
-          width: 28px;
-          height: 28px;
-          border-radius: 12px;
-          background: white;
+        .phone-status {
+          font-size: 12px;
           font-weight: 900;
         }
 
-        .phone-logo {
-          width: 110px;
-          height: 110px;
-          margin: 8px auto 0;
-          border-radius: 50%;
-          overflow: hidden;
-          background: #fff;
-          box-shadow: 0 20px 38px rgba(0, 0, 0, 0.12);
+        .notch {
+          width: 92px;
+          height: 23px;
+          border-radius: 0 0 15px 15px;
+          background: #171923;
+          margin-top: -14px;
         }
 
-        .phone-controls {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 7px;
+        .phone-head b {
+          letter-spacing: 0.2em;
+          font-size: 14px;
         }
 
+        .phone-head button,
         .phone-controls button,
+        .phone-input button,
         .phone-grid button {
-          min-height: 34px;
-          border-radius: 13px;
-          font-size: 10px;
-          padding: 7px;
-        }
-
-        .phone-controls .wide {
-          grid-column: 1 / -1;
-          background: #111;
-          color: white;
-          border-color: #111;
-        }
-
-        .phone-input {
-          height: 42px;
-          border-radius: 15px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 8px 0 12px;
-          font-size: 10px;
-        }
-
-        .phone-input button {
-          width: 28px;
-          height: 28px;
-          border-radius: 10px;
-          background: #111;
-          color: white;
-        }
-
-        .phone-grid {
-          flex: 1;
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 7px;
-        }
-
-        .phone-grid button {
-          display: grid;
-          align-content: center;
-          gap: 3px;
-          text-align: left;
-        }
-
-        .phone-grid .single {
-          grid-column: 1 / -1;
-        }
-
-        .phone-grid span {
-          font-size: 16px;
-        }
-
-        .phone-grid b {
-          font-size: 10px;
-        }
-
-        .phone-grid em {
-          justify-self: end;
-          font-style: normal;
-        }
-
-        .live-overlay {
-          position: fixed;
-          inset: 0;
-          z-index: 9999;
-          display: grid;
-          place-items: center;
-          padding: 18px;
-          background:
-            radial-gradient(circle at top, rgba(255, 255, 255, 0.7), transparent 34%),
-            rgba(28, 21, 18, 0.48);
-          backdrop-filter: blur(18px);
-          -webkit-backdrop-filter: blur(18px);
-        }
-
-        .lyra-call {
-          position: relative;
-          width: min(94vw, 430px);
-          height: min(92vh, 880px);
-          overflow: hidden;
-          border-radius: 44px;
-          background:
-            radial-gradient(circle at 18% 25%, rgba(255, 255, 255, 0.72), transparent 25%),
-            radial-gradient(circle at 84% 45%, rgba(255, 226, 188, 0.64), transparent 25%),
-            linear-gradient(180deg, #f6e6d7 0%, #ead0ba 100%);
-          color: #2d2723;
-          box-shadow:
-            0 35px 90px rgba(60, 35, 22, 0.35),
-            inset 0 1px 0 rgba(255, 255, 255, 0.86);
-          isolation: isolate;
-        }
-
-        .lyra-call::before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          z-index: 1;
-          pointer-events: none;
-          background:
-            linear-gradient(90deg, rgba(255, 255, 255, 0.42), transparent 24%, transparent 76%, rgba(255, 255, 255, 0.25)),
-            radial-gradient(circle at 50% 12%, rgba(255, 255, 255, 0.5), transparent 28%);
-        }
-
-        .call-status {
-          position: absolute;
-          top: 18px;
-          left: 0;
-          right: 0;
-          z-index: 8;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 34px;
-          font-weight: 850;
-          font-size: 17px;
-          letter-spacing: -0.02em;
-        }
-
-        .call-status div {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .call-battery {
-          width: 25px;
-          height: 13px;
-          border: 2px solid #1d1916;
-          border-radius: 4px;
-          position: relative;
-          display: inline-block;
-        }
-
-        .call-battery::before {
-          content: "";
-          position: absolute;
-          left: 2px;
-          top: 2px;
-          width: 15px;
-          height: 5px;
-          border-radius: 2px;
-          background: #1d1916;
-        }
-
-        .call-battery::after {
-          content: "";
-          position: absolute;
-          right: -5px;
-          top: 3px;
-          width: 3px;
-          height: 5px;
-          border-radius: 0 2px 2px 0;
-          background: #1d1916;
-        }
-
-        .call-head {
-          position: absolute;
-          top: 62px;
-          left: 0;
-          right: 0;
-          z-index: 8;
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          padding: 0 26px;
-        }
-
-        .call-icon {
-          width: 54px;
-          height: 54px;
-          border: 0;
-          border-radius: 20px;
-          display: grid;
-          place-items: center;
-          background: rgba(255, 250, 242, 0.76);
-          color: #756557;
-          font-size: 30px;
-          cursor: pointer;
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.8),
-            0 14px 35px rgba(116, 82, 56, 0.14);
-          backdrop-filter: blur(18px);
-          -webkit-backdrop-filter: blur(18px);
-          transition: 0.2s ease;
-        }
-
-        .call-icon:hover {
-          transform: translateY(-1px);
-          background: rgba(255, 255, 255, 0.88);
-        }
-
-        .sparkle {
-          font-size: 22px;
-          color: #bd9460;
-        }
-
-        .call-title {
-          text-align: center;
-          padding-top: 4px;
-        }
-
-        .call-title h2 {
-          margin: 0;
-          font-size: 30px;
-          line-height: 1;
-          letter-spacing: -0.05em;
+          border-radius: 16px;
+          min-height: 36px;
           font-weight: 850;
         }
 
-        .call-title p {
-          margin: 10px 0 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          color: rgba(47, 41, 37, 0.72);
-          font-size: 15px;
-          font-weight: 700;
+        .phone-head button {
+          width: 38px;
         }
 
-        .green-dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 999px;
-          background: #36c66f;
-          box-shadow: 0 0 0 5px rgba(54, 198, 111, 0.13);
-        }
-
-        .call-wave {
-          display: inline-flex;
-          align-items: end;
-          gap: 3px;
-          height: 17px;
-        }
-
-        .call-wave i {
-          width: 3px;
-          border-radius: 4px;
-          background: #36c66f;
-          animation: callWave 0.8s infinite ease-in-out;
-        }
-
-        .call-wave i:nth-child(1) {
-          height: 7px;
-        }
-
-        .call-wave i:nth-child(2) {
-          height: 13px;
-          animation-delay: 0.1s;
-        }
-
-        .call-wave i:nth-child(3) {
-          height: 9px;
-          animation-delay: 0.2s;
-        }
-
-        .call-wave i:nth-child(4) {
-          height: 16px;
-          animation-delay: 0.3s;
-        }
-
-        @keyframes callWave {
-          0%,
-          100% {
-            transform: scaleY(0.7);
-            opacity: 0.55;
-          }
-
-          50% {
-            transform: scaleY(1.2);
-            opacity: 1;
-          }
-        }
-
-        .call-stage {
-          position: absolute;
-          inset: 0;
-          z-index: 2;
-          overflow: hidden;
-          background:
-            radial-gradient(circle at 18% 46%, rgba(255, 255, 255, 0.65), transparent 25%),
-            radial-gradient(circle at 80% 54%, rgba(255, 228, 190, 0.6), transparent 22%),
-            linear-gradient(180deg, #f4e5d4 0%, #ead2bd 100%);
-        }
-
-        .call-stage.playful-glow,
-        .call-stage.sassy-spark,
-        .call-stage.happy-bright {
-          background:
-            radial-gradient(circle at 18% 46%, rgba(255, 255, 255, 0.78), transparent 25%),
-            radial-gradient(circle at 80% 54%, rgba(255, 224, 194, 0.76), transparent 23%),
-            linear-gradient(180deg, #f7e7d8 0%, #eecfb7 100%);
-        }
-
-        .call-stage.soft-support,
-        .call-stage.gentle-dim {
-          background:
-            radial-gradient(circle at 18% 46%, rgba(255, 255, 255, 0.75), transparent 25%),
-            radial-gradient(circle at 80% 54%, rgba(226, 232, 255, 0.58), transparent 24%),
-            linear-gradient(180deg, #f4e7dc 0%, #e8d4c4 100%);
-        }
-
-        .call-stage.tech-focus,
-        .call-stage.study-focus,
-        .call-stage.thinking-glow {
-          background:
-            radial-gradient(circle at 18% 46%, rgba(255, 255, 255, 0.72), transparent 25%),
-            radial-gradient(circle at 80% 54%, rgba(206, 232, 255, 0.62), transparent 24%),
-            linear-gradient(180deg, #f3e5d6 0%, #e7d1bd 100%);
-        }
-
-        .room-arch {
-          position: absolute;
-          left: -42px;
-          top: 150px;
-          width: 130px;
-          height: 270px;
-          border-radius: 100px;
-          background:
-            linear-gradient(90deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.08)),
-            linear-gradient(#eee0cc, #fff4e4);
-          opacity: 0.86;
-        }
-
-        .room-lamp {
-          position: absolute;
-          right: 24px;
-          top: 266px;
-          width: 108px;
-          height: 120px;
-          border-radius: 24px;
-          background:
-            radial-gradient(circle at 72% 38%, rgba(255, 238, 196, 0.95) 0 17px, transparent 18px),
-            linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.12));
-          opacity: 0.72;
-        }
-
-        .room-glow {
-          position: absolute;
-          border-radius: 999px;
-          filter: blur(30px);
-          opacity: 0.58;
-          pointer-events: none;
-        }
-
-        .room-glow.one {
-          width: 210px;
-          height: 210px;
-          background: rgba(255, 255, 255, 0.82);
-          left: -66px;
-          top: 160px;
-        }
-
-        .room-glow.two {
-          width: 180px;
-          height: 180px;
-          background: rgba(255, 224, 184, 0.85);
-          right: -30px;
-          top: 345px;
-        }
-
-        .call-video {
-          position: absolute;
-          z-index: 3;
-          left: 50%;
-          bottom: 118px;
-          width: 86%;
-          max-width: 390px;
-          height: auto;
-          transform: translateX(-50%);
-          object-fit: contain;
-          object-position: center bottom;
-          filter: drop-shadow(0 30px 45px rgba(78, 47, 29, 0.13));
-          animation: callFloat 5s ease-in-out infinite;
-        }
-
-        .avatar-fallback {
-          position: absolute;
-          z-index: 2;
-          left: 50%;
-          bottom: 128px;
-          width: 220px;
-          height: 410px;
-          transform: translateX(-50%);
-          animation: callFloat 5s ease-in-out infinite;
-        }
-
-        .fallback-head {
-          position: absolute;
-          top: 0;
-          left: 50%;
-          width: 185px;
-          height: 205px;
-          transform: translateX(-50%);
-          border-radius: 48% 52% 45% 45%;
-          background: #f1bb92;
-          box-shadow:
-            inset 0 -15px 30px rgba(167, 89, 45, 0.12),
-            0 15px 35px rgba(101, 62, 37, 0.08);
-        }
-
-        .fallback-hair {
-          position: absolute;
-          inset: -22px -22px 40px -20px;
-          border-radius: 48% 52% 45% 50%;
-          background:
-            radial-gradient(circle at 38% 18%, #fff0ca 0 16px, transparent 17px),
-            linear-gradient(135deg, #d89c4d, #f5d493 45%, #bf7a39);
-          z-index: 0;
-        }
-
-        .fallback-face {
-          position: absolute;
-          inset: 30px 26px 18px;
-          z-index: 2;
-          border-radius: 45%;
-          background: #f6c6a1;
-        }
-
-        .eye {
-          position: absolute;
-          top: 72px;
-          width: 13px;
-          height: 9px;
+        .phone-logo {
+          width: 165px;
+          height: 165px;
           border-radius: 50%;
-          background: #5b3c2d;
-          box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.2);
-          animation: blink 4.7s infinite;
-        }
-
-        .eye.left {
-          left: 36px;
-        }
-
-        .eye.right {
-          right: 36px;
-        }
-
-        .smile {
-          position: absolute;
-          left: 50%;
-          top: 118px;
-          width: 42px;
-          height: 18px;
-          border-bottom: 3px solid rgba(118, 63, 47, 0.78);
-          border-radius: 0 0 40px 40px;
-          transform: translateX(-50%);
-        }
-
-        .fallback-body {
-          position: absolute;
-          left: 50%;
-          top: 185px;
-          width: 215px;
-          height: 285px;
-          transform: translateX(-50%);
-          border-radius: 54px 54px 26px 26px;
-          background:
-            linear-gradient(180deg, #191817, #111),
-            radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12), transparent 30%);
-          box-shadow: 0 20px 40px rgba(41, 27, 21, 0.18);
-        }
-
-        @keyframes callFloat {
-          0%,
-          100% {
-            transform: translateX(-50%) translateY(0) scale(1);
-          }
-
-          50% {
-            transform: translateX(-50%) translateY(-7px) scale(1.008);
-          }
-        }
-
-        @keyframes blink {
-          0%,
-          92%,
-          100% {
-            transform: scaleY(1);
-          }
-
-          95% {
-            transform: scaleY(0.12);
-          }
-        }
-
-        .self-camera {
-          position: absolute;
-          right: 22px;
-          bottom: 182px;
-          z-index: 8;
-          width: 90px;
-          height: 125px;
-          border-radius: 24px;
+          margin: 8px auto 0;
           overflow: hidden;
-          border: 2px solid rgba(255, 255, 255, 0.86);
-          background: rgba(255, 255, 255, 0.4);
-          box-shadow: 0 18px 35px rgba(80, 52, 34, 0.18);
+          box-shadow: 0 20px 55px rgba(99, 104, 145, 0.24);
+          background: white;
         }
 
-        .self-camera video {
+        .phone-logo img {
           width: 100%;
           height: 100%;
           object-fit: cover;
         }
 
+        .phone-controls {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+
+        .phone-controls .wide {
+          grid-column: 1 / -1;
+          background: #15151f;
+          color: white;
+        }
+
+        .phone-input {
+          display: grid;
+          grid-template-columns: 1fr 42px;
+          gap: 8px;
+          align-items: center;
+          padding: 10px;
+          border-radius: 20px;
+          background: rgba(255, 255, 255, 0.76);
+          font-size: 13px;
+          font-weight: 850;
+          color: #686a78;
+        }
+
+        .phone-input button {
+          background: #15151f;
+          color: white;
+        }
+
+        .phone-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 9px;
+          overflow: auto;
+          padding-bottom: 4px;
+        }
+
+        .phone-grid button {
+          min-height: 72px;
+          padding: 10px;
+          text-align: left;
+          display: grid;
+          gap: 4px;
+          align-content: start;
+        }
+
+        .phone-grid span {
+          font-weight: 900;
+        }
+
+        .phone-grid b {
+          font-size: 12px;
+        }
+
+        .phone-grid em {
+          justify-self: end;
+          font-style: normal;
+          color: #9a9ca8;
+        }
+
+        .phone-grid .single {
+          grid-column: 1 / -1;
+          background: #15151f;
+          color: white;
+        }
+
+        .live-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 50;
+          background:
+            radial-gradient(circle at top, rgba(255, 255, 255, 0.2), transparent 40%),
+            rgba(10, 11, 18, 0.78);
+          display: grid;
+          place-items: center;
+          padding: 22px;
+          backdrop-filter: blur(20px);
+        }
+
+        .lyra-call {
+          width: min(430px, 100%);
+          height: min(840px, 96vh);
+          border-radius: 42px;
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(circle at top, rgba(255, 255, 255, 0.28), transparent 38%),
+            linear-gradient(180deg, #15151f 0%, #252635 55%, #12121a 100%);
+          color: white;
+          box-shadow: 0 35px 120px rgba(0, 0, 0, 0.42);
+        }
+
+        .call-status {
+          position: absolute;
+          top: 18px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 3;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 9px 13px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.14);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          font-size: 12px;
+        }
+
+        .call-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #bcc1cf;
+        }
+
+        .call-dot.on {
+          background: #8af1b6;
+          box-shadow: 0 0 0 7px rgba(138, 241, 182, 0.16);
+        }
+
+        .call-head {
+          position: relative;
+          z-index: 3;
+          height: 112px;
+          padding: 30px 24px 0;
+          display: grid;
+          grid-template-columns: 54px 1fr 54px;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .call-icon {
+          width: 54px;
+          height: 54px;
+          border-radius: 20px;
+          background: rgba(255, 255, 255, 0.14);
+          color: white;
+          font-size: 22px;
+        }
+
+        .call-title {
+          text-align: center;
+        }
+
+        .call-title p {
+          margin: 0;
+          color: rgba(255, 255, 255, 0.68);
+          font-size: 13px;
+          font-weight: 750;
+        }
+
+        .call-title h2 {
+          margin: 3px 0 0;
+          font-size: 34px;
+          letter-spacing: 0.03em;
+        }
+
+        .call-avatar {
+          position: absolute;
+          inset: 0;
+          display: grid;
+          place-items: center;
+        }
+
+        .call-video {
+          position: absolute;
+          width: 82%;
+          max-width: 345px;
+          bottom: 124px;
+          border-radius: 34px;
+          opacity: 0.18;
+          object-fit: cover;
+          filter: blur(0.1px);
+        }
+
+        .avatar-fallback {
+          position: absolute;
+          width: 235px;
+          height: 430px;
+          bottom: 130px;
+          border-radius: 118px;
+          overflow: hidden;
+          box-shadow: 0 30px 90px rgba(0, 0, 0, 0.3);
+          background: rgba(255, 255, 255, 0.12);
+        }
+
+        .avatar-fallback img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .camera-preview {
+          position: absolute;
+          right: 18px;
+          bottom: 155px;
+          width: 116px;
+          height: 154px;
+          object-fit: cover;
+          border-radius: 24px;
+          border: 2px solid rgba(255, 255, 255, 0.55);
+          z-index: 4;
+          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
+        }
+
         .live-floating-chat {
           position: absolute;
-          z-index: 7;
           left: 26px;
           right: 26px;
-          bottom: 148px;
+          bottom: 155px;
+          z-index: 5;
           display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 8px;
+          justify-content: flex-start;
           pointer-events: none;
         }
 
         .live-bubble {
-          position: relative;
-          max-width: 82%;
-          min-width: 215px;
-          width: fit-content;
-          padding: 24px 19px 16px;
-          border-radius: 22px;
-          background: rgba(255, 251, 244, 0.84);
-          color: #2e2926;
-          box-shadow:
-            0 14px 34px rgba(80, 52, 34, 0.16),
-            inset 0 1px 0 rgba(255, 255, 255, 0.86);
-          border: 1px solid rgba(255, 255, 255, 0.52);
-          backdrop-filter: blur(22px);
-          -webkit-backdrop-filter: blur(22px);
-          animation: bubbleIn 0.3s ease both;
+          max-width: 86%;
+          min-width: 220px;
+          border-radius: 24px;
+          padding: 14px 16px;
+          background: rgba(255, 255, 255, 0.15);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          backdrop-filter: blur(18px);
         }
 
-        .live-bubble.user {
-          padding-top: 17px;
-          background: rgba(253, 246, 238, 0.8);
-        }
-
-        .live-bubble.listening {
-          background: rgba(255, 255, 255, 0.76);
-          border-color: rgba(54, 198, 111, 0.25);
-        }
-
-        .live-bubble time {
-          position: absolute;
-          top: 10px;
-          right: 14px;
-          font-size: 12px;
-          color: rgba(47, 41, 37, 0.56);
-          font-weight: 800;
+        .live-bubble b {
+          display: block;
+          margin-bottom: 5px;
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.74);
         }
 
         .live-bubble p {
           margin: 0;
-          font-size: 16px;
-          line-height: 1.35;
-          letter-spacing: -0.02em;
-          font-weight: 650;
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-          white-space: pre-wrap;
-        }
-
-        .live-bubble small {
-          position: absolute;
-          right: 14px;
-          bottom: 8px;
-          font-size: 12px;
-          color: rgba(47, 41, 37, 0.5);
-        }
-
-        .live-dots {
-          position: absolute;
-          left: 17px;
-          top: 12px;
-          display: flex;
-          gap: 6px;
-        }
-
-        .live-dots i {
-          width: 6px;
-          height: 6px;
-          border-radius: 999px;
-          background: rgba(123, 105, 89, 0.45);
-        }
-
-        @keyframes bubbleIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px) scale(0.98);
-          }
-
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
+          line-height: 1.42;
+          font-weight: 750;
         }
 
         .call-dock {
           position: absolute;
-          left: 18px;
-          right: 18px;
-          bottom: 44px;
-          z-index: 9;
-          min-height: 118px;
-          border-radius: 34px;
-          background: rgba(245, 232, 218, 0.72);
+          left: 22px;
+          right: 22px;
+          bottom: 24px;
+          min-height: 112px;
+          padding: 14px;
+          border-radius: 32px;
+          background: rgba(255, 255, 255, 0.13);
+          border: 1px solid rgba(255, 255, 255, 0.18);
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          align-items: center;
-          gap: 6px;
-          padding: 13px 11px 12px;
-          box-shadow:
-            0 23px 55px rgba(82, 54, 37, 0.2),
-            inset 0 1px 0 rgba(255, 255, 255, 0.82);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
+          gap: 10px;
+          z-index: 6;
+          backdrop-filter: blur(20px);
         }
 
         .call-control {
-          border: 0;
-          background: transparent;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 9px;
-          color: #5e554f;
-          padding: 0;
+          border-radius: 24px;
+          background: rgba(255, 255, 255, 0.11);
+          color: white;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          gap: 7px;
+          box-shadow: none;
         }
 
         .call-control span {
-          width: 61px;
-          height: 61px;
+          width: 48px;
+          height: 48px;
+          border-radius: 18px;
           display: grid;
           place-items: center;
-          border-radius: 999px;
-          background: rgba(255, 251, 244, 0.88);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.95),
-            0 8px 20px rgba(93, 63, 44, 0.1);
-          font-size: 23px;
+          background: rgba(255, 255, 255, 0.14);
+          font-size: 20px;
         }
 
         .call-control b {
-          font-size: 13px;
-          line-height: 1;
-          font-weight: 800;
+          font-size: 11px;
         }
 
         .call-control.active span {
-          background: rgba(255, 255, 255, 0.98);
-          box-shadow:
-            0 0 0 5px rgba(54, 198, 111, 0.1),
-            0 8px 20px rgba(93, 63, 44, 0.1);
+          background: rgba(138, 241, 182, 0.25);
         }
 
-        .call-control.end span {
-          background: linear-gradient(135deg, #ff8174, #f1645f);
-          color: white;
-          box-shadow:
-            0 13px 26px rgba(238, 88, 79, 0.34),
-            inset 0 1px 0 rgba(255, 255, 255, 0.36);
+        .call-control.danger span {
+          background: rgba(255, 96, 96, 0.34);
         }
 
-        .call-home-indicator {
-          position: absolute;
-          left: 50%;
-          bottom: 12px;
-          z-index: 10;
-          width: 132px;
-          height: 5px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.9);
-          transform: translateX(-50%);
+        @keyframes softPulse {
+          0%,
+          100% {
+            transform: scale(1);
+            filter: saturate(1);
+          }
+          50% {
+            transform: scale(1.025);
+            filter: saturate(1.08);
+          }
+        }
+
+        @keyframes slowGlow {
+          0%,
+          100% {
+            box-shadow:
+              inset 0 0 60px rgba(255, 255, 255, 0.8),
+              0 38px 95px rgba(104, 112, 150, 0.18);
+          }
+          50% {
+            box-shadow:
+              inset 0 0 70px rgba(255, 255, 255, 0.9),
+              0 42px 115px rgba(170, 178, 215, 0.26);
+          }
         }
 
         @media (max-width: 1180px) {
@@ -2921,7 +2283,7 @@ export default function Page() {
           }
 
           .call-head {
-            padding: 0 20px;
+            padding: 30px 18px 0;
           }
 
           .call-icon {
@@ -3004,5 +2366,3 @@ export default function Page() {
     </main>
   );
 }
-
-
