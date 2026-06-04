@@ -437,6 +437,7 @@ export default function Page() {
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const lyraVideoRef = useRef<HTMLVideoElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const micWantedRef = useRef(false);
   const featureRef = useRef<HTMLElement | null>(null);
 
   const [messages, setMessages] = useState<Message[]>(starterMessages);
@@ -453,6 +454,7 @@ export default function Page() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [liveText, setLiveText] = useState("Canlı konuşma beklemede.");
   const [showLiveChat, setShowLiveChat] = useState(true);
+  const [videoReady, setVideoReady] = useState(false);
 
   const [currentEmotion, setCurrentEmotion] = useState("calm");
   const [currentAvatarState, setCurrentAvatarState] = useState("idle");
@@ -500,6 +502,7 @@ export default function Page() {
     };
 
     setMessages((prev) => [...prev, msg]);
+    if (liveOpen) setLiveText(finalText);
     speakHuman(finalText);
   }
 
@@ -655,6 +658,7 @@ export default function Page() {
       };
 
       setMessages((prev) => [...prev, lyraMessage]);
+      if (liveOpen) setLiveText(cleanFinal);
       speakHuman(cleanSpeak || cleanFinal, data?.voicePacket || data?.voiceHints);
       lyraVideoRef.current?.play().catch(() => {});
     } finally {
@@ -693,15 +697,16 @@ export default function Page() {
   }
 
   function toggleMic() {
-    if (micOn) {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (micOn || micWantedRef.current) {
+      micWantedRef.current = false;
       recognitionRef.current?.stop?.();
       setMicOn(false);
       setLiveText("Mikrofon kapalı.");
       return;
     }
-
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setLiveText(
@@ -714,6 +719,9 @@ export default function Page() {
     recognition.lang = "tr-TR";
     recognition.continuous = true;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    micWantedRef.current = true;
 
     recognition.onstart = () => {
       setMicOn(true);
@@ -739,36 +747,77 @@ export default function Page() {
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event: any) => {
       setMicOn(false);
-      setLiveText("Mikrofon bağlantısı kesildi.");
+
+      if (
+        event?.error === "not-allowed" ||
+        event?.error === "service-not-allowed"
+      ) {
+        micWantedRef.current = false;
+        setLiveText(
+          "Mikrofon izni alınamadı. Tarayıcı adres çubuğundaki kilitten mikrofon iznini açman gerekebilir."
+        );
+        return;
+      }
+
+      if (event?.error === "no-speech") {
+        setLiveText("Ses alamadım kanka, tekrar konuşabilirsin.");
+        return;
+      }
+
+      setLiveText("Mikrofon bağlantısı kısa süreli kesildi.");
     };
 
     recognition.onend = () => {
       setMicOn(false);
+
+      if (!micWantedRef.current) return;
+
+      window.setTimeout(() => {
+        try {
+          recognition.start();
+        } catch {
+          // Bazı tarayıcılar peş peşe start çağrısını sevmez, sessiz geçiyoruz.
+        }
+      }, 350);
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-  }
 
+    try {
+      recognition.start();
+    } catch {
+      micWantedRef.current = false;
+      setMicOn(false);
+      setLiveText("Mikrofon başlatılamadı. Sayfayı yenileyip tekrar dene kanka.");
+    }
+  }
   function openLive() {
     setLiveOpen(true);
     setShowLiveChat(true);
+    setLiveText("Canlı konuşma hazır. Mikrofonu açınca dinlemeye başlarım.");
+    setVideoReady(false);
 
     setTimeout(() => {
-      lyraVideoRef.current?.play().catch(() => {});
+      const video = lyraVideoRef.current;
+      if (!video) return;
+
+      if (video.readyState >= 2) setVideoReady(true);
+      video.play().catch(() => {});
     }, 100);
   }
 
   function closeLive() {
     setLiveOpen(false);
+    micWantedRef.current = false;
     recognitionRef.current?.stop?.();
     setMicOn(false);
 
     stream?.getTracks().forEach((track) => track.stop());
     setStream(null);
     setCameraOn(false);
+    setVideoReady(false);
 
     if (cameraRef.current) cameraRef.current.srcObject = null;
     lyraVideoRef.current?.pause();
@@ -877,6 +926,7 @@ export default function Page() {
 
   useEffect(() => {
     return () => {
+      micWantedRef.current = false;
       stream?.getTracks().forEach((track) => track.stop());
       recognitionRef.current?.stop?.();
       if (typeof window !== "undefined") window.speechSynthesis?.cancel?.();
@@ -1056,7 +1106,7 @@ export default function Page() {
 
           <div className="input-box">
             <button onClick={openLive}>◖</button>
-            <button onClick={toggleMic}>♫</button>
+            <button className={micOn ? "active-mini" : ""} onClick={toggleMic}>♫</button>
             <button className="pdf-btn">PDF</button>
 
             <input
@@ -1177,14 +1227,21 @@ export default function Page() {
                 ref={lyraVideoRef}
                 src={LYRA_VIDEO}
                 playsInline
+                autoPlay
                 muted
                 loop
-                className="call-video"
+                preload="auto"
+                className={`call-video ${videoReady ? "ready" : ""}`}
+                onCanPlay={() => setVideoReady(true)}
+                onLoadedData={() => setVideoReady(true)}
+                onError={() => setVideoReady(false)}
               />
 
-              <div className="avatar-fallback">
-                <img src={LYRA_AVATAR} alt="Lyra canlı avatar" />
-              </div>
+              {!videoReady && (
+                <div className="avatar-fallback">
+                  <img src={LYRA_AVATAR} alt="Lyra canlı avatar" />
+                </div>
+              )}
             </div>
 
             {cameraOn && (
@@ -1752,6 +1809,11 @@ export default function Page() {
           color: #9a9ca8;
         }
 
+        .input-box button.active-mini {
+          background: #15151f;
+          color: white;
+        }
+
         .send-btn {
           background: #15151f !important;
           color: white !important;
@@ -2051,17 +2113,7 @@ export default function Page() {
           place-items: center;
         }
 
-        .call-video {
-          position: absolute;
-          width: 82%;
-          max-width: 345px;
-          bottom: 124px;
-          border-radius: 34px;
-          opacity: 0.18;
-          object-fit: cover;
-          filter: blur(0.1px);
-        }
-
+        .call-video,
         .avatar-fallback {
           position: absolute;
           width: 235px;
@@ -2071,6 +2123,24 @@ export default function Page() {
           overflow: hidden;
           box-shadow: 0 30px 90px rgba(0, 0, 0, 0.3);
           background: rgba(255, 255, 255, 0.12);
+        }
+
+        .call-video {
+          object-fit: cover;
+          opacity: 0;
+          transform: translateY(10px) scale(0.98);
+          transition:
+            opacity 0.35s ease,
+            transform 0.35s ease;
+        }
+
+        .call-video.ready {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+
+        .avatar-fallback {
+          display: block;
         }
 
         .avatar-fallback img {
@@ -2296,12 +2366,7 @@ export default function Page() {
             font-size: 28px;
           }
 
-          .call-video {
-            width: 88%;
-            max-width: 380px;
-            bottom: 116px;
-          }
-
+          .call-video,
           .avatar-fallback {
             width: 215px;
             height: 400px;
