@@ -2029,13 +2029,13 @@ export default function Page() {
         }
 
         .lyra-call {
-          width: min(430px, 100%);
-          height: min(840px, 96vh);
+          width: min(520px, 100%);
+          height: min(920px, 97vh);
           border-radius: 42px;
           position: relative;
           overflow: hidden;
           background:
-            radial-gradient(circle at top, rgba(255, 255, 255, 0.28), transparent 38%),
+            radial-gradient(circle at top, rgba(255, 255, 255, 0.22), transparent 38%),
             linear-gradient(180deg, #15151f 0%, #252635 55%, #12121a 100%);
           color: white;
           box-shadow: 0 35px 120px rgba(0, 0, 0, 0.42);
@@ -2109,34 +2109,46 @@ export default function Page() {
         .call-avatar {
           position: absolute;
           inset: 0;
-          display: grid;
-          place-items: center;
+          display: block;
+          overflow: hidden;
+        }
+
+        .call-avatar::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          background:
+            linear-gradient(180deg, rgba(8, 8, 14, 0.42) 0%, rgba(8, 8, 14, 0.05) 34%, rgba(8, 8, 14, 0.22) 72%, rgba(8, 8, 14, 0.66) 100%),
+            radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.16), transparent 42%);
+          pointer-events: none;
         }
 
         .call-video,
         .avatar-fallback {
           position: absolute;
-          width: 235px;
-          height: 430px;
-          bottom: 130px;
-          border-radius: 118px;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          border-radius: 0;
           overflow: hidden;
-          box-shadow: 0 30px 90px rgba(0, 0, 0, 0.3);
-          background: rgba(255, 255, 255, 0.12);
+          box-shadow: none;
+          background: #12121a;
         }
 
         .call-video {
           object-fit: cover;
+          object-position: center center;
           opacity: 0;
-          transform: translateY(10px) scale(0.98);
+          transform: scale(1.04);
           transition:
             opacity 0.35s ease,
-            transform 0.35s ease;
+            transform 0.45s ease;
         }
 
         .call-video.ready {
           opacity: 1;
-          transform: translateY(0) scale(1);
+          transform: scale(1.08);
         }
 
         .avatar-fallback {
@@ -2147,6 +2159,8 @@ export default function Page() {
           width: 100%;
           height: 100%;
           object-fit: cover;
+          object-position: center center;
+          transform: scale(1.08);
         }
 
         .camera-preview {
@@ -2166,7 +2180,7 @@ export default function Page() {
           position: absolute;
           left: 26px;
           right: 26px;
-          bottom: 155px;
+          bottom: 150px;
           z-index: 5;
           display: flex;
           justify-content: flex-start;
@@ -2368,9 +2382,9 @@ export default function Page() {
 
           .call-video,
           .avatar-fallback {
-            width: 215px;
-            height: 400px;
-            bottom: 126px;
+            inset: 0;
+            width: 100%;
+            height: 100%;
           }
 
           .live-floating-chat {
