@@ -3,17 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type GeminiPart =
-  | { text: string }
-  | {
-      inline_data: {
-        mime_type: string;
-        data: string;
-      };
-    };
+function getSiriusBaseUrl() {
+  return String(process.env.SIRIUS_BASE_URL || "").replace(/\/+$/, "");
+}
 
-function getApiKey() {
-  return process.env.GEMINI_API_KEY || "";
+function getSiriusApiKey() {
+  return process.env.SIRIUS_API_KEY || "";
 }
 
 function getTextFromBody(body: any) {
@@ -24,121 +19,90 @@ function getTextFromBody(body: any) {
       body?.text ||
       body?.question ||
       body?.userMessage ||
+      body?.content ||
       ""
   ).trim();
 }
 
-function cleanBase64Image(value: any) {
-  if (!value) return null;
-
-  const asString = String(value);
-
-  const match = asString.match(/^data:(.+?);base64,(.+)$/);
-
-  if (!match) return null;
-
-  return {
-    mimeType: match[1],
-    base64: match[2],
-  };
-}
-
-function extractGeminiText(data: any) {
-  const candidates = data?.candidates;
-
-  if (!Array.isArray(candidates) || candidates.length === 0) return "";
-
-  const parts = candidates?.[0]?.content?.parts;
-
-  if (Array.isArray(parts)) {
-    return parts
-      .map((part: any) => part?.text || "")
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-  }
-
-  return "";
-}
-
-function isQuotaError(message: string) {
-  const lower = message.toLowerCase();
-
-  return (
-    lower.includes("quota") ||
-    lower.includes("rate limit") ||
-    lower.includes("429") ||
-    lower.includes("too many requests") ||
-    lower.includes("exceeded")
+function hasImage(body: any) {
+  return Boolean(
+    body?.imageDataUrl ||
+      body?.image ||
+      body?.photo ||
+      body?.file
   );
 }
 
-function quotaFriendlyMessage(errorMessage: string) {
-  const retryMatch = errorMessage.match(/retry in ([0-9.]+)s/i);
-  const retrySeconds = retryMatch?.[1]
-    ? Math.ceil(Number(retryMatch[1]))
-    : 30;
-
-  return `Gemini ücretsiz kullanım kotası doldu kanka. API key çalışıyor ama Google şu an fazla istek attığımız için cevap vermiyor. Yaklaşık ${retrySeconds} saniye sonra tekrar dene. Çok sık kullanacaksak Gemini tarafında billing/plan açmak ya da farklı bir API key bağlamak gerekiyor.`;
+function normalizeText(value: string) {
+  return String(value || "")
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-async function callGemini(model: string, apiKey: string, parts: GeminiPart[]) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts,
-          },
-        ],
-        generationConfig: {
-          temperature: 0.65,
-          topP: 0.9,
-          topK: 40,
-          maxOutputTokens: 4096,
-        },
-      }),
-    }
-  );
+function detectMode(message: string, body: any) {
+  const explicitMode = String(body?.mode || body?.type || "").trim();
+  const lower = normalizeText(message);
 
-  const raw = await response.text();
+  if (explicitMode) return explicitMode;
 
-  let data: any = null;
-
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch {
-    data = raw;
+  if (
+    lower.includes("içerik") ||
+    lower.includes("icerik") ||
+    lower.includes("tiktok") ||
+    lower.includes("reels") ||
+    lower.includes("video") ||
+    lower.includes("senaryo") ||
+    lower.includes("hook") ||
+    lower.includes("metin")
+  ) {
+    return "content";
   }
 
-  if (!response.ok) {
-    const errorMessage =
-      data?.error?.message ||
-      data?.message ||
-      raw ||
-      `Gemini API hata verdi: ${response.status}`;
-
-    throw new Error(errorMessage);
+  if (
+    lower.includes("araştır") ||
+    lower.includes("arastir") ||
+    lower.includes("kaynak") ||
+    lower.includes("keşfet") ||
+    lower.includes("kesfet") ||
+    lower.includes("trend") ||
+    lower.includes("revaçta") ||
+    lower.includes("revacta") ||
+    lower.includes("nedir") ||
+    lower.includes("ne işe yarar") ||
+    lower.includes("ne ise yarar") ||
+    lower.includes("farkı") ||
+    lower.includes("farki")
+  ) {
+    return "research";
   }
 
-  const text = extractGeminiText(data);
-
-  if (!text) {
-    throw new Error("Gemini boş cevap döndürdü.");
+  if (
+    lower.includes("konu öner") ||
+    lower.includes("konu oner") ||
+    lower.includes("fikir ver") ||
+    lower.includes("ne önerirsin") ||
+    lower.includes("ne onerirsin") ||
+    lower.includes("cilt bakımı") ||
+    lower.includes("cilt bakimi")
+  ) {
+    return "topic_suggest";
   }
 
-  return text;
+  return "lyra";
 }
 
-function okAnswer(answer: string) {
+function endpointForMode(mode: string) {
+  if (mode === "research") return "/api/research";
+  if (mode === "content") return "/api/content";
+  if (mode === "local-search") return "/api/local-search";
+  return "/api/lyra";
+}
+
+function okAnswer(answer: string, extra: Record<string, any> = {}) {
   return NextResponse.json({
     ok: true,
+    from: "sirius-cloud",
     answer,
     reply: answer,
     text: answer,
@@ -147,69 +111,156 @@ function okAnswer(answer: string) {
     output: answer,
     result: answer,
     response: answer,
+    ...extra,
+  });
+}
+
+async function callSirius(
+  endpoint: string,
+  payload: Record<string, any>,
+  options?: { method?: "GET" | "POST" }
+) {
+  const baseUrl = getSiriusBaseUrl();
+  const apiKey = getSiriusApiKey();
+
+  if (!baseUrl || !apiKey) {
+    throw new Error(
+      "SIRIUS_BASE_URL veya SIRIUS_API_KEY eksik. Vercel Environment Variables kısmını kontrol et."
+    );
+  }
+
+  const method = options?.method || "POST";
+
+  const response = await fetch(`${baseUrl}${endpoint}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+    },
+    body: method === "POST" ? JSON.stringify(payload) : undefined,
+    cache: "no-store",
+  });
+
+  const raw = await response.text();
+
+  let data: any = null;
+
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch {
+    data = { raw };
+  }
+
+  if (!response.ok) {
+    const msg =
+      data?.answer ||
+      data?.message ||
+      data?.error ||
+      raw ||
+      `Sirius API hata verdi: ${response.status}`;
+
+    throw new Error(msg);
+  }
+
+  return data;
+}
+
+async function buildTopicSuggestion(message: string) {
+  let topics: any[] = [];
+
+  try {
+    const data = await callSirius("/api/topics", {}, { method: "GET" });
+    topics = Array.isArray(data?.topics) ? data.topics : [];
+  } catch {
+    topics = [];
+  }
+
+  const topicNames = topics.map((t) => t?.name).filter(Boolean);
+
+  const hasRetinol = topicNames.some((x) =>
+    String(x).toLowerCase().includes("retinol")
+  );
+
+  const ideas = [
+    "Güneş kreminde sadece SPF’ye bakmak neden yetmez?",
+    "Niasinamid gerçekten gözenekleri küçültür mü, yoksa algı mı?",
+    "Retinol kullanırken yapılan 3 büyük hata",
+    "Kepek sandığın şey aslında seboreik dermatit olabilir mi?",
+    "Cilt bariyeri bozulunca cilt neden her şeye tepki verir?",
+    "Aynı anda çok aktif kullanmak cildi neden yorabilir?",
+  ];
+
+  if (!hasRetinol) {
+    ideas[2] = "Retinol nedir ve neden herkes aynı şekilde kullanmamalı?";
+  }
+
+  const answer = [
+    "Kanka cilt bakımı için keşfete oynayacak birkaç konu öneriyorum:",
+    "",
+    ...ideas.map((idea, index) => `${index + 1}) ${idea}`),
+    "",
+    "Ben olsam bugün en güçlü olanı şunu seçerdim:",
+    "“Retinol kullanırken yapılan 3 büyük hata”",
+    "",
+    "Çünkü hem merak uyandırıyor, hem kaydedilebilir, hem de yorum getirir.",
+    "",
+    "İstersen bunu direkt 1 dakikalık TikTok metnine çevirebilirim.",
+  ].join("\n");
+
+  return okAnswer(answer, {
+    mode: "topic_suggest",
+    availableTopics: topicNames,
+    source: "sirius-topic-suggestion",
   });
 }
 
 export async function GET(req: NextRequest) {
-  const apiKey = getApiKey();
+  const baseUrl = getSiriusBaseUrl();
+  const hasApiKey = Boolean(getSiriusApiKey());
 
   const { searchParams } = new URL(req.url);
-  const test = searchParams.get("test") || "merhaba";
+  const test = searchParams.get("test") || "retinol ciltte ne işe yarar?";
 
-  if (!apiKey) {
+  if (!baseUrl || !hasApiKey) {
     return NextResponse.json(
       {
         ok: false,
         route: "/api/gemini",
-        hasGeminiKey: false,
-        error: "GEMINI_API_KEY bulunamadı.",
+        bridge: "sirius-cloud",
+        hasSiriusBaseUrl: Boolean(baseUrl),
+        hasSiriusApiKey: hasApiKey,
+        error:
+          "SIRIUS_BASE_URL veya SIRIUS_API_KEY bulunamadı. Vercel Environment Variables kısmını kontrol et.",
       },
       { status: 500 }
     );
   }
 
   try {
-    const answer = await callGemini("gemini-1.5-flash", apiKey, [
-      {
-        text: `Türkçe kısa cevap ver. Test mesajı: ${test}`,
-      },
-    ]);
+    const data = await callSirius("/api/research", {
+      message: test,
+      query: test,
+    });
 
-    return NextResponse.json({
-      ok: true,
+    const answer =
+      data?.answer ||
+      data?.script ||
+      data?.message ||
+      "Sirius cevap döndürdü ama okunacak metin bulunamadı.";
+
+    return okAnswer(answer, {
       route: "/api/gemini",
-      hasGeminiKey: true,
-      answer,
-      reply: answer,
-      text: answer,
-      message: answer,
-      content: answer,
+      bridge: "sirius-cloud",
+      test,
+      sirius: data,
     });
   } catch (error: any) {
-    const message = error?.message || "Gemini test hatası.";
-
-    if (isQuotaError(message)) {
-      const answer = quotaFriendlyMessage(message);
-
-      return NextResponse.json({
-        ok: true,
-        route: "/api/gemini",
-        hasGeminiKey: true,
-        quotaLimited: true,
-        answer,
-        reply: answer,
-        text: answer,
-        message: answer,
-        content: answer,
-      });
-    }
-
     return NextResponse.json(
       {
         ok: false,
         route: "/api/gemini",
-        hasGeminiKey: true,
-        error: message,
+        bridge: "sirius-cloud",
+        error: error?.message || "Sirius test hatası.",
       },
       { status: 500 }
     );
@@ -217,97 +268,74 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = getApiKey();
-
-  if (!apiKey) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "GEMINI_API_KEY bulunamadı. Vercel > Settings > Environment Variables kısmını kontrol et.",
-      },
-      { status: 500 }
-    );
-  }
-
   try {
     const body = await req.json().catch(() => ({}));
+    const message = getTextFromBody(body);
 
-    const text = getTextFromBody(body);
-
-    const image =
-      cleanBase64Image(body?.imageDataUrl) ||
-      cleanBase64Image(body?.image) ||
-      cleanBase64Image(body?.photo) ||
-      cleanBase64Image(body?.file);
-
-    const parts: GeminiPart[] = [];
-
-    if (text) {
-      parts.push({
-        text,
-      });
+    if (hasImage(body)) {
+      return okAnswer(
+        "Kanka şu an Lyra’nın görsel analizi Gemini tarafındaydı; bu route’u Sirius Cloud’a bağladık. Görsel okuma modunu ayrıca Sirius’a ekleyeceğiz. Şimdilik yazılı mesajla devam edebilirim.",
+        {
+          mode: "image_not_supported_yet",
+          bridge: "sirius-cloud",
+        }
+      );
     }
 
-    if (image) {
-      parts.push({
-        inline_data: {
-          mime_type: image.mimeType,
-          data: image.base64,
-        },
-      });
-    }
-
-    if (!parts.length) {
+    if (!message) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Mesaj veya görsel gelmedi.",
+          error: "empty_message",
+          answer: "Kanka mesaj boş geldi.",
         },
         { status: 400 }
       );
     }
 
-    const models = image
-      ? ["gemini-1.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
-      : ["gemini-1.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
+    const mode = detectMode(message, body);
 
-    let finalAnswer = "";
-    let lastError = "";
-
-    for (const model of models) {
-      try {
-        finalAnswer = await callGemini(model, apiKey, parts);
-        break;
-      } catch (error: any) {
-        lastError = error?.message || `${model} hata verdi.`;
-
-        if (isQuotaError(lastError)) {
-          continue;
-        }
-      }
+    if (mode === "topic_suggest") {
+      return await buildTopicSuggestion(message);
     }
 
-    if (!finalAnswer) {
-      if (isQuotaError(lastError)) {
-        return okAnswer(quotaFriendlyMessage(lastError));
-      }
+    const endpoint = endpointForMode(mode);
 
-      throw new Error(lastError || "Gemini cevap veremedi.");
-    }
+    const data = await callSirius(endpoint, {
+      message,
+      query: message,
+      mode,
+    });
 
-    return okAnswer(finalAnswer);
+    const answer =
+      data?.answer ||
+      data?.script ||
+      data?.message ||
+      data?.text ||
+      "Sirius cevap döndürdü ama okunacak metin bulunamadı.";
+
+    return okAnswer(answer, {
+      route: "/api/gemini",
+      bridge: "sirius-cloud",
+      mode,
+      endpoint,
+      sirius: data,
+    });
   } catch (error: any) {
-    const message = error?.message || "Gemini route hata verdi.";
-
-    if (isQuotaError(message)) {
-      return okAnswer(quotaFriendlyMessage(message));
-    }
+    const answer =
+      "Kanka Sirius'a bağlanırken sorun oldu: " +
+      (error?.message || "bilinmeyen hata");
 
     return NextResponse.json(
       {
         ok: false,
-        error: message,
+        error: "sirius_bridge_error",
+        answer,
+        reply: answer,
+        text: answer,
+        message: answer,
+        content: answer,
+        detail: error?.message || "Bilinmeyen hata",
       },
       { status: 500 }
     );
