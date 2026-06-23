@@ -44,7 +44,12 @@ type LyraResponse = {
 
 const LYRA_AVATAR = "/lyra-avatar.jpg.jpeg";
 const LYRA_VIDEO = "/lyra-avatar-mp4.mp4";
-const LYRA_API_URL = "https://sirius-core-apii.vercel.app/api/lyra";
+
+// Önce Sirius Core API'ye gider. İstersen Vercel adresini .env.local içinden değiştirebilirsin:
+// NEXT_PUBLIC_LYRA_API_URL=https://sirius-core-apii.vercel.app/api/lyra
+const LYRA_API_URL =
+  process.env.NEXT_PUBLIC_LYRA_API_URL?.trim() ||
+  "https://sirius-core-apii.vercel.app/api/lyra";
 
 const navItems: { icon: string; label: string; action: NavAction }[] = [
   { icon: "+", label: "Yeni Sohbet", action: "new" },
@@ -217,6 +222,58 @@ function pickApiAnswer(data: any) {
   );
 }
 
+
+function normalizeLoopCheckText(value: string) {
+  return value
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[ıİ]/g, "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9ğüşöç\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function looksLikeStuckLyraAnswer(answer: string, question: string) {
+  const a = normalizeLoopCheckText(answer);
+  const q = normalizeLoopCheckText(question);
+
+  if (!a) return true;
+
+  const stuckHints = [
+    "tamam kanka icerik moduna geciyorum",
+    "once guclu bir ilk 3 saniye hook buluruz",
+    "bana urun konu ver ben direkt senaryoya cevireyim",
+    "api siz lyra moduna dusup yine cevapliyorum",
+    "local ai su an cevap vermedi",
+    "online arastirma baglantisi gelmedi",
+  ];
+
+  if (stuckHints.some((hint) => a.includes(hint))) return true;
+
+  // API bazen kısa ve genel bir cevap döndürürse, kullanıcının mesajından hiç iz taşımıyorsa
+  // onu güvenilir cevap saymıyoruz. Böylece ekranda aynı kalıp cevaba kilitlenmiyor.
+  const meaningfulQuestionWords = q
+    .split(" ")
+    .filter((word) => word.length >= 4)
+    .slice(0, 8);
+
+  const hasQuestionTrace = meaningfulQuestionWords.some((word) => a.includes(word));
+
+  if (a.length < 90 && meaningfulQuestionWords.length >= 2 && !hasQuestionTrace) {
+    return true;
+  }
+
+  return false;
+}
+
+function pickReliableApiAnswer(data: any, question: string) {
+  const answer = pickApiAnswer(data);
+  if (!answer) return "";
+  if (looksLikeStuckLyraAnswer(answer, question)) return "";
+  return answer;
+}
+
 function mapLyraMode(aiMode: AiMode, message: string) {
   const q = message.toLocaleLowerCase("tr-TR");
 
@@ -259,30 +316,48 @@ function mapLyraMode(aiMode: AiMode, message: string) {
 }
 
 async function askLyra(message: string, aiMode: AiMode): Promise<LyraResponse> {
-  const res = await fetch(LYRA_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      message,
-      userId: "merve",
-      sessionId: "lyra-clean-2026",
-      mode: mapLyraMode(aiMode, message),
-    }),
-  });
+  const mode = mapLyraMode(aiMode, message);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 20000);
 
-  const data = await res.json().catch(() => null);
+  try {
+    const res = await fetch(LYRA_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify({
+        // Backend hangi alanı bekliyorsa boş düşmesin diye hepsini gönderiyoruz.
+        message,
+        text: message,
+        prompt: message,
+        userMessage: message,
+        userId: "merve",
+        sessionId: "lyra-clean-2026",
+        mode,
+        aiMode,
+        source: "lyra-clean-page",
+        sentAt: new Date().toISOString(),
+      }),
+    });
 
-  if (!res.ok || !data?.ok) {
-    throw new Error("Lyra bağlantısı cevap vermedi.");
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.error || "Lyra bağlantısı cevap vermedi.");
+    }
+
+    return data;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-
-  return data;
 }
 
 function createOfflineAnswer(question: string) {
-  const q = question.toLocaleLowerCase("tr-TR").trim();
+  const cleanQuestion = question.replace(/\s+/g, " ").trim();
+  const q = cleanQuestion.toLocaleLowerCase("tr-TR").trim();
 
   if (q === "test") {
     return "Test başarılı kanka. Lyra ayakta 😄";
@@ -320,22 +395,27 @@ function createOfflineAnswer(question: string) {
     q.includes("video metni") ||
     q.includes("teleprompter")
   ) {
-    return `Şunu içerik formatına çevirelim:
+    return `Şunu içerik formatına çevirelim kanka:
+
+KONU:
+${cleanQuestion}
 
 HOOK:
-“Bunu çoğu kişi yanlış biliyor ama işin kimyası bambaşka…”
+“Bunu çoğu kişi yanlış biliyor ama işin asıl mantığı burada başlıyor…”
 
 GİRİŞ:
-Bugün sana bunu sade anlatacağım. Dışarıdan basit görünüyor ama mantığını anlayınca olay değişiyor.
+Bugün bunu sade, net ve izleyenin kaydedebileceği şekilde anlatıyoruz. Önce merak uyandırıyoruz, sonra problemi gösteriyoruz.
 
 GELİŞME:
-Önce problemi söyleriz, sonra nedenini anlatırız, en son da doğru kullanım kısmına geçeriz.
+1. İnsanların yanlış bildiği kısmı söyle.
+2. Neden öyle olmadığını kısa açıkla.
+3. Doğru kullanım/uygulama mantığını ver.
 
 KAPANIŞ:
-Yani mesele sadece “ne kullanayım?” değil; “neden, ne zaman ve nasıl kullanayım?” sorusu.
+Yani olay sadece “ne yapayım?” değil; “neden, ne zaman ve nasıl yapayım?” sorusu.
 
 CTA:
-Kaydet kanka, sonra bunun formül mantığını da anlatacağım.`;
+Kaydet kanka, sonra bunun devamını daha detaylı anlatacağım.`;
   }
 
   if (
@@ -347,15 +427,16 @@ Kaydet kanka, sonra bunun formül mantığını da anlatacağım.`;
     q.includes("kozmetik") ||
     q.includes("inci")
   ) {
-    return `Kozmetik mantığıyla bakarsak önce şunu netleştiririz:
+    return `Kozmetik/lab mantığıyla bunu şöyle ele alırdım kanka:
 
-1. Ürün tipi ne?
-2. Hedef ne?
-3. Baz sistem ne olacak?
-4. Aktifler hangi yüzde aralığında kullanılacak?
-5. pH aralığı uygun mu?
-6. Koruyucu sistemi var mı?
-7. Stabilite kontrolü yapılacak mı?
+KONU:
+${cleanQuestion}
+
+1. Ürün tipi ve hedef netleşir.
+2. Baz sistem seçilir.
+3. Aktiflerin yüzde aralığı kontrol edilir.
+4. pH aralığı ve uyumluluk düşünülür.
+5. Koruyucu sistemi ve stabilite kontrolü planlanır.
 
 Ben olsam önce hedefi seçer, sonra formülü faz faz kurardım. Yoksa formül dediğin şey biraz “her güzel şeyi aynı kaba koydum” kaosuna dönüyor 😅`;
   }
@@ -401,14 +482,11 @@ Metni yapıştırırsan ben onu tertemiz toparlarım.`;
 Konuya göre bunu Lyra, InciLab, kozmetik laboratuvarı ya da içerik odası gibi ayrı ayrı parlatırız.`;
   }
 
-  return `Bunu anladım kanka. Ben olsam önce şuna bakardım:
+  return `Bunu aldım kanka:
 
-1. Bu konu bilgi mi istiyor?
-2. İçerik mi üretilecek?
-3. Kod mu düzeltilecek?
-4. Güncel araştırma mı gerekiyor?
+“${cleanQuestion}”
 
-Sen yaz, ben onu direkt kullanılabilir hale çevireyim.`;
+Ben olsam önce niyeti ayırırdım: bu bir bilgi sorusu mu, içerik üretimi mi, kod düzeltme mi, yoksa araştırma mı istiyor? Ona göre direkt kullanılabilir cevaba çevirelim.`;
 }
 
 function saveLyraMemory(memoryUpdate: any) {
@@ -623,28 +701,29 @@ export default function Page() {
 
       try {
         data = await askLyra(clean, aiMode);
-      } catch {
-        const fallback =
-          "Bağlantı şu an gecikti kanka. Panik yok, Lyra sohbet modundan devam ediyor:\n\n" +
-          createOfflineAnswer(clean);
+        console.log("LYRA API DATA:", data);
+      } catch (error) {
+        console.error("LYRA API HATASI:", error);
 
         data = {
           ok: false,
-          reply: fallback,
-          speakText: fallback,
+          reply: "",
+          speakText: "",
           emotion: "supportive",
           reaction: "soft",
           avatarState: "supportive",
         };
       }
 
-      const finalAnswer =
-        pickApiAnswer(data) ||
-        cleanLyraAnswer(data?.speakText) ||
-        createOfflineAnswer(clean);
+      const apiAnswer = pickReliableApiAnswer(data, clean);
+      const apiSpeak = cleanLyraAnswer(data?.speakText || "");
+      const safeApiSpeak =
+        apiSpeak && !looksLikeStuckLyraAnswer(apiSpeak, clean) ? apiSpeak : "";
+
+      const finalAnswer = apiAnswer || safeApiSpeak || createOfflineAnswer(clean);
 
       const cleanFinal = sanitizeUserFacingText(finalAnswer);
-      const cleanSpeak = sanitizeUserFacingText(data?.speakText || cleanFinal);
+      const cleanSpeak = sanitizeUserFacingText(safeApiSpeak || cleanFinal);
 
       setCurrentEmotion(safeClassName(data?.emotion, "calm"));
       setCurrentAvatarState(safeClassName(data?.avatarState, "idle"));
@@ -2445,3 +2524,4 @@ export default function Page() {
     </main>
   );
 }
+
