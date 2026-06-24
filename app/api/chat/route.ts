@@ -10,6 +10,11 @@ type ClientMessage = {
   content?: string;
 };
 
+const SIRIUS_LYRA_URL =
+  process.env.SIRIUS_LYRA_URL ||
+  process.env.SIRIUS_CORE_URL ||
+  "https://sirius-core-apii.vercel.app/api/lyra";
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
@@ -83,6 +88,24 @@ function normalizeMessages(body: any): Array<{ role: SafeRole; content: string }
   return normalized;
 }
 
+function getLastUserMessage(messages: Array<{ role: SafeRole; content: string }>) {
+  return [...messages].reverse().find((msg) => msg.role === "user")?.content || "";
+}
+
+function pickAnswer(data: any): string {
+  return (
+    cleanText(data?.reply) ||
+    cleanText(data?.message) ||
+    cleanText(data?.content) ||
+    cleanText(data?.answer) ||
+    cleanText(data?.text) ||
+    cleanText(data?.speakText) ||
+    cleanText(data?.data?.reply) ||
+    cleanText(data?.data?.message) ||
+    cleanText(data?.data?.content)
+  );
+}
+
 function buildGeminiPrompt(messages: Array<{ role: SafeRole; content: string }>) {
   const conversation = messages
     .map((m) => {
@@ -113,11 +136,125 @@ function extractGeminiText(data: any): string {
     .trim();
 }
 
+async function callSiriusCore(messages: Array<{ role: SafeRole; content: string }>) {
+  const lastUserMessage = getLastUserMessage(messages);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const siriusResponse = await fetch(SIRIUS_LYRA_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: lastUserMessage,
+        text: lastUserMessage,
+        prompt: lastUserMessage,
+        userMessage: lastUserMessage,
+        messages,
+        mode: "chat",
+        source: "lyra-clean-2026",
+        user: "Merve",
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    const data = await siriusResponse.json().catch(() => null);
+
+    if (!siriusResponse.ok) {
+      const realError =
+        data?.error ||
+        data?.message ||
+        `Sirius Core API hata kodu: ${siriusResponse.status}`;
+
+      throw new Error(realError);
+    }
+
+    const answer = pickAnswer(data);
+
+    if (!answer) {
+      throw new Error("Sirius Core API boş cevap döndürdü.");
+    }
+
+    return {
+      answer,
+      raw: data,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callGeminiFallback(messages: Array<{ role: SafeRole; content: string }>) {
+  if (!GEMINI_API_KEY) {
+    throw new Error(
+      "Sirius cevap vermedi, ayrıca GEMINI_API_KEY de yok. Bu yüzden fallback çalışamadı."
+    );
+  }
+
+  const promptText = buildGeminiPrompt(messages);
+
+  const geminiResponse = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: promptText,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.75,
+          maxOutputTokens: 900,
+        },
+      }),
+      cache: "no-store",
+    }
+  );
+
+  const data = await geminiResponse.json().catch(() => null);
+
+  if (!geminiResponse.ok) {
+    const realError =
+      data?.error?.message ||
+      data?.message ||
+      `Gemini API hata kodu: ${geminiResponse.status}`;
+
+    throw new Error(realError);
+  }
+
+  const answer = extractGeminiText(data);
+
+  if (!answer) {
+    throw new Error("Gemini boş cevap döndürdü.");
+  }
+
+  return {
+    answer,
+    raw: data,
+  };
+}
+
 export async function GET() {
   return NextResponse.json({
     ok: true,
     name: "Lyra Chat API",
-    model: GEMINI_MODEL,
+    primaryProvider: "sirius-core-api",
+    fallbackProvider: "gemini",
+    siriusUrl: SIRIUS_LYRA_URL,
+    geminiModel: GEMINI_MODEL,
     hasGeminiKey: Boolean(GEMINI_API_KEY),
   });
 }
@@ -130,7 +267,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
+          role: "assistant",
+          assistant: "Lyra",
           message: "Kanka mesaj JSON formatında gelmedi.",
+          content: "Kanka mesaj JSON formatında gelmedi.",
+          reply: "Kanka mesaj JSON formatında gelmedi.",
         },
         { status: 400 }
       );
@@ -142,98 +283,87 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
+          role: "assistant",
+          assistant: "Lyra",
           message: "Kanka bana boş mesaj geldi. Bir şey yazınca cevaplayacağım.",
+          content: "Kanka bana boş mesaj geldi. Bir şey yazınca cevaplayacağım.",
+          reply: "Kanka bana boş mesaj geldi. Bir şey yazınca cevaplayacağım.",
         },
         { status: 400 }
       );
     }
 
-    if (!GEMINI_API_KEY) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message:
-            "Kanka GEMINI_API_KEY eksik. Vercel Environment Variables kısmına ekleyip redeploy yapman lazım.",
-        },
-        { status: 500 }
-      );
-    }
+    try {
+      const sirius = await callSiriusCore(userMessages);
 
-    const promptText = buildGeminiPrompt(userMessages);
+      return NextResponse.json({
+        ok: true,
+        role: "assistant",
+        assistant: "Lyra",
+        provider: "sirius-core-api",
+        model: "sirius-lyra-brain",
+        message: sirius.answer,
+        content: sirius.answer,
+        reply: sirius.answer,
+        speakText: sirius.answer,
+        raw: sirius.raw,
+      });
+    } catch (siriusError: any) {
+      try {
+        const gemini = await callGeminiFallback(userMessages);
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: promptText,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.75,
-            maxOutputTokens: 900,
+        return NextResponse.json({
+          ok: true,
+          role: "assistant",
+          assistant: "Lyra",
+          provider: "gemini-fallback",
+          model: GEMINI_MODEL,
+          message: gemini.answer,
+          content: gemini.answer,
+          reply: gemini.answer,
+          speakText: gemini.answer,
+          warning:
+            "Sirius Core API cevap vermediği için Gemini fallback kullanıldı.",
+          siriusError: siriusError?.message || "Bilinmeyen Sirius hatası",
+        });
+      } catch (geminiError: any) {
+        const finalMessage =
+          "Kanka Lyra şu an cevap üretemedi. Sirius Core API hatası: " +
+          (siriusError?.message || "Bilinmeyen hata") +
+          " | Gemini fallback hatası: " +
+          (geminiError?.message || "Bilinmeyen hata");
+
+        return NextResponse.json(
+          {
+            ok: false,
+            role: "assistant",
+            assistant: "Lyra",
+            provider: "none",
+            message: finalMessage,
+            content: finalMessage,
+            reply: finalMessage,
+            speakText: finalMessage,
+            siriusError: siriusError?.message || "Bilinmeyen Sirius hatası",
+            geminiError: geminiError?.message || "Bilinmeyen Gemini hatası",
           },
-        }),
+          { status: 500 }
+        );
       }
-    );
-
-    const data = await geminiResponse.json().catch(() => null);
-
-    if (!geminiResponse.ok) {
-      const realError =
-        data?.error?.message ||
-        data?.message ||
-        `Gemini API hata kodu: ${geminiResponse.status}`;
-
-      return NextResponse.json(
-        {
-          ok: false,
-          message: "Kanka Gemini bağlantısı takıldı. Gerçek hata şu: " + realError,
-          error: realError,
-        },
-        { status: 500 }
-      );
     }
-
-    const answer = extractGeminiText(data);
-
-    if (!answer) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: "Kanka Gemini boş cevap döndürdü.",
-        },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      ok: true,
-      role: "assistant",
-      assistant: "Lyra",
-      provider: "gemini",
-      model: GEMINI_MODEL,
-      message: answer,
-      content: answer,
-      reply: answer,
-    });
   } catch (error: any) {
+    const finalMessage =
+      "Kanka route içinde beklenmeyen hata oldu: " +
+      (error?.message || "Bilinmeyen hata");
+
     return NextResponse.json(
       {
         ok: false,
-        message:
-          "Kanka route içinde beklenmeyen hata oldu: " +
-          (error?.message || "Bilinmeyen hata"),
+        role: "assistant",
+        assistant: "Lyra",
+        message: finalMessage,
+        content: finalMessage,
+        reply: finalMessage,
+        speakText: finalMessage,
       },
       { status: 500 }
     );
