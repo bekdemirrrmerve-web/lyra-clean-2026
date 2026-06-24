@@ -15,42 +15,12 @@ type NormalizedMessage = {
   content: string;
 };
 
-const ROUTE_VERSION = "sirius-chat-bridge-v3-2026-06-24";
+const ROUTE_VERSION = "sirius-only-chat-v1-2026-06-24";
 
 const SIRIUS_LYRA_URL =
   process.env.SIRIUS_LYRA_URL ||
   process.env.SIRIUS_CORE_URL ||
   "https://sirius-core-apii.vercel.app/api/lyra";
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-
-const LYRA_SYSTEM_PROMPT = `
-Sen Lyra Clean 2026'sın.
-
-Türkçe konuşan, sıcak, doğal, akıcı, zeki ve destekleyici bir asistansın.
-Kullanıcıyla robot gibi değil, yakın arkadaş gibi konuşursun.
-Cevapların pratik, yaratıcı, anlaşılır ve doğrudan işe yarar olur.
-
-Asla:
-- "Duydum" diye başlama.
-- Kullanıcının mesajını tekrar edip bırakma.
-- "Ben bir botum" gibi soğuk cevap verme.
-- Gereksiz resmi konuşma.
-- Boş ve genel cevaplarla geçiştirme.
-
-Mutlaka:
-- Kullanıcı soru sorarsa doğrudan cevap ver.
-- İçerik üretimi, kozmetik, kimya, INCI, formül, cilt bakımı, ders çalışma, araştırma, uygulama geliştirme ve günlük planlama konularında yardımcı ol.
-- Kullanıcı teknik sorun anlatırsa sakin, net ve adım adım çöz.
-- Kullanıcı içerik fikri isterse hook, video akışı, başlık, CTA ve fikir üret.
-
-Cevap dili:
-- Daima Türkçe.
-- Samimi.
-- Gerektiğinde "kanka" diyebilirsin.
-- Ama yapay, abartılı veya çocukça olma.
-`;
 
 function cleanText(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -115,17 +85,13 @@ function pickAnswer(data: any): string {
   );
 }
 
-function makeLyraResponse({
+function makeResponse({
   ok,
-  provider,
-  model,
   answer,
   status = 200,
   extra = {},
 }: {
   ok: boolean;
-  provider: string;
-  model?: string;
   answer: string;
   status?: number;
   extra?: Record<string, any>;
@@ -137,8 +103,8 @@ function makeLyraResponse({
       version: ROUTE_VERSION,
       role: "assistant",
       assistant: "Lyra",
-      provider,
-      model,
+      provider: "sirius-core-api",
+      model: "sirius-lyra-brain",
       message: answer,
       content: answer,
       reply: answer,
@@ -147,36 +113,6 @@ function makeLyraResponse({
     },
     { status }
   );
-}
-
-function buildGeminiPrompt(messages: NormalizedMessage[]) {
-  const conversation = messages
-    .map((m) => {
-      const who = m.role === "user" ? "Kullanıcı" : "Lyra";
-      return `${who}: ${m.content}`;
-    })
-    .join("\n\n");
-
-  return `${LYRA_SYSTEM_PROMPT}
-
-Aşağıdaki konuşmaya göre sadece Lyra'nın son cevabını yaz.
-Kullanıcının mesajını tekrar etme.
-Doğrudan cevap ver.
-
-${conversation}
-
-Lyra:`;
-}
-
-function extractGeminiText(data: any): string {
-  const parts = data?.candidates?.[0]?.content?.parts;
-
-  if (!Array.isArray(parts)) return "";
-
-  return parts
-    .map((part) => part?.text || "")
-    .join("")
-    .trim();
 }
 
 async function callSiriusCore(messages: NormalizedMessage[]) {
@@ -237,76 +173,15 @@ async function callSiriusCore(messages: NormalizedMessage[]) {
   }
 }
 
-async function callGeminiFallback(messages: NormalizedMessage[]) {
-  if (!GEMINI_API_KEY) {
-    throw new Error(
-      "Sirius cevap vermedi, ayrıca GEMINI_API_KEY yok. Bu yüzden Gemini fallback çalışamadı."
-    );
-  }
-
-  const promptText = buildGeminiPrompt(messages);
-
-  const geminiResponse = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: promptText,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.75,
-          maxOutputTokens: 900,
-        },
-      }),
-      cache: "no-store",
-    }
-  );
-
-  const data = await geminiResponse.json().catch(() => null);
-
-  if (!geminiResponse.ok) {
-    const realError =
-      data?.error?.message ||
-      data?.message ||
-      `Gemini API hata kodu: ${geminiResponse.status}`;
-
-    throw new Error(String(realError));
-  }
-
-  const answer = extractGeminiText(data);
-
-  if (!answer) {
-    throw new Error("Gemini boş cevap döndürdü.");
-  }
-
-  return {
-    answer,
-    raw: data,
-  };
-}
-
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    name: "Lyra Chat API - Sirius Bridge",
+    name: "Lyra Chat API - Sirius Only",
     route: "api/chat",
     version: ROUTE_VERSION,
-    primaryProvider: "sirius-core-api",
-    fallbackProvider: "gemini",
+    provider: "sirius-core-api",
     siriusUrl: SIRIUS_LYRA_URL,
-    geminiModel: GEMINI_MODEL,
-    hasGeminiKey: Boolean(GEMINI_API_KEY),
+    geminiRemovedFromChat: true,
     deployedAt: new Date().toISOString(),
   });
 }
@@ -316,9 +191,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null);
 
     if (!body) {
-      return makeLyraResponse({
+      return makeResponse({
         ok: false,
-        provider: "none",
         answer: "Kanka mesaj JSON formatında gelmedi.",
         status: 400,
       });
@@ -327,73 +201,36 @@ export async function POST(req: NextRequest) {
     const userMessages = normalizeMessages(body);
 
     if (userMessages.length === 0) {
-      return makeLyraResponse({
+      return makeResponse({
         ok: false,
-        provider: "none",
         answer: "Kanka bana boş mesaj geldi. Bir şey yazınca cevaplayacağım.",
         status: 400,
       });
     }
 
-    try {
-      const sirius = await callSiriusCore(userMessages);
+    const sirius = await callSiriusCore(userMessages);
 
-      return makeLyraResponse({
-        ok: true,
-        provider: "sirius-core-api",
-        model: "sirius-lyra-brain",
-        answer: sirius.answer,
-        extra: {
-          siriusUrl: SIRIUS_LYRA_URL,
-          raw: sirius.raw,
-        },
-      });
-    } catch (siriusError: any) {
-      try {
-        const gemini = await callGeminiFallback(userMessages);
-
-        return makeLyraResponse({
-          ok: true,
-          provider: "gemini-fallback",
-          model: GEMINI_MODEL,
-          answer: gemini.answer,
-          extra: {
-            warning:
-              "Sirius Core API cevap vermediği için Gemini fallback kullanıldı.",
-            siriusUrl: SIRIUS_LYRA_URL,
-            siriusError: siriusError?.message || "Bilinmeyen Sirius hatası",
-          },
-        });
-      } catch (geminiError: any) {
-        const finalMessage =
-          "Kanka Lyra şu an cevap üretemedi. Sirius Core API hatası: " +
-          (siriusError?.message || "Bilinmeyen hata") +
-          " | Gemini fallback hatası: " +
-          (geminiError?.message || "Bilinmeyen hata");
-
-        return makeLyraResponse({
-          ok: false,
-          provider: "none",
-          answer: finalMessage,
-          status: 500,
-          extra: {
-            siriusUrl: SIRIUS_LYRA_URL,
-            siriusError: siriusError?.message || "Bilinmeyen Sirius hatası",
-            geminiError: geminiError?.message || "Bilinmeyen Gemini hatası",
-          },
-        });
-      }
-    }
+    return makeResponse({
+      ok: true,
+      answer: sirius.answer,
+      extra: {
+        siriusUrl: SIRIUS_LYRA_URL,
+        raw: sirius.raw,
+      },
+    });
   } catch (error: any) {
     const finalMessage =
-      "Kanka route içinde beklenmeyen hata oldu: " +
+      "Kanka Lyra şu an Sirius Core API’ye bağlanamadı: " +
       (error?.message || "Bilinmeyen hata");
 
-    return makeLyraResponse({
+    return makeResponse({
       ok: false,
-      provider: "route-error",
       answer: finalMessage,
       status: 500,
+      extra: {
+        siriusUrl: SIRIUS_LYRA_URL,
+        error: error?.message || String(error),
+      },
     });
   }
 }
