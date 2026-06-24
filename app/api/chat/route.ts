@@ -210,14 +210,16 @@ export async function POST(req: NextRequest) {
 
     const sirius = await callSiriusCore(userMessages);
 
-    return makeResponse({
-      ok: true,
-      answer: sirius.answer,
-      extra: {
-        siriusUrl: SIRIUS_LYRA_URL,
-        raw: sirius.raw,
-      },
-    });
+return makeResponse({
+  ok: true,
+  answer:
+    "TEST BAŞARILI KANKA ✅ /api/chat yeni Sirius route çalışıyor. Sirius'tan gelen ham cevap şuydu: " +
+    sirius.answer,
+  extra: {
+    siriusUrl: SIRIUS_LYRA_URL,
+    raw: sirius.raw,
+  },
+});
   } catch (error: any) {
     const finalMessage =
       "Kanka Lyra şu an Sirius Core API’ye bağlanamadı: " +
